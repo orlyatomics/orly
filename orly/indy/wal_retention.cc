@@ -746,7 +746,70 @@ uint64_t TWalRetention::ComputeHead() {
   return ComputeHeadLocked(Manager->GetWal());
 }
 
-void TWalRetention::CopyPovsForward(Disk::TWal *wal) {
+TWalRetention::TPressure TWalRetention::GetPressure(Disk::TWal *wal) {
+  const size_t refusals = wal->GetRingFullRefusals();
+  lock_guard<mutex> lock(Mutex);
+  if (refusals == SeenRingFullRefusals) {
+    return {};
+  }
+  SeenRingFullRefusals = refusals;
+  /* No copy moves the pins of a repo that isn't paused; Pov records, paused repos and pause
+     records below them all can be. */
+  uint64_t floor = UINT64_MAX;
+  for (const auto &[id, repo] : Repos) {
+    if (!Paused.contains(id)) {
+      for (const auto &pin : repo.Pins) {
+        floor = min(floor, pin.second.Lsn);
+      }
+    }
+  }
+  const uint64_t head = ComputeHeadLocked(wal);
+  if (head >= floor) {
+    return {};
+  }
+  /* Copy only what is more than a sixteenth of the ring behind: what was just written gives back
+     nothing for what its copy would take. */
+  const size_t sixteenth = wal->GetCapacityBytes() / 16UL;
+  const size_t behind = wal->GetRingBytesBehind(head);
+  const size_t kept = max(sixteenth, floor == UINT64_MAX ? 0UL : wal->GetRingBytesBehind(floor));
+  if (behind <= kept) {
+    return {};
+  }
+  /* What the copies would write: a group of each paused update (its copy room, owed already) and
+     the Pov and pause records. */
+  size_t cost = 0UL;
+  for (const auto &pause : Paused) {
+    if (pause.second.Lsn < floor && wal->GetRingBytesBehind(pause.second.Lsn) > sixteenth) {
+      cost += Disk::WalAlignment;
+    }
+    auto repo = Repos.find(pause.first);
+    if (repo == Repos.end() || repo->second.Pins.empty()) {
+      continue;
+    }
+    uint64_t oldest = pause.second.Lsn;
+    for (const auto &pin : repo->second.Pins) {
+      oldest = min(oldest, pin.second.Lsn);
+    }
+    if (oldest < floor && wal->GetRingBytesBehind(oldest) > sixteenth) {
+      for (const auto &pin : repo->second.Pins) {
+        cost += GetCopyDebt(pin.second).GroupBytes;
+      }
+    }
+  }
+  for (const auto &pov : Povs) {
+    if (pov.second.Lsn < floor && wal->GetRingBytesBehind(pov.second.Lsn) > sixteenth) {
+      cost += pov.second.Body.size() + Disk::WalAlignment;
+    }
+  }
+  /* Only for a real gain, of a sixteenth of the ring more than the copies take, so copies under
+     pressure can't feed on the room they make: once copied, they are less than that behind. */
+  if (behind - kept <= sixteenth + cost) {
+    return {};
+  }
+  return TPressure{floor, sixteenth};
+}
+
+void TWalRetention::CopyPovsForward(Disk::TWal *wal, const TPressure &pressure) {
   const size_t limit = wal->GetCapacityBytes() / 2UL;
   /* Moves the pins of the copies that are durable now; those that aren't yet stay pending, and
      aren't copied again meanwhile (#963 (c)): a copy slow to land is not appended over and over. */
@@ -773,7 +836,10 @@ void TWalRetention::CopyPovsForward(Disk::TWal *wal) {
     lock_guard<mutex> lock(Mutex);
     finish();
     for (const auto &pov : Povs) {
-      if (PendingPovMoves.count(pov.first) || wal->GetRingBytesBehind(pov.second.Lsn) <= limit) {
+      if (PendingPovMoves.count(pov.first)) {
+        continue;
+      }
+      if (const size_t behind = wal->GetRingBytesBehind(pov.second.Lsn); behind <= limit && !pressure.Copies(pov.second.Lsn, behind)) {
         continue;
       }
       uint64_t lsn;
@@ -802,7 +868,7 @@ void TWalRetention::CopyPovsForward(Disk::TWal *wal) {
   syslog(LOG_INFO, "TWalRetention: copied %ld Pov records forward", finish());
 }
 
-void TWalRetention::CopyPausesForward(Disk::TWal *wal) {
+void TWalRetention::CopyPausesForward(Disk::TWal *wal, const TPressure &pressure) {
   const size_t limit = wal->GetCapacityBytes() / 2UL;
   const auto finish = [this, wal] {
     const uint64_t durable = wal->GetDurableLsn();
@@ -835,7 +901,10 @@ void TWalRetention::CopyPausesForward(Disk::TWal *wal) {
     lock_guard<mutex> lock(Mutex);
     finish();
     for (const auto &pause : Paused) {
-      if (PendingPauseMoves.count(pause.first) || wal->GetRingBytesBehind(pause.second.Lsn) <= limit) {
+      if (PendingPauseMoves.count(pause.first)) {
+        continue;
+      }
+      if (const size_t behind = wal->GetRingBytesBehind(pause.second.Lsn); behind <= limit && !pressure.Copies(pause.second.Lsn, behind)) {
         continue;
       }
       /* Once copies are allowed, a paused repo holding updates is copied whole, its pause with it
@@ -1061,7 +1130,7 @@ bool TWalRetention::CopyRepoForward(Disk::TWal *wal, const Base::TUuid &repo_id)
   return true;
 }
 
-void TWalRetention::CopyPausedReposForward(Disk::TWal *wal) {
+void TWalRetention::CopyPausedReposForward(Disk::TWal *wal, const TPressure &pressure) {
   const size_t limit = wal->GetCapacityBytes() / 2UL;
   vector<Base::TUuid> candidates;
   function<void ()> gate;
@@ -1077,24 +1146,6 @@ void TWalRetention::CopyPausedReposForward(Disk::TWal *wal) {
         ++copy;
       }
     }
-    /* Refused since the last pass: the ring is short of room now, so copy any paused repo that
-       is what holds the head back, however far behind it is. */
-    const size_t refusals = wal->GetRingFullRefusals();
-    const bool pressed = refusals != SeenRingFullRefusals;
-    SeenRingFullRefusals = refusals;
-    uint64_t others = UINT64_MAX;
-    if (pressed) {
-      for (const auto &[id, repo] : Repos) {
-        if (!Paused.count(id)) {
-          for (const auto &pin : repo.Pins) {
-            others = min(others, pin.second.Lsn);
-          }
-        }
-      }
-      for (const auto &pov : Povs) {
-        others = min(others, pov.second.Lsn);
-      }
-    }
     for (const auto &pause : Paused) {
       auto repo = Repos.find(pause.first);
       if (repo == Repos.end() || repo->second.Pins.empty() || PendingCopies.count(pause.first)) {
@@ -1104,16 +1155,8 @@ void TWalRetention::CopyPausedReposForward(Disk::TWal *wal) {
       for (const auto &pin : repo->second.Pins) {
         oldest = min(oldest, pin.second.Lsn);
       }
-      const size_t behind = wal->GetRingBytesBehind(oldest);
-      if (behind > limit) {
+      if (const size_t behind = wal->GetRingBytesBehind(oldest); behind > limit || pressure.Copies(oldest, behind)) {
         candidates.push_back(pause.first);
-      } else if (pressed && oldest < others) {
-        /* Only for a real gain: the copy must give back at least an eighth of the ring and twice
-           what it takes, so copies under pressure can't feed on the room they make. */
-        const size_t freed = behind - (others == UINT64_MAX ? 0UL : min(behind, wal->GetRingBytesBehind(others)));
-        if (freed > wal->GetCapacityBytes() / 8UL && freed > 2UL * repo->second.Footprint) {
-          candidates.push_back(pause.first);
-        }
       }
     }
     gate = IncompatGate;
@@ -1177,9 +1220,10 @@ void TWalRetention::Checkpoint(uint64_t global_flushed_seq, bool force) {
   }
   lock_guard<mutex> checkpoint_lock(CheckpointMutex);
   DropDeadPins();
-  CopyPovsForward(wal);
-  CopyPausedReposForward(wal);
-  CopyPausesForward(wal);
+  const TPressure pressure = GetPressure(wal);
+  CopyPovsForward(wal, pressure);
+  CopyPausedReposForward(wal, pressure);
+  CopyPausesForward(wal, pressure);
   uint64_t head;
   /* lock */ {
     lock_guard<mutex> lock(Mutex);

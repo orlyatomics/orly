@@ -2033,10 +2033,12 @@ FIXTURE(Issue963CopiesWithTheRingFull) {
   }, 1UL /* a runner for the Tetris manager */);
 }
 
-/* The ring refused a record while a paused repo holds the head, but less than half the ring
-   behind (M1 harness): the next checkpoint copies it anyway, as waiting for half the ring would
-   wait on writes the ring refuses.  Once copied, more refusals don't copy it again, as the copy
-   would give back nothing. */
+/* The ring refused a record while a paused repo, and its pov's Pov record before it, hold the
+   head, but less than half the ring behind (M1 harness): the next checkpoint copies both anyway,
+   as waiting for half the ring would wait on writes the ring refuses.  (The Pov record, written
+   when the pov was made, is older than any of its updates; copying only the repo would leave it
+   holding the head.)  Once copied, more refusals don't copy them again, as the copies would give
+   back nothing. */
 FIXTURE(Issue963CopiesUnderRingPressure) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
     const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
@@ -2059,14 +2061,16 @@ FIXTURE(Issue963CopiesUnderRingPressure) {
       auto parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
       const TUuid child_id(TUuid::Twister);
       auto child = manager->GetRepo(child_id, TTtl::max(), parent, true, true);
+      const uint64_t pov_lsn = retention->AppendPov(child_id, "the child's Pov record");
       SetPaused(manager.get(), child, true);
       for (int64_t key = 1; key <= 4; ++key) {
         PushOne(manager.get(), child, idx_id, key);
       }
       const uint64_t originals = wal.GetLastAppendedLsn();
       const uint64_t head0 = retention->ComputeHead();
+      EXPECT_EQ(head0, pov_lsn);
       const size_t ring = wal.GetCapacityBytes();
-      const size_t target = std::max(3UL * ring / 8UL, ring / 8UL + 2UL * retention->GetPausedFootprintBytes()) + Disk::WalAlignment;
+      const size_t target = std::max(3UL * ring / 8UL, ring / 4UL + 2UL * retention->GetPausedFootprintBytes()) + Disk::WalAlignment;
       EXPECT_LT(target, ring / 2UL);
       /* Filler, durable, to between the pressure threshold and half the ring (the distance counts
          what is written, so wait for each few). */

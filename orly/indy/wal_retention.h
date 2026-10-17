@@ -350,8 +350,28 @@ namespace Orly {
          about liveness without it. */
       void DropDeadPins();
 
-      /* Copy forward every Pov record more than half the ring behind; move its pin once durable. */
-      void CopyPovsForward(Disk::TWal *wal);
+      /* What a checkpoint copies forward early because the ring refused a record since the last
+         one (#963): every Pov record, paused repo and pause record below `Below` (the oldest pin
+         no copy can move, of a repo not paused) and more than `Behind` bytes behind.  With the
+         promotion room and the headroom kept, the ring can be too full to take a big record while
+         the head is still less than half the ring behind, and then the writes that would carry it
+         there are the ones refused.  Below is 0 when nothing is to be copied early. */
+      struct TPressure {
+        uint64_t Below = 0UL;
+        size_t Behind = SIZE_MAX;
+
+        bool Copies(uint64_t lsn, size_t behind) const {
+          return lsn < Below && behind > Behind;
+        }
+      };
+
+      /* The pressure for this pass: copy early only if the ring refused a record since the last
+         pass and the copies would give back a sixteenth of the ring more than they write. */
+      TPressure GetPressure(Disk::TWal *wal);
+
+      /* Copy forward every Pov record more than half the ring behind, or that `pressure` copies;
+         move its pin once durable. */
+      void CopyPovsForward(Disk::TWal *wal, const TPressure &pressure);
 
       /* Requires Mutex.  The repo's lowest unpromoted sequence number, from its update pins: a
          paused repo is never a root, so every update it holds is pinned until it is popped. */
@@ -359,16 +379,12 @@ namespace Orly {
       /* Write a fresh pause record for every paused safe repo whose pause is more than half the
          ring behind, and move its pin there once durable (#961).  The record is an ordinary
          transaction record holding one pause, as the pause itself wrote, so recovery replays it
-         as one. */
-      void CopyPausesForward(Disk::TWal *wal);
+         as one.  Also those that `pressure` copies. */
+      void CopyPausesForward(Disk::TWal *wal, const TPressure &pressure);
 
       /* Copy forward every paused safe repo whose oldest pin, or pause, is more than half the ring
-         behind (#963), and move its pins once the copy is durable.  If the ring has refused a
-         record since the last pass, also every one holding the head below anything else's pins:
-         with the promotion room and the headroom kept, the ring can be too full to take a big
-         record before a paused repo is half the ring behind, and then nothing would carry it
-         there. */
-      void CopyPausedReposForward(Disk::TWal *wal);
+         behind (#963), or that `pressure` copies, and move its pins once the copy is durable. */
+      void CopyPausedReposForward(Disk::TWal *wal, const TPressure &pressure);
 
       /* Copy one; false if it wasn't (no room, or the repo isn't as its pins say). */
       bool CopyRepoForward(Disk::TWal *wal, const Base::TUuid &repo_id);
@@ -399,7 +415,7 @@ namespace Orly {
       std::function<void ()> IncompatGate;
       bool RepoCopyAllowed = false;
 
-      /* TWal::GetRingFullRefusals as the last CopyPausedReposForward saw it. */
+      /* TWal::GetRingFullRefusals as the last GetPressure saw it. */
       size_t SeenRingFullRefusals = 0UL;
 
       std::optional<size_t> PausedCapBytesForTest;
