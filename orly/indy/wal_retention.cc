@@ -24,7 +24,10 @@
 
 #include <syslog.h>
 
+#include <base/io/binary_output_only_stream.h>
+#include <base/io/recorder_and_player.h>
 #include <orly/indy/disk/wal.h>
+#include <orly/indy/replication.h>
 #include <orly/indy/transaction_base.h>
 
 using namespace std;
@@ -93,7 +96,8 @@ size_t TWalRetention::GetPromotionCredit(const vector<TPop> &pops) {
   return credit;
 }
 
-vector<Disk::TPromotionDebt> TWalRetention::PinTxn(uint64_t lsn, const vector<TPush> &pushes, const vector<TPop> &pops, size_t debt_group_bytes) {
+vector<Disk::TPromotionDebt> TWalRetention::PinTxn(uint64_t lsn, const vector<TPush> &pushes, const vector<TPop> &pops,
+                                                    const vector<TStatusChange> &statuses, size_t debt_group_bytes) {
   vector<Disk::TPromotionDebt> dropped;
   /* LSNs start at 1; a pin at 0 would hold the head before the ring's first group for good. */
   assert(lsn);
@@ -135,14 +139,41 @@ vector<Disk::TPromotionDebt> TWalRetention::PinTxn(uint64_t lsn, const vector<TP
       pin->second = TPin{carried ? min(lsn, *carried) : lsn, lsn, debt};
     }
   }
+  /* A paused repo needs the record that paused it until it is unpaused (#961).  A later record
+     that pauses it again (a copy, or a pause replayed twice) moves the pin up to itself. */
+  for (const auto &status : statuses) {
+    if (status.Paused) {
+      Paused[status.RepoId] = TStatusPin{lsn};
+    } else {
+      Paused.erase(status.RepoId);
+    }
+  }
   return dropped;
 }
 
-uint64_t TWalRetention::AppendTxn(const string &wire, const vector<TPush> &pushes, const vector<TPop> &pops, Disk::TWalReservation *reservation) {
+optional<TSequenceNumber> TWalRetention::LowestPinnedSeqLocked(const Base::TUuid &repo_id) const {
+  auto iter = Repos.find(repo_id);
+  if (iter == Repos.end() || iter->second.Pins.empty()) {
+    return nullopt;
+  }
+  return iter->second.Pins.begin()->first;
+}
+
+uint64_t TWalRetention::AppendTxn(const string &wire, const vector<TPush> &pushes, const vector<TPop> &pops,
+                                  const vector<TStatusChange> &statuses, Disk::TWalReservation *reservation) {
   Disk::TWal *wal = Manager->GetWal();
   assert(wal);
   lock_guard<mutex> lock(Mutex);
   OweWalLocked(wal);
+  /* CopyPausesForward rebuilds a pause's sequence number from the update pins; say so if they ever
+     disagree with the repo, since a copy carrying the wrong one would be discarded on replay. */
+  for (const auto &status : statuses) {
+    if (status.Paused && status.Seq != LowestPinnedSeqLocked(status.RepoId)) {
+      syslog(LOG_WARNING, "TWalRetention: paused repo's lowest unpromoted update is %ld, but its pins say %ld (#961)",
+             static_cast<long>(status.Seq.value_or(EmptyRepoSequenceNumber)),
+             static_cast<long>(LowestPinnedSeqLocked(status.RepoId).value_or(EmptyRepoSequenceNumber)));
+    }
+  }
   /* The pops' pins are the ones PinTxn drops, since nothing changes the pins between here and there
      with Mutex held; so the record repays exactly the room they were owed. */
   const size_t debt_group_bytes = Disk::TWal::GetPromotionGroupBytes(wire.size());
@@ -156,7 +187,7 @@ uint64_t TWalRetention::AppendTxn(const string &wire, const vector<TPush> &pushe
   const uint64_t lsn = (reservation && *reservation)
       ? wal->Append(*reservation, Disk::TWalRecordType::Txn, wire.data(), wire.size(), 0U, debt)
       : wal->Append(Disk::TWalRecordType::Txn, wire.data(), wire.size(), 0U, debt);
-  RepayDroppedLocked(PinTxn(lsn, pushes, pops, debt_group_bytes), debt.Repaid.size());
+  RepayDroppedLocked(PinTxn(lsn, pushes, pops, statuses, debt_group_bytes), debt.Repaid.size());
   return lsn;
 }
 
@@ -196,14 +227,14 @@ void TWalRetention::EndReplay() {
   ReplayRecordBytes = 0UL;
 }
 
-bool TWalRetention::NoteReplayedTxn(const vector<TPush> &pushes, const vector<TPop> &pops) {
+bool TWalRetention::NoteReplayedTxn(const vector<TPush> &pushes, const vector<TPop> &pops, const vector<TStatusChange> &statuses) {
   lock_guard<mutex> lock(Mutex);
   /* Before the first replayed record (while recovery restores povs) a transaction comes from no
      record at all, so there is nothing to pin it to. */
   if (!Replaying || !ReplayLsn) {
     return false;
   }
-  RepayDroppedLocked(PinTxn(ReplayLsn, pushes, pops, Disk::TWal::GetPromotionGroupBytes(ReplayRecordBytes)), 0UL);
+  RepayDroppedLocked(PinTxn(ReplayLsn, pushes, pops, statuses, Disk::TWal::GetPromotionGroupBytes(ReplayRecordBytes)), 0UL);
   return true;
 }
 
@@ -278,11 +309,14 @@ uint64_t TWalRetention::ComputeHeadLocked(Disk::TWal *wal) const {
   for (const auto &pov : Povs) {
     head = min(head, pov.second.Lsn);
   }
+  for (const auto &pause : Paused) {
+    head = min(head, pause.second.Lsn);
+  }
   return head;
 }
 
 void TWalRetention::DropDeadPins() {
-  vector<Base::TUuid> repo_ids, pov_ids;
+  vector<Base::TUuid> repo_ids, pov_ids, paused_ids;
   /* lock */ {
     lock_guard<mutex> lock(Mutex);
     repo_ids.reserve(Repos.size());
@@ -293,9 +327,13 @@ void TWalRetention::DropDeadPins() {
     for (const auto &pov : Povs) {
       pov_ids.push_back(pov.first);
     }
+    paused_ids.reserve(Paused.size());
+    for (const auto &pause : Paused) {
+      paused_ids.push_back(pause.first);
+    }
   }
   /* IsLiveRepo takes the manager's own mutex, so never ask with ours held. */
-  vector<Base::TUuid> dead_repos, dead_povs;
+  vector<Base::TUuid> dead_repos, dead_povs, dead_paused;
   for (const auto &id : repo_ids) {
     if (!Manager->IsLiveRepo(id)) {
       dead_repos.push_back(id);
@@ -306,7 +344,12 @@ void TWalRetention::DropDeadPins() {
       dead_povs.push_back(id);
     }
   }
-  if (dead_repos.empty() && dead_povs.empty()) {
+  for (const auto &id : paused_ids) {
+    if (!Manager->IsLiveRepo(id)) {
+      dead_paused.push_back(id);
+    }
+  }
+  if (dead_repos.empty() && dead_povs.empty() && dead_paused.empty()) {
     return;
   }
   /* A repo that has gone takes its unpromoted updates with it, and nothing creates a repo again
@@ -329,6 +372,9 @@ void TWalRetention::DropDeadPins() {
   RepayDroppedLocked(std::move(dropped), 0UL);
   for (const auto &id : dead_povs) {
     Povs.erase(id);
+  }
+  for (const auto &id : dead_paused) {
+    Paused.erase(id);
   }
 }
 
@@ -379,6 +425,68 @@ void TWalRetention::CopyPovsForward(Disk::TWal *wal) {
   syslog(LOG_INFO, "TWalRetention: copied %ld Pov records forward", copies.size());
 }
 
+void TWalRetention::CopyPausesForward(Disk::TWal *wal) {
+  const size_t limit = wal->GetCapacityBytes() / 2UL;
+  /* repo id, (old lsn, new lsn) */
+  vector<pair<Base::TUuid, pair<uint64_t, uint64_t>>> copies;
+  uint64_t newest = 0UL;
+  /* A transaction applies its changes and appends its record under the replication queue lock,
+     so with it held the update pins are what the repos hold, and the copy lands in the record
+     stream exactly where the repo is in that state: recovery, replaying up to the copy, has
+     rebuilt the repo with that same lowest sequence number, so the copy follows (see
+     FollowsStatusChange) and pauses it.  The order is the usual one: the queue lock, then ours,
+     then the TWal's. */
+  /* lock */ {
+    lock_guard<mutex> queue_lock(Manager->GetReplicationQueueLock());
+    lock_guard<mutex> lock(Mutex);
+    for (const auto &pause : Paused) {
+      if (wal->GetRingBytesBehind(pause.second.Lsn) <= limit) {
+        continue;
+      }
+      /* The record a pause itself writes: one pause, carrying the repo's lowest unpromoted
+         sequence number (TTransaction::Prepare, TReplicationStreamer::PushTransaction).  An old
+         binary reads it as just that. */
+      L1::TTransaction::TReplica replica;
+      replica.Pause(pause.first, LowestPinnedSeqLocked(pause.first));
+      TReplicationStreamer streamer;
+      streamer.PushTransaction(replica);
+      auto recorder = make_shared<Io::TRecorder>();
+      /* serialize */ {
+        Io::TBinaryOutputOnlyStream strm(recorder);
+        streamer.Write(strm);
+        strm.Flush();
+      }
+      string wire;
+      recorder->CopyOut(wire);
+      uint64_t lsn;
+      try {
+        lsn = wal->Append(Disk::TWalRecordType::Txn, wire.data(), wire.size());
+      } catch (const Disk::TWalRingFull &) {
+        /* As for the Pov records: the pins not moved stay put, and the next pass tries again. */
+        break;
+      }
+      copies.emplace_back(pause.first, make_pair(pause.second.Lsn, lsn));
+      newest = lsn;
+    }
+  }
+  if (copies.empty()) {
+    return;
+  }
+  if (!wal->WaitForDurable(newest, chrono::milliseconds(5000))) {
+    syslog(LOG_WARNING, "TWalRetention: %ld copied pause records not durable yet; their pins stay put", copies.size());
+    return;
+  }
+  lock_guard<mutex> lock(Mutex);
+  for (const auto &copy : copies) {
+    /* Unpaused (or paused again) since: that record decides, and the copy changes nothing. */
+    auto iter = Paused.find(copy.first);
+    if (iter != Paused.end() && iter->second.Lsn == copy.second.first) {
+      iter->second.Lsn = copy.second.second;
+    }
+  }
+  syslog(LOG_INFO, "TWalRetention: copied %ld pause records forward", copies.size());
+}
+
 void TWalRetention::Checkpoint(uint64_t global_flushed_seq, bool force) {
   Disk::TWal *wal = Manager->GetWal();
   if (!wal) {
@@ -387,6 +495,7 @@ void TWalRetention::Checkpoint(uint64_t global_flushed_seq, bool force) {
   lock_guard<mutex> checkpoint_lock(CheckpointMutex);
   DropDeadPins();
   CopyPovsForward(wal);
+  CopyPausesForward(wal);
   uint64_t head;
   /* lock */ {
     lock_guard<mutex> lock(Mutex);
