@@ -137,6 +137,7 @@ TWal::TWal(Util::TDevice *device, const TConfig &config, uint64_t start_lsn, uin
            const std::vector<TGroupLocation> &retained_groups)
     : Device(device),
       Config(config),
+      AutoSealOnQuiet(config.AutoSealOnQuiet),
       NextLsn(start_lsn > 0 ? start_lsn - 1 : 0),
       NextGroupNum(start_group_num > 0 ? start_group_num - 1 : 0),
       CurrentLap(start_lap),
@@ -293,9 +294,9 @@ size_t TWal::OwedBytesLocked() const {
          PendingGroupBytesSum + PendingGroupPayloads.size() * WalAlignment + (Unsealed ? WalAlignment : 0UL);
 }
 
-size_t TWal::MaxGroupLocked(size_t extra) const {
+size_t TWal::MaxGroupLocked(size_t extra, size_t biggest_extra) const {
   const size_t sum = ReservedGroupBytesSum + PendingGroupBytesSum + extra;
-  size_t biggest = extra;
+  size_t biggest = std::min(extra, biggest_extra);
   if (!ReservedGroupBytes.empty()) {
     biggest = std::max(biggest, *ReservedGroupBytes.rbegin());
   }
@@ -328,10 +329,10 @@ size_t TWal::UsableBytesLocked(size_t max_group) const {
    the next level up then take no more than that (GetPromotionGroupBytes leaves the slack for it),
    so the promise still holds once the retention repays the pops.  The groups the debt is owed may
    be bigger than any taken yet, so where a group wraps, allow for the biggest of them too. */
-bool TWal::AdmitsLocked(size_t group_bytes, TRoom room, size_t credit, size_t new_debt, size_t new_debt_group) const {
+bool TWal::AdmitsLocked(size_t group_bytes, TRoom room, size_t credit, size_t new_debt, size_t new_debt_group, size_t biggest_group) const {
   const size_t debt = DebtBytesSum - std::min(credit, DebtBytesSum) + new_debt;
   const size_t needed = OwedBytesLocked() + group_bytes + WalAlignment + debt;
-  size_t max_group = std::max(MaxGroupLocked(group_bytes), new_debt_group);
+  size_t max_group = std::max(MaxGroupLocked(group_bytes, biggest_group), new_debt_group);
   if (!DebtGroupBytes.empty()) {
     max_group = std::max(max_group, *DebtGroupBytes.rbegin());
   }
@@ -345,6 +346,7 @@ bool TWal::AdmitsLocked(size_t group_bytes, TRoom room, size_t credit, size_t ne
 void TWal::ThrowRingFullLocked(size_t size, TRoom room) const {
   static std::atomic<size_t> refusals(0UL);
   const size_t n = ++refusals;
+  RingFullRefusals.fetch_add(1UL, std::memory_order_relaxed);
   const size_t owed = OwedBytesLocked();
   const size_t usable = UsableBytesLocked(MaxGroupLocked(GetRecordGroupBytes(size)));
   /* LOG_ERR, not WARNING: the default mask drops warnings.  The 1st, 2nd, 4th, ... */
@@ -491,6 +493,41 @@ TWalReservation TWal::Reserve(size_t size, TRoom room, std::chrono::milliseconds
   reservation.GroupBytes = group_bytes;
   reservation.Owes = std::move(owes);
   return reservation;
+}
+
+std::vector<TWalReservation> TWal::ReserveGroup(const std::vector<size_t> &sizes, const std::vector<TPromotionDebt> &spend) {
+  std::vector<TWalReservation> reservations;
+  reservations.reserve(sizes.size());
+  std::unique_lock<std::mutex> lock(Mutex);
+  size_t group_bytes = 0UL, biggest = 0UL, biggest_size = 0UL;
+  for (const size_t size : sizes) {
+    CheckAppendableLocked(size);
+    const size_t bytes = GetRecordGroupBytes(size);
+    group_bytes += bytes;
+    if (bytes > biggest) {
+      biggest = bytes;
+      biggest_size = size;
+    }
+  }
+  /* A seal-only group may follow each record (the WalAlignment in AdmitsLocked is the one for a
+     single record); count the others too. */
+  const size_t seals = sizes.empty() ? 0UL : (sizes.size() - 1UL) * WalAlignment;
+  if (!AdmitsLocked(group_bytes + seals, TRoom::All, SumDebtBytes(spend), 0UL, 0UL, biggest)) {
+    /* Not ThrowRingFullLocked: the caller tries again at its next pass, and says so itself. */
+    throw TWalRingFull("the WAL ring has no room yet for " + std::to_string(sizes.size()) + " records of up to " +
+                       std::to_string(biggest_size) + " bytes; nothing was appended");
+  }
+  RepayLocked(spend);
+  for (const size_t size : sizes) {
+    const size_t bytes = GetRecordGroupBytes(size);
+    ChargeLocked(bytes);
+    TWalReservation reservation;
+    reservation.Wal = this;
+    reservation.Size = size;
+    reservation.GroupBytes = bytes;
+    reservations.push_back(std::move(reservation));
+  }
+  return reservations;
 }
 
 void TWal::ReleaseReservation(TWalReservation &reservation) {
@@ -646,13 +683,21 @@ uint64_t TWal::GetGroupNum() const {
   return NextGroupNum;
 }
 
+void TWal::SetAutoSealOnQuietForTest(bool on) {
+  /* lock */ {
+    std::lock_guard<std::mutex> lock(Mutex);
+    AutoSealOnQuiet = on;
+  }
+  LeaderCv.notify_all();
+}
+
 void TWal::LeaderMain() {
   std::unique_lock<std::mutex> lock(Mutex);
   while (!Stopping || !PendingRecords.empty() || (HighestSyncedLsn > HighestSealedLsn && InFlightGroups.empty())) {
     while (!Stopping &&
            !(!PendingRecords.empty() && InFlightGroups.size() < Config.MaxInFlightGroups) &&
-           !(Config.AutoSealOnQuiet && HighestSyncedLsn > HighestSealedLsn && InFlightGroups.empty())) {
-      if (Config.AutoSealOnQuiet && HighestSyncedLsn > HighestSealedLsn) {
+           !(AutoSealOnQuiet && HighestSyncedLsn > HighestSealedLsn && InFlightGroups.empty())) {
+      if (AutoSealOnQuiet && HighestSyncedLsn > HighestSealedLsn) {
         LeaderCv.wait_for(lock, Config.QuietInterval);
       } else {
         LeaderCv.wait(lock);
@@ -667,9 +712,13 @@ void TWal::LeaderMain() {
 
     /* Build next group */
     const bool have_records = !PendingRecords.empty() && InFlightGroups.size() < Config.MaxInFlightGroups;
-    const bool need_seal = !have_records && Config.AutoSealOnQuiet && HighestSyncedLsn > HighestSealedLsn && InFlightGroups.size() < Config.MaxInFlightGroups;
+    /* Stopping, seal what is synced even with auto-seal off: the loop above waits for it. */
+    const bool need_seal = !have_records && (AutoSealOnQuiet || Stopping) && HighestSyncedLsn > HighestSealedLsn && InFlightGroups.size() < Config.MaxInFlightGroups;
 
     if (!have_records && !need_seal) {
+      /* Only when stopping with every in-flight slot taken: wait for the syncer to free one.  Going
+         round again at once would hold Mutex, which the syncer needs to free it, for good. */
+      LeaderCv.wait(lock);
       continue;
     }
 

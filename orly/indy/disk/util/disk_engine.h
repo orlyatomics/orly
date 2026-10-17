@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <mutex>
+
 #include <base/mem_aligned_ptr.h>
 #include <base/util/error.h>
 #include <orly/indy/disk/util/disk_util.h>
@@ -290,9 +292,10 @@ namespace Orly {
                 WalCheckpoint0Block = dev_info.WalCheckpoint0Block;
                 WalCheckpoint1Block = dev_info.WalCheckpoint1Block;
                 WalCheckpointBlocks = dev_info.WalCheckpointBlocks ? dev_info.WalCheckpointBlocks : 1UL;
+                IncompatFeatures = dev_info.IncompatFeatures;
               }
-              if (FormatVersion > MaxFormatVersion) {
-                throw std::runtime_error("unsupported store format version " + std::to_string(FormatVersion) + ": this binary supports format versions up to " + std::to_string(MaxFormatVersion));
+              if (const std::string why = Util::TStoreFormat::CheckSupported(FormatVersion, IncompatFeatures); !why.empty()) {
+                throw std::runtime_error(why);
               }
               if (FormatVersion >= 1UL) {
                 VolMan->MarkBlockRangeUsed(TBlockRange(WalStartBlock, WalNumBlocks));
@@ -385,6 +388,9 @@ namespace Orly {
                 TDeviceUtil::ModifyDevice(entry.first.c_str(), entry.second);
               }
               syslog(LOG_INFO, "upgraded store to format version 2: retention records (#745)");
+            } else if (persist_retention && FormatVersion >= 3UL && !(IncompatFeatures & Util::TStoreFormat::RetentionFeature)) {
+              /* A version 3 store that went there for another feature (#963) before it kept history. */
+              EnableIncompatFeature(Util::TStoreFormat::RetentionFeature);
             } else if (persist_retention && FormatVersion == 0UL) {
               syslog(LOG_WARNING, "store format version 0 has no retention records: the retention window will not survive a restart (#745); start with --durable_acks to upgrade");
             }
@@ -481,10 +487,48 @@ namespace Orly {
                 }, options, yield_cb);
           }
 
-          /* The newest store format this binary opens: 1 adds the WAL (#755), 2 the retention records (#745). */
-          static constexpr uint64_t MaxFormatVersion = 2UL;
+          /* The newest store format this binary opens: 1 adds the WAL (#755), 2 the retention records (#745), 3 the
+             IncompatFeatures word (#963; see Util::TStoreFormat). */
+          static constexpr uint64_t MaxFormatVersion = Util::TStoreFormat::MaxVersion;
 
-          uint64_t GetFormatVersion() const { return FormatVersion; }
+          uint64_t GetFormatVersion() const {
+            std::lock_guard<std::mutex> lock(FormatMutex);
+            return FormatVersion;
+          }
+
+          /* The features the store has used (Util::TStoreFormat), whatever its version. */
+          uint64_t GetIncompatFeatures() const {
+            std::lock_guard<std::mutex> lock(FormatMutex);
+            return Util::TStoreFormat::GetFeatures(FormatVersion, IncompatFeatures);
+          }
+
+          /* Whether the store keeps the retention records (#745): version 2, or version 3 with the bit. */
+          bool IsRetentionPersisted() const {
+            return (GetIncompatFeatures() & Util::TStoreFormat::RetentionFeature) != 0UL;
+          }
+
+          /* Mark the store as having used `feature`, before it first writes anything that needs it, so no binary that
+             doesn't understand it opens the store again (#963).  Takes the store to version 3 on every device and
+             syncs each superblock before it returns.  Does nothing if the store has the feature already.  A store with
+             no WAL never gets here: every such feature lives in the WAL.  Throws if a superblock can't be written, and
+             then the caller must not use the feature. */
+          void EnableIncompatFeature(uint64_t feature) {
+            std::lock_guard<std::mutex> lock(FormatMutex);
+            if (Util::TStoreFormat::GetFeatures(FormatVersion, IncompatFeatures) & feature) {
+              return;
+            }
+            const auto [version, features] = Util::TStoreFormat::WithFeature(FormatVersion, IncompatFeatures, feature);
+            for (auto &entry : DiskUtil->GetOrlyDeviceMap()) {
+              entry.second.FormatVersion = version;
+              entry.second.IncompatFeatures = features;
+              TDeviceUtil::ModifyDevice(entry.first.c_str(), entry.second);
+            }
+            const uint64_t old_version = FormatVersion;
+            FormatVersion = version;
+            IncompatFeatures = features;
+            syslog(LOG_NOTICE, "upgraded store from format version %lu to %lu, features 0x%lx: binaries older than this one will refuse it",
+                   old_version, version, features);
+          }
           uint64_t GetWalStartBlock() const { return WalStartBlock; }
           uint64_t GetWalNumBlocks() const { return WalNumBlocks; }
           uint64_t GetWalCheckpoint0Block() const { return WalCheckpoint0Block; }
@@ -493,7 +537,7 @@ namespace Orly {
           uint64_t GetWalCheckpointBlocks() const { return WalCheckpointBlocks; }
           /* The size a new store gives each checkpoint slot: 1 MiB, in blocks. */
           static constexpr size_t DefaultWalCheckpointBlocks() { return (1024UL * 1024UL) / Util::PhysicalBlockSize; }
-          bool HasWal() const { return FormatVersion >= 1UL && WalNumBlocks > 0; }
+          bool HasWal() const { return GetFormatVersion() >= 1UL && WalNumBlocks > 0; }
           TPersistentDevice *GetPersistentDevice() const {
             if (!DiskUtil->GetPersistentDeviceSet().empty()) {
               return dynamic_cast<TPersistentDevice *>(DiskUtil->GetPersistentDeviceSet().begin()->get());
@@ -573,7 +617,10 @@ namespace Orly {
           std::unique_ptr<TDiskUtil> DiskUtil;
 
           size_t SystemBlockId;
+          /* Covers FormatVersion and IncompatFeatures once the engine is open (EnableIncompatFeature). */
+          mutable std::mutex FormatMutex;
           uint64_t FormatVersion = 0UL;
+          uint64_t IncompatFeatures = 0UL;
           uint64_t WalStartBlock = 0UL;
           uint64_t WalNumBlocks = 0UL;
           uint64_t WalCheckpoint0Block = 0UL;

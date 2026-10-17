@@ -672,6 +672,19 @@ namespace Orly {
          promote to the parent). Holds DataLock across the whole walk (#237). */
       [[nodiscard]] std::shared_ptr<TUpdate> GetLowestUpdate();
 
+      public:
+
+      /* Reconstruct the unpopped update `seq`, the same way; null if the repo doesn't hold it.  How
+         a paused repo's updates are copied forward in the WAL (#963). */
+      [[nodiscard]] std::shared_ptr<TUpdate> GetUpdate(TSequenceNumber seq);
+
+      private:
+
+      /* Requires DataLock. */
+      [[nodiscard]] std::shared_ptr<TUpdate> GetUpdateLocked(TSequenceNumber seq);
+
+      protected:
+
       /* Flip the repo's status (Normal / Paused / Failed) and join or Part the
          parent's Tetris accordingly. */
       std::optional<TSequenceNumber> ChangeStatus(TStatus, TSequenceNumber &next_update) noexcept;

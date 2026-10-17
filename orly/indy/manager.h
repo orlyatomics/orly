@@ -563,9 +563,13 @@ namespace Orly {
         std::function<void (uint64_t token)> Release;
       };
 
+      /* `skip_repos` (recovery, #963): mutations of these repos are read past and not applied, as
+         a copy of the repo later in the WAL rebuilds it (TWalRetention::PlanReplay).  Their pushes
+         still reach `on_push`. */
       size_t ApplyCoreVectorTransactions(const std::vector<Atom::TCore> &core_vec, Atom::TCore::TArena *arena,
                                          const TPushCallback &on_push = TPushCallback(),
-                                         const THeadHold *head_hold = nullptr);
+                                         const THeadHold *head_hold = nullptr,
+                                         const std::unordered_set<Base::TUuid> *skip_repos = nullptr);
 
       /* The 'on_push' a slave passes when it applies what the master sends, so a slave keeps the
          same exactly-once entries as its master and has them when it is promoted (#862). Set it
@@ -586,6 +590,15 @@ namespace Orly {
          ClearReplaySeeds forgets the repos replay never pushed to. */
       void SeedNumberingFromReplay(const Base::TUuid &repo_id);
       void ClearReplaySeeds();
+
+      /* WAL recovery reached a copy of a paused repo (#963): the copy's first update, `start`, is
+         where its numbering resumes, whatever replay pushed into it before.  Consumes the repo's
+         seed, if any.  False if the repo isn't live. */
+      bool ResetReplayNumbering(const Base::TUuid &repo_id, TSequenceNumber start);
+
+      /* After a copy's updates are replayed (#963): the repo's next sequence number is at least
+         `next`, as it was when the copy was taken. */
+      void AdvanceReplayNumbering(const Base::TUuid &repo_id, TSequenceNumber next);
 
       void OnSlaveJoin(const Base::TFd &fd);
 
