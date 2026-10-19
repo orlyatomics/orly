@@ -65,7 +65,8 @@ start_orlyi() {
            > "$WORK/orlyi.log" 2>&1 &
   ORLYI_PID=$!
   for _ in $(seq 1 60); do
-    if [ -n "$(bound $WS_PORT)" ] && [ -n "$(bound $SLAVE_PORT)" ]; then return; fi
+    if [ -n "$(bound $PORT)" ] && [ -n "$(bound $WS_PORT)" ] && [ -n "$(bound $REPORTING_PORT)" ] &&
+       [ -n "$(bound $SLAVE_PORT)" ]; then return; fi
     sleep 1
   done
   fail "orlyi failed to open its listeners"
@@ -82,8 +83,18 @@ expect_bound() {  # port, expected address, listener name
   got="$(bound "$1")"
   echo "  $3 listener: $got"
   [ "$got" = "$2:$1" ] || fail "$3 listener bound to '$got', expected $2:$1"
-  [ -z "$CHECK_INFO_LOG" ] || grep -q "$3 listener bound to $2:$1" "$WORK/orlyi.log" \
+  [ -z "$CHECK_INFO_LOG" ] || logged "$3 listener bound to $2:$1" \
     || fail "the log does not say '$3 listener bound to $2:$1'"
+}
+
+# orlyi logs a listener's address just after listen(), so ss can see the
+# socket a moment before the line reaches the log: give it up to 5 seconds.
+logged() {
+  for _ in $(seq 1 50); do
+    grep -q "$1" "$WORK/orlyi.log" && return
+    sleep 0.1
+  done
+  return 1
 }
 
 echo "[1/2] defaults: client/ws/reporting on 127.0.0.1, replication on 0.0.0.0, compile refused"
