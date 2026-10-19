@@ -691,6 +691,11 @@ void TWal::SetAutoSealOnQuietForTest(bool on) {
   LeaderCv.notify_all();
 }
 
+void TWal::SetBeforeSyncForTest(std::function<void ()> hook) {
+  std::lock_guard<std::mutex> lock(Mutex);
+  BeforeSyncForTest = std::move(hook);
+}
+
 void TWal::LeaderMain() {
   std::unique_lock<std::mutex> lock(Mutex);
   while (!Stopping || !PendingRecords.empty() || (HighestSyncedLsn > HighestSealedLsn && InFlightGroups.empty())) {
@@ -866,6 +871,10 @@ void TWal::LeaderMain() {
       DurableCv.notify_all();
     }
   }
+  /* Every path out of the loop holds Mutex. */
+  LeaderStopped = true;
+  SyncerCv.notify_all();
+  lock.unlock();
   if (DiskUtil::TDiskController::TEvent::LocalEventPool) {
     delete DiskUtil::TDiskController::TEvent::LocalEventPool;
     DiskUtil::TDiskController::TEvent::LocalEventPool = nullptr;
@@ -874,22 +883,29 @@ void TWal::LeaderMain() {
 
 void TWal::SyncerMain() {
   std::unique_lock<std::mutex> lock(Mutex);
-  while (!Stopping || !InFlightGroups.empty()) {
-    while (!Stopping && InFlightGroups.empty() && !Failed) {
+  /* Run until the leader has stopped, not merely been told to: stopping with records queued, it
+     still writes groups, and with every in-flight slot taken it waits for this thread to free one
+     (#963).  Leaving on Stopping with InFlightGroups empty stranded it. */
+  while (!LeaderStopped || !InFlightGroups.empty()) {
+    while (!LeaderStopped && InFlightGroups.empty() && !Failed) {
       SyncerCv.wait(lock);
     }
     if (Failed) {
       break;
     }
-    if (InFlightGroups.empty() && Stopping) {
+    if (InFlightGroups.empty() && LeaderStopped) {
       break;
     }
 
     /* Every group in the list has been written, so one sync covers them all. */
     const size_t num_synced = InFlightGroups.size();
 
+    const std::function<void ()> before_sync = BeforeSyncForTest;
     lock.unlock();
 
+    if (before_sync) {
+      before_sync();
+    }
     bool sync_threw = false;
     if (!Config.NoSync) {
       try {

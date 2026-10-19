@@ -1007,15 +1007,59 @@ FIXTURE(StopWithRecordsQueuedAndSlotsFull) {
     config.MaxInFlightGroups = 1UL;
     const std::string data(1000UL, 'r');
     auto wal = std::make_unique<TWal>(&device, config);
-    for (size_t i = 0UL; i < 60UL; ++i) {
+    /* Twenty, so they fit the ring even one to a group. */
+    for (size_t i = 0UL; i < 20UL; ++i) {
       wal->Append(TWalRecordType::Txn, data.data(), data.size());
     }
     StopWithin([&wal] { wal.reset(); });
     const auto scan_res = TWal::Scan(&device, config);
-    if (!EXPECT_EQ(scan_res.Records.size(), 60UL)) {
+    if (!EXPECT_EQ(scan_res.Records.size(), 20UL)) {
       break;
     }
   }
+}
+
+/* The same, made certain: the WAL is told to stop while it syncs the one group its one slot holds,
+   with more records queued behind it than one group holds.  The syncer used to leave as soon as that sync emptied the
+   slot, since it was stopping and nothing was in flight; the leader then wrote the next group into
+   the slot and waited for good for a syncer that had gone. */
+FIXTURE(StopWhileTheOnlySlotSyncs) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+  config.MaxInFlightGroups = 1UL;
+  std::atomic<bool> syncing(false), stop_called(false), first(true);
+  auto wal = std::make_unique<TWal>(&device, config);
+  wal->SetBeforeSyncForTest([&] {
+    if (!first.exchange(false)) {
+      return;
+    }
+    syncing.store(true);
+    while (!stop_called.load()) {
+      std::this_thread::yield();
+    }
+    /* Long enough for Stop() to have set Stopping. */
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  });
+  /* Ten thousand bytes each: the nine queued fill two groups, so the leader must wait for the slot. */
+  const std::string data(10000UL, 's');
+  wal->Append(TWalRecordType::Txn, data.data(), data.size());
+  while (!syncing.load()) {
+    std::this_thread::yield();
+  }
+  /* The slot is taken and its sync held, so these queue. */
+  for (size_t i = 1UL; i < 10UL; ++i) {
+    wal->Append(TWalRecordType::Txn, data.data(), data.size());
+  }
+  stop_called.store(true);
+  StopWithin([&wal] { wal.reset(); });
+  const auto scan_res = TWal::Scan(&device, config);
+  EXPECT_EQ(scan_res.Records.size(), 10UL);
 }
 
 /* With auto-seal off (a test's), a WAL stopped with its newest group synced but not sealed seals it

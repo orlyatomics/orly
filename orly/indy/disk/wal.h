@@ -484,6 +484,10 @@ namespace Orly {
            until another follows it. */
         void SetAutoSealOnQuietForTest(bool on);
 
+        /* Call `hook` in the syncer, without Mutex, before each device sync from now on.  Set it
+           before the first Append. */
+        void SetBeforeSyncForTest(std::function<void ()> hook);
+
         /* Copy-forward unpromoted records near the head. Returns assigned new LSNs. */
         std::vector<uint64_t> CopyForward(const std::vector<std::pair<TWalRecordType, std::vector<char>>> &records);
 
@@ -618,6 +622,14 @@ namespace Orly {
 
         bool Stopping;
         bool Failed;
+
+        /* The leader has stopped: no group joins InFlightGroups from now on, so the syncer may stop
+           once it is empty.  Stopping alone is not enough, since the leader may still have records
+           to write.  Covered by Mutex. */
+        bool LeaderStopped = false;
+
+        /* SetBeforeSyncForTest's hook. */
+        std::function<void ()> BeforeSyncForTest;
 
         /* The most payload the leader puts in one group (a single bigger record goes alone), and the
            group that payload makes. */
