@@ -413,7 +413,7 @@ TWalRetention::TRoomPlan TWalRetention::PlanRoom(const vector<TPlannedPush> &pus
     }
     if (added) {
       const size_t held = GetPausedFootprintLocked();
-      const size_t cap = PausedCapBytesForTest.value_or(wal->GetCapacityBytes() / 2UL);
+      const size_t cap = GetPausedCapLocked(wal);
       if (held + added > cap) {
         static atomic<size_t> refusals(0UL);
         if (ShouldLog(refusals)) {
@@ -431,7 +431,30 @@ TWalRetention::TRoomPlan TWalRetention::PlanRoom(const vector<TPlannedPush> &pus
 size_t TWalRetention::GetPausedCapBytes() {
   Disk::TWal *wal = Manager->GetWal();
   lock_guard<mutex> lock(Mutex);
-  return PausedCapBytesForTest.value_or(wal ? wal->GetCapacityBytes() / 2UL : 0UL);
+  return GetPausedCapLocked(wal);
+}
+
+uint64_t TWalRetention::GetUnpausedFloorLocked() const {
+  uint64_t floor = UINT64_MAX;
+  for (const auto &[id, repo] : Repos) {
+    if (!Paused.contains(id)) {
+      for (const auto &pin : repo.Pins) {
+        floor = min(floor, pin.second.Lsn);
+      }
+    }
+  }
+  return floor;
+}
+
+size_t TWalRetention::GetPausedCapLocked(Disk::TWal *wal) const {
+  if (PausedCapBytesForTest) {
+    return *PausedCapBytesForTest;
+  }
+  if (!wal) {
+    return 0UL;
+  }
+  const uint64_t floor = GetUnpausedFloorLocked();
+  return PausedCapBytes(wal->GetCapacityBytes(), wal->GetHeadroomBytes(), floor == UINT64_MAX ? 0UL : wal->GetRingBytesBehind(floor));
 }
 
 size_t TWalRetention::GetPausedFootprintBytes() {
@@ -755,14 +778,7 @@ TWalRetention::TPressure TWalRetention::GetPressure(Disk::TWal *wal) {
   SeenRingFullRefusals = refusals;
   /* No copy moves the pins of a repo that isn't paused; Pov records, paused repos and pause
      records below them all can be. */
-  uint64_t floor = UINT64_MAX;
-  for (const auto &[id, repo] : Repos) {
-    if (!Paused.contains(id)) {
-      for (const auto &pin : repo.Pins) {
-        floor = min(floor, pin.second.Lsn);
-      }
-    }
-  }
+  const uint64_t floor = GetUnpausedFloorLocked();
   const uint64_t head = ComputeHeadLocked(wal);
   if (head >= floor) {
     return {};
@@ -1166,19 +1182,25 @@ void TWalRetention::CopyPausedReposForward(Disk::TWal *wal, const TPressure &pre
     return;
   }
   if (!allowed) {
-    /* Before the first copy: a binary that would skip it must refuse the store instead. */
-    if (gate) {
-      try {
-        gate();
-      } catch (const exception &ex) {
-        static atomic<size_t> failures(0UL);
-        if (ShouldLog(failures)) {
-          syslog(LOG_ERR, "TWalRetention: could not mark the store as holding paused repos' copies, so none is copied: %s (#963)", ex.what());
-        }
-        return;
+    /* Before the first copy: a binary that would skip it must refuse the store instead.  With no
+       gate to mark the store, nothing is copied (SetIncompatGate). */
+    if (!gate) {
+      static atomic<bool> logged(false);
+      if (!logged.exchange(true)) {
+        syslog(LOG_ERR, "TWalRetention: nothing marks the store as holding paused repos' copies, so none is copied (#963)");
       }
-      syslog(LOG_NOTICE, "TWalRetention: the store now holds copies of paused repos; a binary from before #963 will refuse it");
+      return;
     }
+    try {
+      gate();
+    } catch (const exception &ex) {
+      static atomic<size_t> failures(0UL);
+      if (ShouldLog(failures)) {
+        syslog(LOG_ERR, "TWalRetention: could not mark the store as holding paused repos' copies, so none is copied: %s (#963)", ex.what());
+      }
+      return;
+    }
+    syslog(LOG_NOTICE, "TWalRetention: the store now holds copies of paused repos; a binary from before #963 will refuse it");
     lock_guard<mutex> lock(Mutex);
     RepoCopyAllowed = true;
   }

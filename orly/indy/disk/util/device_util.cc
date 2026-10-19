@@ -92,8 +92,12 @@ void TDeviceUtil::ModifyDevice(const char *path, TOrlyDevice &new_device_info) {
     buf.get()[WalCheckpointBlocksPos] = new_device_info.WalCheckpointBlocks;
     buf.get()[IncompatFeaturesPos] = new_device_info.IncompatFeatures;
     buf.get()[NumDataElem] = Base::Murmur(buf.get(), NumDataElem, 0UL);
-    IfLt0(pwrite(fd, buf.get(), BlockSize, 0UL));
-    fsync(fd);
+    /* The block is the store's format (EnableIncompatFeature among its writers), so a write
+       that didn't reach the device must throw: the caller then acts as if it were unchanged. */
+    if (IfLt0(pwrite(fd, buf.get(), BlockSize, 0UL)) != static_cast<ssize_t>(BlockSize)) {
+      throw std::runtime_error(std::string("short write of the device block of ") + path);
+    }
+    IfLt0(fsync(fd));
   } catch (...) {
     throw;
   }

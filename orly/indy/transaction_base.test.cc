@@ -26,6 +26,7 @@
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <set>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -1830,7 +1831,8 @@ FIXTURE(Issue963PausedRoomCap) {
     auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
     manager->SetWal(&wal);
     TWalRetention *retention = manager->GetWalRetention();
-    EXPECT_EQ(retention->GetPausedCapBytes(), Issue963RingBytes / 2UL);
+    /* Nothing pinned yet: the cap is what the ring has once headroom and margin are kept, halved. */
+    EXPECT_EQ(retention->GetPausedCapBytes(), 13UL * Issue963RingBytes / 32UL);
     Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
     /* extra */ {
       TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
@@ -1891,6 +1893,317 @@ FIXTURE(Issue963PausedRoomCap) {
   }, 1UL /* a runner for the Tetris manager */);
 }
 
+/* The paused repos' cap (#963 review) on the ring that wedged in the M1 harness's second run, 256
+   MiB.  On its q2 reopen 151772 KiB was usable (the ring less the head-to-tail span), 119796 KiB
+   owed and 32768 KiB kept as headroom, so every writer was refused, down to 67-byte records.
+   Paused repos at the cap owe at most 104 MiB, which with the headroom is well short of that room
+   even with nothing live; and whatever is live, the paused repos held twice, the headroom and the
+   live span leave a sixteenth of the ring free. */
+FIXTURE(Issue963PausedCapFormula) {
+  constexpr size_t KiB = 1024UL, MiB = 1024UL * KiB;
+  constexpr size_t ring = 256UL * MiB, headroom = ring / 8UL;
+  constexpr size_t run2_usable = 151772UL * KiB, run2_owed = 119796UL * KiB;
+  EXPECT_EQ(headroom, 32768UL * KiB);
+  EXPECT_GE(run2_owed + headroom, run2_usable);
+  EXPECT_EQ(TWalRetention::PausedCapBytes(ring, headroom, 0UL), 104UL * MiB);
+  EXPECT_LT(TWalRetention::PausedCapBytes(ring, headroom, 0UL) + headroom + ring / 32UL, run2_usable);
+  size_t prev = TWalRetention::PausedCapBytes(ring, headroom, 0UL);
+  for (size_t live = 0UL; live <= ring; live += ring / 64UL) {
+    const size_t cap = TWalRetention::PausedCapBytes(ring, headroom, live);
+    EXPECT_LE(cap, prev);
+    if (cap) {
+      EXPECT_LE(2UL * cap + headroom + live + ring / 16UL, ring);
+    }
+    prev = cap;
+  }
+  /* Live data of half what the ring has left: none for paused repos. */
+  EXPECT_EQ(TWalRetention::PausedCapBytes(ring, headroom, 13UL * ring / 32UL), 0UL);
+  EXPECT_EQ(TWalRetention::PausedCapBytes(ring, headroom, ring), 0UL);
+  /* A ring too small for its headroom and margin. */
+  EXPECT_EQ(TWalRetention::PausedCapBytes(Disk::WalAlignment, Disk::WalAlignment, 0UL), 0UL);
+}
+
+/* The cap shrinks as data the copies can't move grows (an unpaused repo's unpromoted update, and
+   everything written after it), down to nothing; then a write into a paused repo is refused, and
+   only that: the unpaused repos, the root and plain records still go in. */
+FIXTURE(Issue963PausedCapShrinksWithLiveData) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    Disk::Sim::TFaultPlan plan;
+    Disk::Sim::TFaultDevice device(&plan, Issue963DeviceSectors);
+    Disk::TWal wal(&device, MakeIssue963WalConfig());
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    manager->SetWal(&wal);
+    TWalRetention *retention = manager->GetWalRetention();
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      auto parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+      auto paused = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), parent, true, true);
+      auto other = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), parent, true, true);
+      SetPaused(manager.get(), paused, true);
+      const size_t headroom = wal.GetHeadroomBytes();
+      /* Only paused pins (the pause's): nothing live. */
+      const size_t cap0 = retention->GetPausedCapBytes();
+      EXPECT_EQ(cap0, TWalRetention::PausedCapBytes(Issue963RingBytes, headroom, 0UL));
+      /* The idle Tetris never promotes it, so `other`'s update stays pinned. */
+      PushOne(manager.get(), other, idx_id, 1);
+      const uint64_t live_lsn = wal.GetLastAppendedLsn();
+      EXPECT_TRUE(wal.WaitForDurable(live_lsn, 5000ms));
+      const auto expected = [&] { return TWalRetention::PausedCapBytes(Issue963RingBytes, headroom, wal.GetRingBytesBehind(live_lsn)); };
+      size_t prev = retention->GetPausedCapBytes();
+      EXPECT_EQ(prev, expected());
+      EXPECT_LT(prev, cap0);
+      const std::string payload(2000UL, 'X');
+      for (size_t round = 0UL; prev; ++round) {
+        if (!EXPECT_LT(round, 1000UL)) {
+          break;
+        }
+        uint64_t last = 0UL;
+        for (size_t i = 0UL; i < 8UL; ++i) {
+          last = wal.Append(Disk::TWalRecordType::Txn, payload.data(), payload.size());
+        }
+        EXPECT_TRUE(wal.WaitForDurable(last, 5000ms));
+        const size_t cap = retention->GetPausedCapBytes();
+        EXPECT_EQ(cap, expected());
+        EXPECT_LT(cap, prev);
+        prev = cap;
+      }
+      EXPECT_EQ(retention->GetPausedCapBytes(), 0UL);
+      /* A write into the paused repo is refused, with nothing appended. */
+      const uint64_t before = wal.GetLastAppendedLsn();
+      /* extra */ {
+        auto transaction = manager->NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ { TIndexKey(idx_id, TKey(make_tuple(2L), &arena, state_alloc)), TKey(20L, &arena, state_alloc)} }, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+        transaction->Push(paused, update);
+        const auto prepare = [&transaction] { transaction->Prepare(); };
+        EXPECT_THROW_FUNC(Disk::TWalPausedFull, prepare);
+      }
+      EXPECT_EQ(wal.GetLastAppendedLsn(), before);
+      EXPECT_EQ(retention->GetPausedFootprintBytes(), 0UL);
+      /* No one else is. */
+      PushOne(manager.get(), other, idx_id, 2);
+      PushOne(manager.get(), parent, idx_id, 100);
+      const std::string small(67UL, 'Y');
+      EXPECT_TRUE(wal.WaitForDurable(wal.Append(Disk::TWalRecordType::Txn, small.data(), small.size()), 5000ms));
+      EXPECT_EQ(wal.GetLastAppendedLsn(), before + 3UL);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* A paused repo at its cap and the rest of the ring filled until it refuses a record, as in the
+   M1 harness's second run: the checkpoint can still copy the paused repo forward, so the head moves
+   and every writer gets in again, down to a 67-byte record.  Returns whether it did.  (This shape
+   recovers at the old half-ring cap too, through the pressure copies; Issue963PausedCapFormula
+   checks the cap against the numbers run 2 wedged at.) */
+static bool Issue963RecoversFromAFullRing(size_t value_bytes) {
+  bool recovered = false;
+  Fiber::TFiberTestRunner runner([&](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    Disk::Sim::TFaultPlan plan;
+    Disk::Sim::TFaultDevice device(&plan, Issue963DeviceSectors);
+    const auto config = MakeIssue963WalConfig();
+    Disk::TWal wal(&device, config);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    manager->SetWal(&wal);
+    TWalRetention *retention = manager->GetWalRetention();
+    retention->SetIncompatGate([] {});
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      auto parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+      const TUuid child_id(TUuid::Twister);
+      auto child = manager->GetRepo(child_id, TTtl::max(), parent, true, true);
+      SetPaused(manager.get(), child, true);
+      /* Into the paused repo until the cap refuses it. */
+      int64_t pushed = 0;
+      for (bool refused = false; !refused;) {
+        if (!EXPECT_LT(pushed, 1000)) {
+          break;
+        }
+        auto transaction = manager->NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ { TIndexKey(idx_id, TKey(make_tuple(pushed + 1L), &arena, state_alloc)), TKey(std::string(value_bytes, 'v'), &arena, state_alloc)} }, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+        transaction->Push(child, update);
+        try {
+          transaction->Prepare();
+          transaction->CommitAction();
+          ++pushed;
+        } catch (const Disk::TWalPausedFull &) {
+          refused = true;
+        }
+      }
+      const uint64_t originals = wal.GetLastAppendedLsn();
+      EXPECT_GT(pushed, 1);
+      EXPECT_LE(retention->GetPausedFootprintBytes(), retention->GetPausedCapBytes());
+      /* Fill the rest of the ring until it refuses a record. */
+      const std::string payload(2000UL, 'X');
+      const size_t refusals = wal.GetRingFullRefusals();
+      for (size_t round = 0UL; wal.GetRingFullRefusals() == refusals; ++round) {
+        if (!EXPECT_LT(round, 10000UL)) {
+          break;
+        }
+        try {
+          EXPECT_TRUE(wal.WaitForDurable(wal.Append(Disk::TWalRecordType::Txn, payload.data(), payload.size()), 5000ms));
+        } catch (const Disk::TWalRingFull &) {
+        }
+      }
+      EXPECT_LE(retention->ComputeHead(), originals);
+      /* The checkpoint copies the paused repo forward under the pressure, and the head passes its
+         originals. */
+      retention->Checkpoint(0UL, true);
+      if (retention->ComputeHead() > originals) {
+        const auto replay = ScanForReplay(&device, config);
+        EXPECT_EQ(replay.Plan.Skip.count(child_id), 1UL);
+        /* Every writer gets in again. */
+        const std::string small(67UL, 'Y');
+        EXPECT_TRUE(wal.WaitForDurable(wal.Append(Disk::TWalRecordType::Txn, small.data(), small.size()), 5000ms));
+        EXPECT_TRUE(wal.WaitForDurable(wal.Append(Disk::TWalRecordType::Txn, payload.data(), payload.size()), 5000ms));
+        PushOne(manager.get(), parent, idx_id, 100);
+        auto other = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), parent, true, true);
+        PushOne(manager.get(), other, idx_id, 10);
+        recovered = true;
+      }
+      EXPECT_EQ(child->GetStatus(), Paused);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+  return recovered;
+}
+
+FIXTURE(Issue963PausedReposAtTheCapLeaveRoomForEveryWriter) {
+  /* Small updates, and ones whose records take a good part of their room. */
+  for (size_t value_bytes : {8UL, 12000UL}) {
+    EXPECT_TRUE(Issue963RecoversFromAFullRing(value_bytes));
+  }
+}
+
+/* Power lost at each sync of a copy too big for one part (#963 review), a real paused repo's: the
+   image left behind, scanned and planned as recovery does (ScanForReplay), either has no complete
+   copy, and every original still there, or a complete one with all the updates.  A set cut short
+   between its parts counts for nothing. */
+FIXTURE(Issue963PowerLossBetweenCopyParts) {
+  constexpr size_t ring_bytes = 16UL * 1024UL * 1024UL;
+  constexpr size_t sectors = (Disk::Util::PhysicalBlockSize + ring_bytes + 2UL * Disk::WalAlignment) / Disk::Util::PhysicalSectorSize;
+  constexpr int64_t updates = 40;
+  auto config = MakeIssue963WalConfig();
+  config.CapacityBytes = ring_bytes;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + Disk::WalAlignment;
+  /* A sync for each group, so a loss can fall between two parts' groups. */
+  config.MaxInFlightGroups = 1UL;
+  size_t cut_between = 0UL, complete = 0UL;
+  for (size_t n = 1UL; n <= 8UL; ++n) {
+    Disk::Sim::TFaultPlan plan;
+    Disk::Sim::TFaultDevice device(&plan, sectors);
+    Fiber::TFiberTestRunner runner([&](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+      TSuprena arena;
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+      TScheduler scheduler;
+      scheduler.SetPolicy(scheduler_policy);
+      Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+      Disk::TWal wal(&device, config);
+      auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+      manager->SetWal(&wal);
+      TWalRetention *retention = manager->GetWalRetention();
+      retention->SetIncompatGate([] {});
+      Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+      /* extra */ {
+        TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
+        manager->SetTetrisManager(&tetris);
+        const TUuid idx_id(TUuid::Twister);
+        auto parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+        const TUuid child_id(TUuid::Twister);
+        auto child = manager->GetRepo(child_id, TTtl::max(), parent, true, true);
+        SetPaused(manager.get(), child, true);
+        const uint64_t pause_lsn = wal.GetLastAppendedLsn();
+        /* About 1.2 MB of updates: more than a part holds. */
+        std::vector<uint64_t> originals;
+        for (int64_t key = 1; key <= updates; ++key) {
+          auto transaction = manager->NewTransaction();
+          auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ { TIndexKey(idx_id, TKey(make_tuple(key), &arena, state_alloc)), TKey(std::string(30000UL, static_cast<char>('a' + key % 26)), &arena, state_alloc)} }, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+          transaction->Push(child, update);
+          transaction->Prepare();
+          transaction->CommitAction();
+          originals.push_back(wal.GetLastAppendedLsn());
+        }
+        AdvancePast(wal, pause_lsn);
+        plan.PowerLossAtSync(n, 0.0, n, nullptr);
+        plan.Arm();
+        retention->Checkpoint(0UL, true);
+        plan.Disarm();
+        EXPECT_GT(retention->ComputeHead(), originals.back());
+        const auto image = device.GetDurableImage();
+        Disk::Sim::TFaultPlan after_plan;
+        Disk::Sim::TFaultDevice after(&after_plan, sectors, &image);
+        const auto replay = ScanForReplay(&after, config);
+        size_t parts_left = 0UL;
+        for (const auto &rec : replay.Scan.Records) {
+          if (rec.Lsn >= replay.StartLsn && rec.Type == Disk::TWalRecordType::RepoCopy) {
+            ++parts_left;
+          }
+        }
+        if (replay.Plan.Copies.empty()) {
+          /* No complete copy: the originals rebuild the repo, so they are all still there. */
+          EXPECT_TRUE(replay.Plan.Skip.empty());
+          std::set<uint64_t> scanned;
+          for (const auto &rec : replay.Scan.Records) {
+            if (rec.Lsn >= replay.StartLsn) {
+              scanned.insert(rec.Lsn);
+            }
+          }
+          EXPECT_LE(replay.StartLsn, pause_lsn);
+          for (uint64_t lsn : originals) {
+            EXPECT_EQ(scanned.count(lsn), 1UL);
+          }
+          if (parts_left) {
+            ++cut_between;
+          }
+        } else if (EXPECT_EQ(replay.Plan.Copies.size(), 1UL)) {
+          /* Complete: every update in it, in more than one part. */
+          const auto &parts = replay.Plan.Copies.begin()->second;
+          EXPECT_GE(parts.size(), 2UL);
+          size_t wires = 0UL;
+          for (const auto &part : parts) {
+            EXPECT_TRUE(part.RepoId == child_id);
+            EXPECT_EQ(part.Start, 1UL);
+            EXPECT_EQ(part.Limit, static_cast<TSequenceNumber>(updates));
+            wires += part.Wires.size();
+          }
+          EXPECT_EQ(wires, static_cast<size_t>(updates) + 1UL);
+          EXPECT_EQ(replay.Plan.Skip.count(child_id), 1UL);
+          ++complete;
+        }
+      }
+      std::lock_guard<std::mutex> lock(mut);
+      fin = true;
+      cond.notify_one();
+    }, 1UL /* a runner for the Tetris manager */);
+  }
+  /* Some loss fell between the parts, and some after the set was whole. */
+  EXPECT_GT(cut_between, 0UL);
+  EXPECT_GT(complete, 0UL);
+}
+
 /* A paused repo that goes (thrown away unpromoted) takes its pins with it, and the room they were owed, for
    their promotions and their copy, is repaid (#962 review). */
 FIXTURE(Issue963DropDeadPausedRepoRepaysItsRoom) {
@@ -1905,6 +2218,7 @@ FIXTURE(Issue963DropDeadPausedRepoRepaysItsRoom) {
     auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
     manager->SetWal(&wal);
     TWalRetention *retention = manager->GetWalRetention();
+    retention->SetIncompatGate([] {});
     Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
     /* extra */ {
       TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
@@ -1955,6 +2269,7 @@ FIXTURE(Issue963CopiesWithTheRingFull) {
     auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
     manager->SetWal(&wal);
     TWalRetention *retention = manager->GetWalRetention();
+    retention->SetIncompatGate([] {});
     Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
     /* Take every byte of the ring that isn't kept for promotions and copies. */
     const auto fill = [&wal] {
@@ -2140,6 +2455,7 @@ FIXTURE(Issue963CopyNotDurableInTime) {
     auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
     manager->SetWal(&wal);
     TWalRetention *retention = manager->GetWalRetention();
+    retention->SetIncompatGate([] {});
     Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
     /* extra */ {
       TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);

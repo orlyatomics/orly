@@ -194,3 +194,16 @@ FIXTURE(StoreFormatDowngradeRefused) {
     EXPECT_GT(TStoreFormat::WithFeature(version, 0UL, TStoreFormat::WalRepoCopyFeature).first, OldMaxVersion);
   }
 }
+
+/* #963 review: a write of the block that fails throws, so EnableIncompatFeature's caller doesn't
+   take the store as marked.  /dev/full refuses every write (ENOSPC); fsync failing isn't reachable
+   from a test, but takes the same path. */
+FIXTURE(ModifyDeviceThrowsOnAFailedWrite) {
+  if (access("/dev/full", W_OK) != 0) {
+    return;
+  }
+  TDeviceUtil::TOrlyDevice dev_write;
+  dev_write.FormatVersion = 3UL;
+  const auto modify = [&dev_write] { TDeviceUtil::ModifyDevice("/dev/full", dev_write); };
+  EXPECT_THROW_FUNC(std::system_error, modify);
+}

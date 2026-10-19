@@ -156,14 +156,41 @@ namespace Orly {
                          const std::vector<TStatusChange> &statuses, size_t wire_size, bool enforce_cap);
 
       /* How much of the ring the paused safe repos' unpromoted updates may hold for themselves: for
-         each, its promotions and its copy (#963).  Half the ring, unless a test set it. */
+         each, its promotions and its copy (#963).  PausedCapBytes of the ring as it is now, unless a
+         test set it. */
       size_t GetPausedCapBytes();
+
+      /* The paused repos' cap (#963) on a ring of `capacity` keeping `headroom` for promotions, with
+         `live` bytes behind its tail that no copy can move: (capacity - headroom - margin) / 2 - live,
+         and 0 if that is negative, with a margin of a sixteenth of the ring.
+
+         The ring has to keep room for any writer's record, so what it holds must stay short of
+         capacity.  A paused update holds its footprint (the room owed for its promotions and its
+         copy, a group each, so two or more) and its records: the original and, while a copy lands, the copy, each
+         no bigger than a group.  So paused repos at the cap hold at most twice it.  Besides them
+         the ring holds the headroom and `live`, the span from the oldest pin of a repo that isn't
+         paused to the tail, which the head can't pass however much is copied.
+
+         The margin is a sixteenth because that is what the pressure copies (GetPressure) need: they
+         run only when copying gives back a sixteenth of the ring more than it writes, so at the
+         cap there is always that much for them to land in and win back.  A fixed half (the first
+         version) let the paused repos plus the rest fill the ring, and every writer was refused.
+
+         All of `live` comes off, not half of it: the span also holds paused records written since
+         the oldest unpaused pin, counted already in the two footprints, and the unpaused pins'
+         promotion room, which the span doesn't show; taking it whole is the safe side of both. */
+      static constexpr size_t PausedCapBytes(size_t capacity, size_t headroom, size_t live) {
+        const size_t margin = capacity / 16UL;
+        const size_t usable = capacity > headroom + margin ? capacity - headroom - margin : 0UL;
+        return usable / 2UL > live ? usable / 2UL - live : 0UL;
+      }
       size_t GetPausedFootprintBytes();
       void SetPausedCapBytesForTest(size_t bytes);
 
       /* Called once, with no lock held, before the first RepoCopy record is written (#963): it gives
-         the store the WalRepoCopy feature.  If it throws, nothing is copied.  None: copies are
-         allowed (tests). */
+         the store the WalRepoCopy feature.  If it throws, nothing is copied.  Until one is set
+         nothing is copied either: a store that isn't marked mustn't hold copies, so a server that
+         forgot to set it, or a test that didn't, gets no copies rather than unmarked ones. */
       void SetIncompatGate(std::function<void ()> gate);
 
       /* Recovery (#963): which copies of paused repos the replay (Step 7 of server.cc's recovery)
@@ -306,6 +333,13 @@ namespace Orly {
 
       /* Requires Mutex.  The room paused repos hold for themselves (GetPausedFootprintBytes). */
       size_t GetPausedFootprintLocked() const;
+
+      /* Requires Mutex.  The oldest pin of a repo that isn't paused, which no copy moves (the
+         floor), or UINT64_MAX if there is none. */
+      uint64_t GetUnpausedFloorLocked() const;
+
+      /* Requires Mutex.  GetPausedCapBytes. */
+      size_t GetPausedCapLocked(Disk::TWal *wal) const;
 
       /* Requires Mutex.  The copy room a pin is owed. */
       static Disk::TPromotionDebt GetCopyDebt(const TPin &pin) {
