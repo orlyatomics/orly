@@ -673,10 +673,10 @@ namespace Orly {
              backpressure reads it (#626). */
           std::atomic<TStatus> Status;
 
-          private:
-
           inline const std::chrono::steady_clock::time_point &GetTimeOfNextMergeMem() const;
           inline const std::chrono::steady_clock::time_point &GetTimeOfNextMergeDisk() const;
+
+          private:
 
           inline void SetTimeOfNextMergeMem(const std::chrono::steady_clock::time_point &time);
           inline void SetTimeOfNextMergeDisk(const std::chrono::steady_clock::time_point &time);

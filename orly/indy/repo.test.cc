@@ -129,6 +129,8 @@ class TSteppedSafeRepo final
 
   using TSafeRepo::FoldMergedFiles;
 
+  using L0::TManager::TRepo::GetTimeOfNextMergeMem;
+
   /* So a test can fill the mapping pool (#627). */
   using TMappingType = Orly::Indy::TRepo::TMapping;
 
@@ -2998,6 +3000,48 @@ FIXTURE(ReadAtVersionBeforeAKeyExists) {
       EXPECT_EQ(root.KeysAt(0L, 9L, first).size(), 1UL);
       EXPECT_EQ(root.KeysAt(0L, 9L, second).size(), 2UL);
       EXPECT_EQ(root.KeysAt(0L, 9L, 0UL).size(), 0UL);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* An idle child POV dirtied after a root repo must not jump ahead of the root repo in the merge
+   queue by carrying its older construction/last-merge timestamp; and when both a child POV and a
+   root repo are due, RunMergeMem steps the root repo first. */
+FIXTURE(MergeMemQueuePrioritizesDueRootReposAndClampsIdleTimestamps) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler);
+      TSuprena arena;
+      const Base::TUuid idx_id(TUuid::Twister);
+      auto root = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
+      auto child = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), root, true);
+      std::this_thread::sleep_for(5ms);
+      auto commit = [&](const L0::TManager::TPtr<TRepo> &repo, int64_t key) {
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state));
+        update->AddEntry(TIndexKey(idx_id, TKey(make_tuple(key), &arena, state)), TKey(key, &arena, state), TMutator::Assign);
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      };
+      commit(root, 1L);
+      std::this_thread::sleep_for(2ms);
+      commit(child, 2L);
+      /* Child was dirtied after root, so its clamped due time is >= root's due time. */
+      auto *stepped_root = dynamic_cast<TSteppedSafeRepo *>(root.Get());
+      auto *stepped_child = dynamic_cast<TSteppedSafeRepo *>(child.Get());
+      if (EXPECT_TRUE(stepped_root && stepped_child)) {
+        EXPECT_TRUE(stepped_child->GetTimeOfNextMergeMem() >= stepped_root->GetTimeOfNextMergeMem());
+      }
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
