@@ -31,6 +31,7 @@
 #include <orly/code_gen/type.h>
 #include <orly/type/obj.h>
 #include <orly/type/group_ref.h>
+#include <orly/type/has_optional.h>
 #include <orly/type/object_collector.h>
 #include <orly/type/rec_group.h>
 #include <orly/type/self_ref.h>
@@ -603,6 +604,12 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
                 out << "    case " << idx << ": return Rt::Match(V" << elem.first
                     << ", that.V" << elem.first << ");" << Eol;
               }
+            } else if (elem.second.Is<Type::TOpt>() || Type::HasOptional(elem.second)) {
+              /* Variant equality always returns plain bool (TEqCompVisitor),
+                 whereas Rt::EqEq on an optional or optional-bearing payload
+                 returns TOpt<bool>. Compare structurally via Rt::Match (#972). */
+              out << "    case " << idx << ": return Rt::Match(V" << elem.first
+                  << ", that.V" << elem.first << ");" << Eol;
             } else {
               out << "    case " << idx << ": return Rt::EqEq(V" << elem.first
                   << ", that.V" << elem.first << ");" << Eol;
@@ -1644,6 +1651,8 @@ void Orly::CodeGen::GenVariantGroupHeader(const std::string &out_dir, const Type
                 } else {
                   out << "    case " << idx << ": return Rt::Match(V" << elem.first << ", that.V" << elem.first << ");" << Eol;
                 }
+              } else if (elem.second.Is<Type::TOpt>() || Type::HasOptional(elem.second)) {
+                out << "    case " << idx << ": return Rt::Match(V" << elem.first << ", that.V" << elem.first << ");" << Eol;
               } else {
                 out << "    case " << idx << ": return Rt::EqEq(V" << elem.first << ", that.V" << elem.first << ");" << Eol;
               }

@@ -86,4 +86,32 @@ test {
   t14: c3 == c3;
   t15: c1 != c3;
   t16: length_of {c1, c3, c3} == 2;
+
+  /* Variant with an optional-payload arm (#972): EqEq returns plain bool via
+     structural Match over the optional payload (direct, compound, and in a
+     mutually-recursive variant group). */
+  t17: opt_arm_f == opt_arm_t.F(1);
+  t18: opt_arm_f != opt_arm_t.F(2);
+  t19: opt_arm_ek == opt_arm_t.E("hi" as str?);
+  t20: opt_arm_ek != opt_arm_t.E("bye" as str?);
+  t21: opt_arm_ek != opt_arm_eu;
+  t22: opt_arm_eu == opt_arm_t.E(unknown str);
+  t23: opt_arm_f != opt_arm_eu;
+  t24: opt_rec_arm_t.R(<{.a: 1 as int?}>) == opt_rec_arm_t.R(<{.a: 1 as int?}>);
+  t25: opt_rec_arm_t.R(<{.a: unknown int}>) == opt_rec_arm_t.R(<{.a: unknown int}>);
+  t26: opt_rec_arm_t.R(<{.a: 1 as int?}>) != opt_rec_arm_t.R(<{.a: unknown int}>);
+  t27: mut_opt_a.M(unknown str) == mut_opt_a.M(unknown str);
+  t28: mut_opt_a.M("x" as str?) != mut_opt_a.M(unknown str);
+  t29: mut_opt_a.Next(mut_opt_b.Back(mut_opt_a.M("x" as str?)))
+       == mut_opt_a.Next(mut_opt_b.Back(mut_opt_a.M("x" as str?)));
 };
+
+opt_arm_t is <| E(str?) | F(int) |>;
+opt_arm_f  = (opt_arm_t.F(1)) where {};
+opt_arm_ek = (opt_arm_t.E("hi" as str?)) where {};
+opt_arm_eu = (opt_arm_t.E(unknown str)) where {};
+
+opt_rec_arm_t is <| R(<{.a: int?}>) | Z |>;
+
+mut_opt_a is <| M(str?) | Next(mut_opt_b) |>;
+mut_opt_b is <| Back(mut_opt_a) | End(int?) |>;

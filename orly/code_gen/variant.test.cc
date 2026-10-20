@@ -106,6 +106,14 @@ FIXTURE(GenVariantHeader) {
   auto rec = TObj::Get({{"x", TInt::Get()}, {"y", TBool::Get()}});
   auto variant2 = TVariant::Get({{"Point", rec}, {"None", deleted_payload}});
   GenVariantHeader("/tmp/", variant2);
+
+  /* A variant with an optional-payload arm (#972): EqEq must emit Rt::Match
+     for the optional arm so the comparison returns bool rather than TOpt<bool>. */
+  auto variant3 = TVariant::Get({{"E", TOpt::Get(TStr::Get())}, {"F", TInt::Get()}});
+  GenVariantHeader("/tmp/", variant3);
+  const string v3_hdr = Slurp("/tmp/" + variant3.GetMangledName() + ".h");
+  EXPECT_TRUE(v3_hdr.find("case 0: return Rt::Match(VE, that.VE);") != string::npos);
+  EXPECT_TRUE(v3_hdr.find("case 1: return Rt::EqEq(VF, that.VF);") != string::npos);
 }
 
 /* The live-golden check (#123): the emitter's output for variant1 must
