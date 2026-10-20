@@ -591,7 +591,11 @@ class TWsImpl final
       void operator()(const TSetTtlStmt *stmt) const override {
         assert(stmt);
         TUuid durable_id = Translate(stmt->GetIdExpr());
-        chrono::seconds ttl(stmt->GetIntExpr()->GetLexeme().AsInt());
+        const int64_t seconds = stmt->GetIntExpr()->GetLexeme().AsInt();
+        if (seconds < 0) {
+          throw invalid_argument("set ttl: the ttl must not be negative");
+        }
+        chrono::seconds ttl(seconds);
         GetSession()->SetTtl(durable_id, ttl);
       }
 

@@ -136,8 +136,12 @@ class TWsTestServer::TSessionManager
       }
     }
 
-    /* Do-little. */
-    void SetTtl(const TUuid &/*durable_id*/, const chrono::seconds &/*ttl*/) const {}
+    /* Do-little, but with the precondition of the real one (TObj::SetTtl asserts it), so that a negative ttl the
+       handler lets through aborts a debug test as it would the server (#1007). */
+    void SetTtl(const TUuid &/*durable_id*/, const chrono::seconds &ttl) const {
+      assert(ttl.count() >= 0);
+      (void)ttl;
+    }
 
     /* Do-little. */
     void SetUserId(const TUuid &/*user_id*/) const {}

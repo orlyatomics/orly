@@ -149,14 +149,14 @@ TSequenceNumber TRepo::ResolveTime(chrono::system_clock::time_point when) {
      back (the clock's minimum, or any year before about 1733) makes `system_now - when` overflow and
      wrap, which would resolve to the newest version instead of failing.  The window is capped far
      beyond any real one so that this subtraction cannot overflow either. */
-  const auto window = chrono::seconds(min<size_t>(seconds, 4'000'000'000UL));
+  const auto window = RetentionWindow(seconds);
   if (when < system_now - window) {
     throw Server::TTimeUnavailable("that time is older than the retention window", oldest, newest);
   }
   lock_guard<mutex> lock(RetentionLock);
   const auto steady_now = chrono::steady_clock::now();
   /* A sample now, so that a time just before it needn't resolve to one a spacing ago. */
-  SampleNewestLocked(steady_now, newest, chrono::seconds(seconds));
+  SampleNewestLocked(steady_now, newest, window);
   const auto target = steady_now - chrono::duration_cast<chrono::steady_clock::duration>(system_now - when);
   /* The newest sample at or before the time. */
   auto it = upper_bound(NewestSamples.begin(), NewestSamples.end(), target,
@@ -229,7 +229,7 @@ optional<TSequenceNumber> TRepo::GetRetainFrom() {
     /* Sample the newest version now and then (at most about 1024 samples a window), and start the window at the
        newest sample at least `seconds` old: every version newer than it was newest within the window. Without one
        that old (the window is longer than this process has sampled), keep everything. */
-    const auto window = chrono::seconds(seconds);
+    const auto window = RetentionWindow(seconds);
     SampleNewestLocked(now, newest, window);
     while (NewestSamples.size() > 1UL && NewestSamples[1].first <= now - window) {
       NewestSamples.pop_front();
