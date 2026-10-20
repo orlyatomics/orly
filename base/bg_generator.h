@@ -170,7 +170,7 @@ namespace Base {
 
     /* The value returned by BgYield().  This is set to true at construction
        and remains true until FinalizeBg() is called. */
-    mutable bool KeepGoing;
+    mutable bool KeepGoing = true;
 
     /* A pointer to the exception thrown by BgMain(), if any.  This is rethrown
        by HasBgYielded(). */
