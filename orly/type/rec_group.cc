@@ -28,6 +28,7 @@
 #include <base/hash.h>
 #include <orly/type.h>
 #include <orly/type/canon.h>
+#include <orly/type/unroll.h>
 
 using namespace std;
 using namespace Orly;
@@ -349,9 +350,55 @@ bool Orly::Type::TryGetGroupMembers(const TType &member, vector<TType> &members,
   return true;
 }
 
+namespace {
+
+  /* Rewrites every group reference reachable from `t` to its member's
+     inlined form. Used for a type that is not itself a group member but
+     reaches members from outside (e.g. an ordinary variant with a member as
+     an arm). Inlined forms are closed, so they can sit under extra binders. */
+  TType InlineExternal(const TType &t) {
+    if (const TGroupRef *gr = t.TryAs<TGroupRef>()) {
+      return InlinedMemberType(ResolveGroupRef(gr));
+    }
+    if (!HasGroupRef(t)) {
+      return t;
+    }
+    if (const TVariant *v = t.TryAs<TVariant>()) {
+      TVariantElems out;
+      for (const auto &arm : v->GetElems()) {
+        out[arm.first] = InlineExternal(arm.second);
+      }
+      return TVariant::Get(out);
+    }
+    if (const TObj *o = t.TryAs<TObj>()) {
+      TObjElems out;
+      for (const auto &f : o->GetElems()) {
+        out[f.first] = InlineExternal(f.second);
+      }
+      return TObj::Get(out);
+    }
+    if (const TList *l = t.TryAs<TList>()) {
+      return TList::Get(InlineExternal(l->GetElem()));
+    }
+    if (const TSet *s = t.TryAs<TSet>()) {
+      return TSet::Get(InlineExternal(s->GetElem()));
+    }
+    if (const TOpt *o = t.TryAs<TOpt>()) {
+      return TOpt::Get(InlineExternal(o->GetElem()));
+    }
+    if (const TDict *d = t.TryAs<TDict>()) {
+      return TDict::Get(InlineExternal(d->GetKey()), InlineExternal(d->GetVal()));
+    }
+    return t;
+  }
+
+}  // namespace
+
 TType Orly::Type::InlinedMemberType(const TType &member) {
   const auto it = MemberIndex().find(member);
-  assert(it != MemberIndex().end());
+  if (it == MemberIndex().end()) {
+    return InlineExternal(member);
+  }
   /* The group identity is exactly the members' canonical inlined de Bruijn
      forms, in canonical order; this member sits at it->second.second. */
   const TGroupId &gid = it->second.first;

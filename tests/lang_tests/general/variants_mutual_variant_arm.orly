@@ -1,0 +1,53 @@
+/* <orly/lang_tests/general/variants_mutual_variant_arm.orly>
+
+   Issue #973: a member of a mutually recursive variant group used as an arm of
+   an ordinary (non-member) variant. Such a variant reaches the group from
+   outside, so storing it must inline the member's group references rather
+   than treat the variant itself as a group member.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+fa is <| A0 | A1(fb) |>;
+fb is <| B0 | B1(fa) |>;
+w_t is <| Mut(fa) | X(int) |>;
+
+read_w = (*<[n]>::(w_t)) where {
+  n = given::(int);
+};
+
+with {
+  <[700]> <- w_t.X(3);
+  <[701]> <- w_t.Mut(fa.A1(fb.B1(fa.A0())));
+} test {
+  t1: read_w(.n: 700) == w_t.X(3);
+  t2: read_w(.n: 701) == w_t.Mut(fa.A1(fb.B1(fa.A0())));
+  t3: read_w(.n: 701) != w_t.Mut(fa.A0());
+};
+
+tree is <| Leaf(int) | Node(forest) |>;
+forest is <| Empty | Group([tree]) |>;
+v_t is <| Mut(forest) | X(int) |>;
+
+read_v = (*<[n]>::(v_t)) where {
+  n = given::(int);
+};
+
+with {
+  <[710]> <- v_t.Mut(forest.Empty());
+  <[711]> <- v_t.Mut(forest.Group([tree.Leaf(1), tree.Node(forest.Empty())]));
+} test {
+  t4: read_v(.n: 710) == v_t.Mut(forest.Empty());
+  t5: read_v(.n: 711) == v_t.Mut(forest.Group([tree.Leaf(1), tree.Node(forest.Empty())]));
+};
