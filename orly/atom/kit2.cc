@@ -681,7 +681,9 @@ void TCore::InitBlob(TExtensibleArena *arena, const uint8_t *start, const uint8_
   size_t size = limit - start;
   if (size <= MaxDirectSize) {
     TTyconNumeric remaining_size = MaxDirectSize - size;
-    memcpy(DirectBlob, start, size);
+    if (size) {
+      memcpy(DirectBlob, start, size);
+    }
     memset(DirectBlob + size, 0, remaining_size);
     remaining_size += static_cast<TTyconNumeric>(TTycon::MinDirectBlob);
     Tycon = reinterpret_cast<TTycon &>(remaining_size);
@@ -697,7 +699,9 @@ void TCore::InitStr(TExtensibleArena *arena, const char *start, const char *limi
   size_t size = limit - start;
   if (size <= MaxDirectSize) {
     TTyconNumeric remaining_size = MaxDirectSize - size;
-    memcpy(DirectStr, start, size);
+    if (size) {
+      memcpy(DirectStr, start, size);
+    }
     memset(DirectStr + size, 0, remaining_size);
     remaining_size += static_cast<TTyconNumeric>(TTycon::MinDirectStr);
     Tycon = reinterpret_cast<TTycon &>(remaining_size);

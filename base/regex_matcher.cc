@@ -36,7 +36,7 @@ bool TRegexMatcher::Match(const TPattern &pat, const char *str,
   /* First clear the matches so that they will be guaranteed empty if no match
      was found or the pattern was compiled with REG_NOSUB. */
   matches.Clear();
-  int err = regexec(&pat.Regex, str, matches.Buf.size(), &matches.Buf[0],
+  int err = regexec(&pat.Regex, str, matches.Buf.size(), matches.Buf.data(),
                     eflags);
   assert((err == 0) || (err == REG_NOMATCH));
   return (err == 0);

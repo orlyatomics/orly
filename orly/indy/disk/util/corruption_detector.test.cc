@@ -87,13 +87,13 @@ FIXTURE(ManyRandom) {
 
 void IntroduceRandomBitError(size_t *buf, size_t data_size) {
   size_t bit = rand() % (data_size * 8);
-  size_t mask = 1 << bit % (sizeof(size_t) * 8);
+  size_t mask = size_t{1} << (bit % (sizeof(size_t) * 8));
   buf[bit / (sizeof(size_t) * 8)] ^= mask;
 }
 
 void IntroduceRandomBitError(size_t *buf, size_t data_size, std::mt19937_64 &engine) {
   size_t bit = engine() % (data_size * 8);
-  size_t mask = 1 << bit % (sizeof(size_t) * 8);
+  size_t mask = size_t{1} << (bit % (sizeof(size_t) * 8));
   buf[bit / (sizeof(size_t) * 8)] ^= mask;
 }
 
