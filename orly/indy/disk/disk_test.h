@@ -74,7 +74,7 @@ namespace Orly {
 
         static constexpr size_t PhysicalCachePageSize = Util::PhysicalBlockSize / (Util::LogicalBlockSize / Util::LogicalBlockSize);
 
-        using TArena = TDiskArena<Util::LogicalBlockSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::PageCheckedBlock, 128, true>;
+        using TArena = TDiskArena<Util::LogicalBlockSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::PageCheckedBlock, DiskArenaMaxCacheSize, true>;
 
         TReader(const Base::TCodeLocation &code_location /* DEBUG */, Util::TEngine *engine, const Base::TUuid &file_id, size_t gen_id)
             : TReadFile(code_location, Source::MergeDataFileOther, engine, file_id, Low, gen_id) {
