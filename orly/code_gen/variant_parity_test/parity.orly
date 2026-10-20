@@ -1,0 +1,30 @@
+/* <orly/code_gen/variant_parity_test/parity.orly>
+
+   The package whose generated headers are frozen in this directory for
+   orly/code_gen/variant_parity.test.cc. Compile it with orlyc (from a
+   directory outside the repo) and copy V15...h, V2i4LeafLX04Node.h,
+   V2i1AO01B.h and O2i1ns4name.h from orly/rt/objects to par, leaf, inner
+   and rec.frozen.h, keeping each file's leading comment and redirecting
+   its <orly/rt/objects/*.h> includes to the frozen copies.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+leaf_t is <| Leaf(int) | Node([leaf_t]) |>;
+inner_t is <| A(int) | B |>;
+rec_t is <{.name: str, .n: int}>;
+par_t is <| Bool(bool) | Dict({str: rec_t}) | Empty | Ident(id) | Int(int) | Nested(inner_t) | Rec(rec_t) | Recur(leaf_t) | Set({rec_t}) | Str(str) | TD(time_diff) | TP(time_pnt) | X_u(int) | Xa(int) | xb(int) |>;
+get = (*<[k, 1]>::(par_t)) where {
+  k = given::(par_t);
+};

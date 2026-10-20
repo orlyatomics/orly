@@ -21,6 +21,7 @@
 #include <orly/atom/kit2.h>
 #include <orly/closure.h>
 #include <orly/native/state.h>
+#include <orly/native/variant.h>
 #include <orly/sabot/defs.h>
 #include <orly/sabot/get_tuple_size.h>
 #include <orly/sabot/match_prefix_state.h>
@@ -78,6 +79,7 @@ namespace Orly {
           sizeof(Native::Type::TMap<int8_t, int8_t>::TPin),
           sizeof(Native::Type::TRecord<int8_t>::TPin),
           sizeof(Native::Type::TTuple<int8_t>::TPin),
+          sizeof(Native::Variant<int8_t>::TType::TPin),
 
           sizeof(Atom::TCore::ST::TFree::TPin),
           sizeof(Atom::TCore::ST::TDesc::TPin),
@@ -121,6 +123,8 @@ namespace Orly {
           sizeof(Native::State::TArrayOfPairsOfStates<Sabot::State::TMap>::TPin),
           sizeof(Native::State::TStaticArrayOfSingleStates<Sabot::State::TRecord>::TPin),
           sizeof(Native::State::TStaticArrayOfSingleStates<Sabot::State::TTuple>::TPin),
+          sizeof(Native::Variant<int8_t>::TArm::TPin),
+          sizeof(Native::Variant<int8_t>::TState::TPin),
 
           sizeof(Atom::TCore::SS::TBlob::TPin),
           sizeof(Atom::TCore::SS::TStr::TPin),
@@ -184,6 +188,7 @@ namespace Orly {
           sizeof(Native::Type::TMap<int8_t, int8_t>),
           sizeof(Native::Record<Native::State::TInt8>::TState),
           sizeof(Native::State::TTuple<int8_t>),
+          sizeof(Native::Variant<int8_t>::TType),
 
           sizeof(Atom::TCore::ST::TFree),
           sizeof(Atom::TCore::ST::TOpt),
@@ -245,6 +250,8 @@ namespace Orly {
           sizeof(Native::State::TMap<int8_t, int8_t>),
           sizeof(Native::Record<Native::State::TInt8>::TState),
           sizeof(Native::State::TTuple<int8_t>),
+          sizeof(Native::Variant<int8_t>::TArm),
+          sizeof(Native::Variant<int8_t>::TState),
 
           sizeof(Atom::TCore::SS::TFree),
           sizeof(Atom::TCore::SS::TTombstone),

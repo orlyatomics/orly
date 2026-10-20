@@ -1,0 +1,79 @@
+/* <orly/lang_tests/general/variants_native_payloads.orly>
+
+   End-to-end test for issue #946: a variant whose arms are all scalars,
+   records, containers of them or other variants converts to its stored
+   record natively (Native::Variant), not through Var. Every arm kind here
+   must round-trip through storage, alone and inside a list, a record and a
+   set, and read back equal to the value written.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+inner_t is <| A(int) | B |>;
+
+pay_t is <| Dict({str: int}) | Empty | Flag(bool) | List([int]) | Nested(inner_t) | Num(real) | Rec(<{.name: str, .tags: [str]}>) | Set({str}) | Text(str) |>;
+
+read_one = (*<[n]>::(pay_t)) where {
+  n = given::(int);
+};
+
+read_list = (*<[n]>::([pay_t])) where {
+  n = given::(int);
+};
+
+read_rec = (*<[n]>::(<{.id: int, .v: pay_t}>)) where {
+  n = given::(int);
+};
+
+read_set = (*<[n]>::({pay_t})) where {
+  n = given::(int);
+};
+
+/* Each arm alone. */
+with {
+  <[9460]> <- pay_t.Dict({"a": 1, "b": 2});
+  <[9461]> <- pay_t.Empty();
+  <[9462]> <- pay_t.Flag(true);
+  <[9463]> <- pay_t.List([3, 1, 2]);
+  <[9464]> <- pay_t.Nested(inner_t.A(5));
+  <[9465]> <- pay_t.Nested(inner_t.B());
+  <[9466]> <- pay_t.Num(2.5);
+  <[9467]> <- pay_t.Rec(<{.name: "x", .tags: ["p", "q"]}>);
+  <[9468]> <- pay_t.Set({"m", "n"});
+  <[9469]> <- pay_t.Text("hello");
+} test {
+  t1: read_one(.n: 9460) == pay_t.Dict({"a": 1, "b": 2});
+  t2: read_one(.n: 9461) == pay_t.Empty();
+  t3: read_one(.n: 9462) == pay_t.Flag(true);
+  t4: read_one(.n: 9463) == pay_t.List([3, 1, 2]);
+  t5: read_one(.n: 9464) == pay_t.Nested(inner_t.A(5));
+  t6: read_one(.n: 9465) == pay_t.Nested(inner_t.B());
+  t7: read_one(.n: 9466) == pay_t.Num(2.5);
+  t8: read_one(.n: 9467) == pay_t.Rec(<{.name: "x", .tags: ["p", "q"]}>);
+  t9: read_one(.n: 9468) == pay_t.Set({"m", "n"});
+  t10: read_one(.n: 9469) == pay_t.Text("hello");
+  t11: read_one(.n: 9469) != pay_t.Text("bye");
+  t12: read_one(.n: 9464) != pay_t.Nested(inner_t.B());
+};
+
+/* Inside a list, a record and a set. */
+with {
+  <[9470]> <- [pay_t.Text("a"), pay_t.Empty(), pay_t.List([7])];
+  <[9471]> <- <{.id: 1, .v: pay_t.Num(1.5)}>;
+  <[9472]> <- {pay_t.Empty(), pay_t.Flag(false), pay_t.Text("z")};
+} test {
+  t13: read_list(.n: 9470) == [pay_t.Text("a"), pay_t.Empty(), pay_t.List([7])];
+  t14: read_rec(.n: 9471) == <{.id: 1, .v: pay_t.Num(1.5)}>;
+  t15: read_set(.n: 9472) == {pay_t.Empty(), pay_t.Flag(false), pay_t.Text("z")};
+};

@@ -24,6 +24,7 @@
 #include <orly/sabot/to_native.h>
 #include <orly/native/type.h>
 #include <orly/type/new_sabot.h>
+#include <orly/native/variant.h>
 
 /* Needed payload objects */
 #include <orly/code_gen/variant_emit_test/O0.frozen.h>
@@ -123,6 +124,7 @@ namespace Orly {
         }
 
         private:
+        friend class Orly::Native::VariantArms<TVariantV2O07Deletedi7Integer>;
         size_t Which;
         Orly::Rt::Objects::TObjO0 VDeleted;
         int64_t VInteger;
@@ -291,11 +293,44 @@ namespace Orly {
   namespace Native {
 
     template <>
+    class [[gnu::visibility("hidden")]] VariantArms<Rt::Variants::TVariantV2O07Deletedi7Integer> final {
+      NO_CONSTRUCTION(VariantArms);
+      public:
+      static size_t GetArmCount() {
+        return 2;
+      }
+      static const char *GetArmName(size_t arm) {
+        switch (arm) {
+          case 0: return "Deleted";
+          case 1: return "Integer";
+        }
+        throw Sabot::TIdxTooBig();
+      }
+      static size_t GetWhich(const Rt::Variants::TVariantV2O07Deletedi7Integer &val) {
+        return val.Which;
+      }
+      static Sabot::Type::TOpt *NewArmOptType(size_t arm, void *type_alloc) {
+        switch (arm) {
+          case 0: return Type::For<std::optional<Orly::Rt::Objects::TObjO0>>::GetOptType(type_alloc);
+          case 1: return Type::For<std::optional<int64_t>>::GetOptType(type_alloc);
+        }
+        throw Sabot::TIdxTooBig();
+      }
+      static Sabot::State::TAny *NewPayloadState(const Rt::Variants::TVariantV2O07Deletedi7Integer &val, void *state_alloc) {
+        switch (val.Which) {
+          case 0: return State::New(val.VDeleted, state_alloc);
+          case 1: return State::New(val.VInteger, state_alloc);
+        }
+        throw Sabot::TIdxTooBig();
+      }
+    }; // VariantArms<TVariantV2O07Deletedi7Integer>
+
+    template <>
     class State::Factory<Rt::Variants::TVariantV2O07Deletedi7Integer> final {
       NO_CONSTRUCTION(Factory);
       public:
       static Sabot::State::TAny *New(const Rt::Variants::TVariantV2O07Deletedi7Integer &val, void *state_alloc) {
-        return State::Factory<Var::TVar>::New(val.AsVar(), state_alloc);
+        return Variant<Rt::Variants::TVariantV2O07Deletedi7Integer>::NewState(val, state_alloc);
       }
     }; // State::Factory<TVariantV2O07Deletedi7Integer>
 
@@ -304,10 +339,10 @@ namespace Orly {
       NO_CONSTRUCTION(For);
       public:
       static Sabot::Type::TAny *GetType(void *type_alloc) {
-        return Orly::Type::NewSabot(type_alloc, Orly::Type::TDt<Rt::Variants::TVariantV2O07Deletedi7Integer>::GetType());
+        return Variant<Rt::Variants::TVariantV2O07Deletedi7Integer>::NewType(type_alloc);
       }
       static Sabot::Type::TRecord *GetRecordType(void *type_alloc) {
-        return dynamic_cast<Sabot::Type::TRecord *>(GetType(type_alloc));
+        return Variant<Rt::Variants::TVariantV2O07Deletedi7Integer>::NewType(type_alloc);
       }
     }; // Type::For<TVariantV2O07Deletedi7Integer>
 
