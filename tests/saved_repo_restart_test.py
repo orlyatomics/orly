@@ -38,22 +38,23 @@ CAME_BACK = re.compile(r'\[(\d+)\] saved-repo entries came back with the system 
 REMOVED = re.compile(r'TManager: removed the saved entry of repo \[([0-9a-f-]+)\]')
 
 
-def wait_removals(srv, timeout):
-    """The ids whose saved entries this run removed, once the count stops changing."""
+def wait_removals(srv, expect, timeout, grace=1.0):
+    """The ids whose saved entries this run removed. Waits for the entry of `expect`, a repo
+    that is gone, to be removed: one system write carries every queued removal, and their log
+    lines follow it together, so once that id is logged the rest of the write's are too. The
+    grace covers the logger. Returns whatever was removed if `expect` never shows."""
     deadline = time.monotonic() + timeout
-    last = None
-    while True:
-        got = set(REMOVED.findall(srv.log_text()))
-        if got == last or time.monotonic() >= deadline:
-            return got
-        last = got
-        time.sleep(1)
+    while expect not in set(REMOVED.findall(srv.log_text())) and time.monotonic() < deadline:
+        time.sleep(0.25)
+    time.sleep(grace)
+    return set(REMOVED.findall(srv.log_text()))
 
 
-def reopen(args, srv, url, sid, kept, label):
+def reopen(args, srv, url, sid, kept, expect, label):
     """Start the store again, make one POV so the queued removals are written, and check what
     came back. Returns (violations, the new POV's id, how many entries of repos that are gone
-    came back, the ids whose entries were removed)."""
+    came back, the ids whose entries were removed). `expect` is a repo that is gone, whose entry
+    this open must remove."""
     kv = []
     err = srv.start(create=False)
     if err:
@@ -67,7 +68,7 @@ def reopen(args, srv, url, sid, kept, label):
                 kv.append(f'{label}: safe POV {pov} did not come back: {ex}')
         # Fast, so no Pov record brings it back: the next open must remove its entry.
         made = c.new_pov(safe=False, shared=True)
-    removed = wait_removals(srv, args.settle)
+    removed = wait_removals(srv, expect, args.settle)
     text = srv.log_text()
     m = RESTORED.search(text)
     restored = int(m.group(1)) if m else -1
@@ -103,13 +104,13 @@ def run(args, work):
             fast = c.new_pov(safe=False, shared=True)
         srv.stop()
 
-        got, made, gone, removed = reopen(args, srv, url, sid, kept, 'open 1')
+        got, made, gone, removed = reopen(args, srv, url, sid, kept, fast, 'open 1')
         kv += got
         if fast not in removed:
             kv.append(f'open 1: the fast POV {fast}, which did not survive the restart, kept its saved entry')
         srv.stop()
 
-        got, _, gone, removed = reopen(args, srv, url, sid, kept, 'open 2')
+        got, _, gone, removed = reopen(args, srv, url, sid, kept, made, 'open 2')
         kv += got
         # Only the POV open 1 made is gone since.
         if gone > 1:
@@ -136,7 +137,7 @@ def main():
     ap.add_argument('--povs', type=int, default=8, help='safe POVs to keep across the restarts')
     ap.add_argument('--volume-gb', type=int, default=2)
     ap.add_argument('--wal-mb', type=int, default=8)
-    ap.add_argument('--settle', type=float, default=5, help='seconds to wait for the removals')
+    ap.add_argument('--settle', type=float, default=30, help='seconds to wait for the removals')
     ap.add_argument('--startup-timeout', type=int, default=300)
     ap.add_argument('--keep', action='store_true', help='keep the work directory')
     args = ap.parse_args()
