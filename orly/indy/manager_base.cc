@@ -50,9 +50,14 @@ namespace {
    (MinHeapBytes in server.cc), so what stays mapped but unused is inside the plan. */
 constexpr size_t KeepFreeHeapBytes = 128UL << 20;
 
+/* tcmalloc holds its page-heap lock for the whole of a ReleaseToSystem call, so ReleaseFreeHeap returns memory in
+   pieces this size, letting any thread that needs a span (a fast runner's allocation included) in between. At the
+   rate measured for #967, about 30 MiB a millisecond, a piece holds the lock for about 2 ms. */
+constexpr size_t ReleaseChunkBytes = 64UL << 20;
+
 /* Return tcmalloc's free page heap to the kernel, keeping KeepFreeHeapBytes of it, and log what
-   that returned and how long it took (#967). A disk merge allocates and frees hundreds of MiB of
-   working memory, and a walker trim can free GiBs of walkers; tcmalloc keeps what is freed mapped.
+   that returned, in how many pieces, and the longest piece and total time (#967). A disk merge allocates and frees
+   hundreds of MiB of working memory, and a walker trim can free GiBs of walkers; tcmalloc keeps what is freed mapped.
    Settling a freshly ingested store, with no reads at all, the free page heap reached
    4.3 GiB beside 6.0 GiB in use 20 minutes in, and RSS climbed from 4.1 to 10.1 GiB: memory no
    other allocation in the process was asking for, counted against the budget. */
@@ -60,16 +65,32 @@ void ReleaseFreeHeap(const char *after) {
   if (!MallocExtension_GetNumericProperty || !MallocExtension_ReleaseToSystem) {
     return;
   }
-  size_t free_bytes = 0;
-  if (MallocExtension_GetNumericProperty("tcmalloc.pageheap_free_bytes", &free_bytes) && free_bytes > KeepFreeHeapBytes) {
-    const auto start = steady_clock::now();
-    MallocExtension_ReleaseToSystem(free_bytes - KeepFreeHeapBytes);
-    size_t left_bytes = free_bytes;
-    MallocExtension_GetNumericProperty("tcmalloc.pageheap_free_bytes", &left_bytes);
-    const auto took_us = duration_cast<microseconds>(steady_clock::now() - start).count();
-    syslog(LOG_INFO, "released %zu MiB of free heap to the kernel after %s in %lld us (#967)",
-           (free_bytes - std::min(left_bytes, free_bytes)) >> 20, after, static_cast<long long>(took_us));
+  const char *property = "tcmalloc.pageheap_free_bytes";
+  size_t start_bytes = 0;
+  if (!MallocExtension_GetNumericProperty(property, &start_bytes) || start_bytes <= KeepFreeHeapBytes) {
+    return;
   }
+  const auto start = steady_clock::now();
+  steady_clock::duration longest = steady_clock::duration::zero();
+  size_t num_chunks = 0;
+  /* Ask for the same total as one call would, piece by piece. Don't stop early when a piece frees nothing: tcmalloc
+     releases whole spans, and when one is larger than asked it counts the extra against the next requests. */
+  for (size_t left_to_ask = start_bytes - KeepFreeHeapBytes; left_to_ask; ++num_chunks) {
+    const size_t ask = std::min(left_to_ask, ReleaseChunkBytes);
+    const auto chunk_start = steady_clock::now();
+    MallocExtension_ReleaseToSystem(ask);
+    longest = std::max(longest, steady_clock::now() - chunk_start);
+    left_to_ask -= ask;
+  }
+  size_t free_bytes = start_bytes;
+  MallocExtension_GetNumericProperty(property, &free_bytes);
+  if (free_bytes >= start_bytes) {
+    return;
+  }
+  syslog(LOG_INFO, "released %zu MiB of free heap to the kernel after %s in %zu chunks, longest %lld us, total %lld us (#967)",
+         (start_bytes - free_bytes) >> 20, after, num_chunks,
+         static_cast<long long>(duration_cast<microseconds>(longest).count()),
+         static_cast<long long>(duration_cast<microseconds>(steady_clock::now() - start).count()));
 }
 
 }  // namespace

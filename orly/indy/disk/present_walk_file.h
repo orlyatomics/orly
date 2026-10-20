@@ -27,6 +27,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -150,7 +151,9 @@ namespace Orly {
         }
 
         /* Delete a list of walkers that TakeIdle or Clear unlinked, and return how many there were. A pooled walker
-           holds no reference to its loader, so this is safe after the loader is gone. May yield. */
+           holds no reference to its loader, so this is safe after the loader is gone. May yield. A trim paused here can
+           briefly pin pages of a file that a Clear on this runner has already finished with (#910); that takes a
+           read-ahead still outstanding more than a trim interval after its walker went idle. */
         static size_t DeleteWalkers(TPresentWalkFile *walkers) {
           size_t num_deleted = 0UL;
           while (walkers) {
@@ -158,9 +161,20 @@ namespace Orly {
             delete walkers;
             ++num_deleted;
             walkers = next;
+#ifndef NDEBUG
+            if (walkers && AfterWalkerDeleted) {
+              AfterWalkerDeleted();
+            }
+#endif
           }
           return num_deleted;
         }
+
+#ifndef NDEBUG
+        /* Debug builds only: called between two deletes in DeleteWalkers, where a delete can yield, so a test can run
+           what a yield there would let run. */
+        inline static std::function<void()> AfterWalkerDeleted;
+#endif
 
         /* Forward Declaration */
         class TLoaderObj;

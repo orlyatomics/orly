@@ -565,6 +565,30 @@ FIXTURE(PoolIsTrimmed) {
       TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
       EXPECT_EQ(CountHeldBlocks(engine, 64UL), 0U);
     }
+#ifndef NDEBUG
+    /* The same, with the clear run between two of the trim's deletes, where a delete can yield. */ {
+      {
+        std::vector<std::unique_ptr<TPresentWalkFileWrapper>> out;
+        for (size_t i = 0UL; i < 4UL; ++i) {
+          out.push_back(new_walker(i % 2UL ? int_idx : other_idx));
+        }
+      }
+      EXPECT_EQ(cache->Trim(), 0UL);
+      /* Runs between each two of the four deletes; the first time, it clears the file. */
+      size_t num_calls = 0UL;
+      Disk::TLocalWalkerCache::AfterWalkerDeleted = [&] {
+        if (!num_calls++) {
+          cache->Clear(data_file_id, data_gen_id);
+        }
+      };
+      EXPECT_EQ(cache->Trim(), 4UL);
+      Disk::TLocalWalkerCache::AfterWalkerDeleted = nullptr;
+      EXPECT_EQ(num_calls, 3UL);
+      EXPECT_EQ(cache->GetNumPooled(), 0UL);
+      TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
+      EXPECT_EQ(CountHeldBlocks(engine, 64UL), 0U);
+    }
+#endif
     cache->SetTrimInterval(Disk::TLocalWalkerCache::DefaultTrimInterval);
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
