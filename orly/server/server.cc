@@ -1541,7 +1541,7 @@ void TServer::Init() {
     RepoManager->SetRetention(Cmd.RetentionVersions, Cmd.RetentionSeconds);
     /* #745 stage 3: on a format 2 store, repos opened from here on keep their retention records (the system repo,
        opened before, does not, and has no window). */
-    RepoManager->SetRetentionPersisted(DiskEngine && DiskEngine->GetFormatVersion() >= 2UL);
+    RepoManager->SetRetentionPersisted(DiskEngine && DiskEngine->IsRetentionPersisted());
     auto global_ttl = TTtl::max();
     GlobalRepo = RepoManager->GetRepo(TSession::GlobalPovId,
                                       global_ttl,
@@ -1866,23 +1866,63 @@ void TServer::Init() {
         }
 
         /* Step 7: Replay transactions through slave apply path.  Each one pins the record it came
-           from, as a live transaction pins the record it appends. */
+           from, as a live transaction pins the record it appends.  A paused repo copied forward
+           (#963) is rebuilt from its newest complete copy instead: its mutations before the copy
+           are read past, and the copy's transactions are replayed where its first part is. */
+        std::vector<Indy::TWalRetention::TReplayRecord> replay_records;
+        replay_records.reserve(scan_result.Records.size());
         for (const auto &rec : scan_result.Records) {
-          if (rec.Type == Indy::Disk::TWalRecordType::Txn && rec.Lsn >= start_lsn) {
-            Indy::TReplicationStreamer streamer;
-            std::string str(rec.Body.data(), rec.Body.size());
-            auto recorder = std::make_shared<Io::TRecorder>(str);
-            auto player = std::make_shared<Io::TPlayer>(recorder);
-            Io::TBinaryInputOnlyStream strm(player);
-            streamer.Read(strm);
-            retention->SetReplayLsn(rec.Lsn, rec.Body.size());
+          if (rec.Lsn >= start_lsn && (rec.Type == Indy::Disk::TWalRecordType::Txn || rec.Type == Indy::Disk::TWalRecordType::RepoCopy)) {
+            replay_records.push_back(Indy::TWalRetention::TReplayRecord{rec.Lsn, rec.Type, rec.Body.data(), rec.Body.size()});
+          }
+        }
+        auto replay_plan = Indy::TWalRetention::PlanReplay(replay_records);
+        if (!replay_plan.Copies.empty()) {
+          syslog(LOG_INFO, "WAL recovery: %ld paused repos come back from their copies (#963)", replay_plan.Copies.size());
+        }
+        const auto apply_wire = [this](const char *data, size_t size, const Indy::TManager::TPushCallback *on_push,
+                                       const std::unordered_set<Base::TUuid> *skip) {
+          Indy::TReplicationStreamer streamer;
+          std::string str(data, size);
+          auto recorder = std::make_shared<Io::TRecorder>(str);
+          auto player = std::make_shared<Io::TPlayer>(recorder);
+          Io::TBinaryInputOnlyStream strm(player);
+          streamer.Read(strm);
+          RepoManager->ApplyCoreVectorTransactions(streamer.GetTransactionVec().GetCores(), streamer.GetTransactionVec().GetArena(),
+                                                   on_push ? *on_push : Indy::TManager::TPushCallback(), nullptr,
+                                                   (skip && !skip->empty()) ? skip : nullptr);
+        };
+        for (const auto &rec : replay_records) {
+          if (rec.Type == Indy::Disk::TWalRecordType::Txn) {
+            retention->SetReplayLsn(rec.Lsn, rec.Size);
             const uint64_t rec_lsn = rec.Lsn;
-            RepoManager->ApplyCoreVectorTransactions(streamer.GetTransactionVec().GetCores(), streamer.GetTransactionVec().GetArena(),
+            const Indy::TManager::TPushCallback on_push =
                 [this, rec_lsn](const Base::TUuid &repo_id, Indy::TSequenceNumber seq_num, const Atom::TCore &meta_core,
                                 Atom::TCore::TArena *arena, uint64_t) {
                   RestoreOperation(repo_id, seq_num, meta_core, arena, rec_lsn);
-                });
+                };
+            apply_wire(rec.Data, rec.Size, &on_push, &replay_plan.Skip);
+            continue;
           }
+          auto copy = replay_plan.Copies.find(rec.Lsn);
+          if (copy == replay_plan.Copies.end()) {
+            continue;
+          }
+          const auto &first = copy->second.front();
+          replay_plan.Skip.erase(first.RepoId);
+          if (!RepoManager->ResetReplayNumbering(first.RepoId, first.Start)) {
+            std::ostringstream strm;
+            strm << first.RepoId;
+            syslog(LOG_INFO, "WAL recovery: the copy of repo [%s] at LSN %ld is of a repo that has gone; skipped (#963)", strm.str().c_str(), rec.Lsn);
+            continue;
+          }
+          for (const auto &part : copy->second) {
+            for (const auto &wire : part.Wires) {
+              retention->SetReplayLsn(rec.Lsn, wire.size());
+              apply_wire(wire.data(), wire.size(), nullptr, nullptr);
+            }
+          }
+          RepoManager->AdvanceReplayNumbering(first.RepoId, first.Next);
         }
         retention->EndReplay();
         RepoManager->ClearReplaySeeds();
@@ -1920,6 +1960,11 @@ void TServer::Init() {
           : Indy::Disk::TWal::MaxCheckpointPayload(wal_config.CheckpointSlotBytes) / 2UL;
       retention->SetCheckpointPayload([this, snapshot_budget](uint64_t head_lsn) { return OperationTable ? OperationTable->Snapshot(head_lsn, snapshot_budget) : std::string(); });
       retention->SetHeadFloor([this]() { return OperationTable ? OperationTable->HeadFloor() : UINT64_MAX; });
+      /* The first copy of a paused repo (#963) gives the store the WalRepoCopy feature, so a
+         binary that would skip the copies, and lose the updates in them, refuses the store. */
+      retention->SetIncompatGate([this]() {
+        DiskEngine->EnableIncompatFeature(Indy::Disk::Util::TStoreFormat::WalRepoCopyFeature);
+      });
       retention->Checkpoint(GlobalRepo->GetDurableSequenceNumber().value_or(0UL), true);
       syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld (head %ld, %ld povs restored), group %ld, ring offset %ld", next_lsn, retention->ComputeHead(), restored_povs.size(), next_group, scan_result.NextRingOffset);
       WalCheckpointer = std::thread([this, retention] {

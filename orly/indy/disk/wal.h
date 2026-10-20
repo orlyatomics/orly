@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -72,6 +73,16 @@ namespace Orly {
         explicit TWalRingFull(const std::string &msg) : std::runtime_error(msg) {}
       };
 
+      /* A client write into a paused safe repo (or a pause) refused because the paused repos'
+         unpromoted updates already hold as much of the ring as they may (#963): each must be
+         copied forward while its originals are still in the ring, so together they can't be let
+         take more than about half of it.  Retriable, as TWalRingFull: unpausing or discarding a
+         paused repo, or promoting it, makes room.  Only writes into paused repos get it. */
+      class TWalPausedFull : public TWalRingFull {
+        public:
+        explicit TWalPausedFull(const std::string &msg) : TWalRingFull(msg) {}
+      };
+
       /* A record a write keeping headroom (TWal::TRoom::KeepHeadroom) asked for is too big ever to be
          safe to take (#891): its promotion, a record about as big, has only the headroom to be
          written into once client writes have filled the rest, so a record bigger than half the
@@ -99,7 +110,12 @@ namespace Orly {
         Txn = 1U,
         Pov = 2U,
         Seal = 3U,
-        Meta = 4U
+        Meta = 4U,
+        /* One part of a copy of a paused safe repo's unpromoted updates (#963; TWalRepoCopy).  A
+           binary from before it would skip it, so a store gets the WalRepoCopy feature
+           (Util::TStoreFormat) before its first one is written, and such a binary refuses the
+           store. */
+        RepoCopy = 5U
       };
 
       namespace WalFlags {
@@ -395,6 +411,14 @@ namespace Orly {
         uint64_t Append(TWalReservation &reservation, TWalRecordType type, const void *data, size_t size, uint8_t flags = 0U,
                         const TPromotionDebtChange &debt = TPromotionDebtChange());
 
+        /* Reserve room, from TRoom::All, for records of these body sizes all at once, spending the
+           promotion debt `spend` (#963): the records are admitted together, counting `spend` as
+           free, and if they are, `spend` is repaid in the same step, so no record taken in between
+           can take the room it was kept.  Throws TWalRingFull, having changed nothing, if they
+           don't fit.  A caller that then appends none of them gives the room back by releasing
+           the reservations, but not the debt: that it must owe again itself. */
+        std::vector<TWalReservation> ReserveGroup(const std::vector<size_t> &sizes, const std::vector<TPromotionDebt> &spend);
+
         /* Change the promotion debt without a record: an update gone with its repo, or the debts
            recovery rebuilt, owed to the WAL recovery made. */
         void ChangePromotionDebt(const TPromotionDebtChange &debt);
@@ -451,6 +475,18 @@ namespace Orly {
 
         /* The last part of the ring that only TRoom::All may use (#891). */
         size_t GetHeadroomBytes() const { return HeadroomBytes; }
+
+        /* How many records this ring has refused as full (TWalRingFull from Reserve or Append; not
+           ReserveGroup's).  The retention reads it to tell that the ring is short of room now. */
+        size_t GetRingFullRefusals() const { return RingFullRefusals.load(std::memory_order_relaxed); }
+
+        /* Turn TConfig::AutoSealOnQuiet on or off from now on: off, the newest group is not durable
+           until another follows it. */
+        void SetAutoSealOnQuietForTest(bool on);
+
+        /* Call `hook` in the syncer, without Mutex, before each device sync from now on.  Set it
+           before the first Append. */
+        void SetBeforeSyncForTest(std::function<void ()> hook);
 
         /* Copy-forward unpromoted records near the head. Returns assigned new LSNs. */
         std::vector<uint64_t> CopyForward(const std::vector<std::pair<TWalRecordType, std::vector<char>>> &records);
@@ -511,12 +547,15 @@ namespace Orly {
            fit before the end of the ring wraps, wasting the rest of the lap. */
         size_t UsableBytesLocked(size_t max_group) const;
 
-        /* The biggest group the leader could build from the records taken, plus one more charged
-           `extra` group bytes. */
-        size_t MaxGroupLocked(size_t extra) const;
+        /* The biggest group the leader could build from the records taken, plus more charged
+           `extra` group bytes, none bigger than `biggest_extra` (all of `extra` by default: one
+           record). */
+        size_t MaxGroupLocked(size_t extra, size_t biggest_extra = SIZE_MAX) const;
 
-        /* Whether a record charged `group_bytes` fits the promise. */
-        bool AdmitsLocked(size_t group_bytes, TRoom room, size_t credit = 0UL, size_t new_debt = 0UL, size_t new_debt_group = 0UL) const;
+        /* Whether records charged `group_bytes` in all fit the promise; `biggest_group` is the
+           biggest of them (all of `group_bytes` by default: one record). */
+        bool AdmitsLocked(size_t group_bytes, TRoom room, size_t credit = 0UL, size_t new_debt = 0UL, size_t new_debt_group = 0UL,
+                          size_t biggest_group = SIZE_MAX) const;
 
         /* Owe or repay promotion room.  Repaying more than is owed (which the accounting never
            should) is logged, and clamps at nothing owed. */
@@ -550,6 +589,9 @@ namespace Orly {
         const TConfig Config;
 
         mutable std::mutex Mutex;
+
+        /* Config.AutoSealOnQuiet unless a test changed it.  Covered by Mutex. */
+        bool AutoSealOnQuiet;
         std::condition_variable LeaderCv;
         std::condition_variable SyncerCv;
         std::condition_variable DurableCv;
@@ -581,6 +623,14 @@ namespace Orly {
         bool Stopping;
         bool Failed;
 
+        /* The leader has stopped: no group joins InFlightGroups from now on, so the syncer may stop
+           once it is empty.  Stopping alone is not enough, since the leader may still have records
+           to write.  Covered by Mutex. */
+        bool LeaderStopped = false;
+
+        /* SetBeforeSyncForTest's hook. */
+        std::function<void ()> BeforeSyncForTest;
+
         /* The most payload the leader puts in one group (a single bigger record goes alone), and the
            group that payload makes. */
         size_t MaxGroupPayload;
@@ -588,6 +638,9 @@ namespace Orly {
 
         /* What a reservation keeping headroom leaves free (TRoom::KeepHeadroom). */
         size_t HeadroomBytes;
+
+        /* See GetRingFullRefusals. */
+        mutable std::atomic<size_t> RingFullRefusals{0UL};
 
         /* The charges (GetRecordGroupBytes) of the reservations not yet used or released, and their
            sum.  Each may be appended alone, so each may make a group of its own. */

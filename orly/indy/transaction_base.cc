@@ -509,22 +509,32 @@ void TTransaction::Prepare() {
     std::string wire;
     recorder->CopyOut(wire);
     /* A promotion may spend the room kept for it, and its pushes owe room for the promotions still
-       ahead of them (#959). */
+       ahead of them (#959).  A paused repo's updates owe the room for their copy too, and an
+       unpause gives it back (#963).  A transaction that would refuse at once if the ring were
+       full (a client's) is refused too if it would take the paused repos past their share of the
+       ring; one that waits for room (a slave applying its master's) never is, as the master
+       already took it. */
     size_t credit = 0UL;
     std::vector<Disk::TPromotionDebt> owes;
     if (TWalRetention *retention = Manager->GetWalRetention()) {
+      std::vector<TWalRetention::TPlannedPush> pushes;
+      pushes.reserve(SafePushes.size());
+      for (const auto &push : SafePushes) {
+        pushes.push_back(TWalRetention::TPlannedPush{push.Mutation->GetRepoId(), push.Levels});
+      }
       std::vector<TWalRetention::TPop> pops;
       pops.reserve(SafePops.size());
       for (const auto &pop : SafePops) {
         pops.push_back(TWalRetention::TPop{pop.first, pop.second});
       }
-      credit = retention->GetPromotionCredit(pops);
-      const size_t debt_group_bytes = Disk::TWal::GetPromotionGroupBytes(wire.size());
-      for (const auto &push : SafePushes) {
-        if (push.Levels) {
-          owes.push_back(Disk::TPromotionDebt{debt_group_bytes, push.Levels});
-        }
+      std::vector<TWalRetention::TStatusChange> statuses;
+      statuses.reserve(SafeStatuses.size());
+      for (const auto &status : SafeStatuses) {
+        statuses.push_back(TWalRetention::TStatusChange{status.first->GetRepoId(), status.second, status.first->GetSequenceNumber()});
       }
+      auto plan = retention->PlanRoom(pushes, pops, statuses, wire.size(), !WalGiveUp);
+      credit = plan.Credit;
+      owes = std::move(plan.Owes);
     }
     WalReservation = ReserveWalRoom(*wal, wire.size(), WalRoom, WalGiveUp, credit, owes);
   }

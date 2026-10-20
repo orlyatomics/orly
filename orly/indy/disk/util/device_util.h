@@ -20,7 +20,10 @@
 #include <string.h>
 #include <syslog.h>
 
+#include <algorithm>
 #include <functional>
+#include <string>
+#include <utility>
 
 #include <base/class_traits.h>
 #include <base/dir_iter.h>
@@ -112,6 +115,9 @@ namespace Orly {
           /* The length of each checkpoint slot in blocks.  Zero (a store written before the field
              existed) means one block. */
           static constexpr uint64_t WalCheckpointBlocksPos = WalCheckpoint1BlockPos + 1UL;
+          /* From format version 3: a bit for each feature the store has used that a binary must
+             understand to open it (TDiskEngine::TIncompatFeature).  Zero before version 3. */
+          static constexpr uint64_t IncompatFeaturesPos = WalCheckpointBlocksPos + 1UL;
 
           struct TOrlyDevice {
             TVolumeId VolumeId;
@@ -133,6 +139,7 @@ namespace Orly {
             uint64_t WalCheckpoint0Block = 0UL;
             uint64_t WalCheckpoint1Block = 0UL;
             uint64_t WalCheckpointBlocks = 0UL;
+            uint64_t IncompatFeatures = 0UL;
           };
 
           static bool ProbeDevice(const char *path, TOrlyDevice &out_device);
@@ -172,6 +179,65 @@ namespace Orly {
           }
 
         };  // TDeviceUtil
+
+        /* Which store formats a binary opens (#963).  Version 1 adds the WAL (#755) and version 2
+           the retention records (#745).  Version 3 changes nothing on disk by itself: it says the
+           superblock's IncompatFeatures word is valid, and each bit in it is a feature the store
+           has used that a binary must understand to open it.  A binary refuses a version it
+           doesn't know, and a version 3 store with a bit it doesn't know, so a feature a store
+           has used can never be ignored by a binary that predates it: every binary before version
+           3 refuses version 3, whatever the bits.  A store only goes to version 3 when it first
+           uses such a feature; until then a binary from before it still opens the store. */
+        struct TStoreFormat {
+          NO_CONSTRUCTION(TStoreFormat);
+
+          static constexpr uint64_t MaxVersion = 3UL;
+
+          /* The retention records of version 2 (#745). */
+          static constexpr uint64_t RetentionFeature = 1UL;
+
+          /* WAL RepoCopy records (#963): a paused safe repo's unpromoted updates copied forward.
+             A binary that skipped them would lose those updates once the head passed the
+             records that pushed them. */
+          static constexpr uint64_t WalRepoCopyFeature = 2UL;
+
+          static constexpr uint64_t KnownFeatures = RetentionFeature | WalRepoCopyFeature;
+
+          /* The features a store at this version and with this word has used. */
+          static constexpr uint64_t GetFeatures(uint64_t version, uint64_t features) noexcept {
+            return version >= 3UL ? features : (version == 2UL ? RetentionFeature : 0UL);
+          }
+
+          /* Empty if this binary opens such a store, else why not. */
+          static std::string CheckSupported(uint64_t version, uint64_t features) {
+            if (version > MaxVersion) {
+              return "unsupported store format version " + std::to_string(version) + ": this binary supports format versions up to " + std::to_string(MaxVersion);
+            }
+            if (version >= 3UL && (features & ~KnownFeatures)) {
+              return "unsupported store features 0x" + ToHex(features & ~KnownFeatures) + " (format version " + std::to_string(version) + "): this binary is too old for this store";
+            }
+            return {};
+          }
+
+          /* The version and word a store has once it has used `feature` too; a store already at
+             version 3 keeps it. */
+          static constexpr std::pair<uint64_t, uint64_t> WithFeature(uint64_t version, uint64_t features, uint64_t feature) noexcept {
+            return {std::max<uint64_t>(version, 3UL), GetFeatures(version, features) | feature};
+          }
+
+          private:
+
+          static std::string ToHex(uint64_t val) {
+            static constexpr char Digits[] = "0123456789abcdef";
+            std::string out;
+            do {
+              out.insert(out.begin(), Digits[val & 0xF]);
+              val >>= 4;
+            } while (val);
+            return out;
+          }
+
+        };  // TStoreFormat
 
       }  // Util
 

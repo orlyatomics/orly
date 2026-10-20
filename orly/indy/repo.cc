@@ -1192,8 +1192,20 @@ std::shared_ptr<TUpdate> TRepo::GetLowestUpdate() {
   std::lock_guard<std::mutex> lock(DataLock);
   assert(LowestSeqNum);
   assert(HighestSeqNum);
+  return GetUpdateLocked(*LowestSeqNum);
+}
+
+std::shared_ptr<TUpdate> TRepo::GetUpdate(TSequenceNumber seq) {
+  std::lock_guard<std::mutex> lock(DataLock);
+  if (!LowestSeqNum || !HighestSeqNum || seq < *LowestSeqNum || seq > *HighestSeqNum) {
+    return nullptr;
+  }
+  return GetUpdateLocked(seq);
+}
+
+std::shared_ptr<TUpdate> TRepo::GetUpdateLocked(TSequenceNumber seq) {
   auto view = make_unique<TRepo::TView>(this, TView::TDataLockHeld{});
-  auto walker_ptr = NewUpdateWalker(view, *LowestSeqNum, *LowestSeqNum);
+  auto walker_ptr = NewUpdateWalker(view, seq, seq);
   auto &walker = *walker_ptr;
   assert(walker);
   if (walker) {

@@ -226,6 +226,21 @@ static void PrepareStatusChange(Indy::L1::TTransaction &transaction) {
   }
 }
 
+/* Commit a pause or unpause, and return once its WAL record is durable, as a new pov's is.  Its
+   record is all recovery has of it: one a crash beat to the disk came back with the pov's status
+   as it was before, though the client was told it had changed (#963). */
+template <typename TTransactionPtr>
+static void CommitStatusChange(TSession::TServer *server, TTransactionPtr &transaction) {
+  std::optional<uint64_t> commit_lsn;
+  transaction->ReportCommitLsn(&commit_lsn);
+  transaction->CommitAction();
+  /* The record is appended as the transaction goes. */
+  transaction.reset();
+  if (commit_lsn && server->GetWal()) {
+    server->GetWal()->WaitForDurable(*commit_lsn);
+  }
+}
+
 /* #721: takes room in repo's backlog for a write of num_entries entries, waiting while the
    backlog drains, or throws TInsufficientMemory. See the comment above GetWriterBacklogCap. */
 static void ReserveBacklogRoom(TSession::TServer *server, Indy::TRepo::TBacklogReservation &room,
@@ -500,7 +515,7 @@ void TSession::PausePov(TServer *server, const TUuid &pov_id) {
   auto transaction = server->GetRepoManager()->NewTransaction();
   transaction->Pause(repo);
   PrepareStatusChange(*transaction);
-  transaction->CommitAction();
+  CommitStatusChange(server, transaction);
   AddPov(pov);
 }
 
@@ -1344,7 +1359,7 @@ void TSession::UnpausePov(TServer *server, const TUuid &pov_id) {
   auto transaction = server->GetRepoManager()->NewTransaction();
   transaction->UnPause(repo);
   PrepareStatusChange(*transaction);
-  transaction->CommitAction();
+  CommitStatusChange(server, transaction);
   AddPov(pov);
 }
 

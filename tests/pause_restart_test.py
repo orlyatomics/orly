@@ -19,10 +19,15 @@ Each scenario runs on a fresh loopback volume with a small WAL ring (--wal-mb, d
   copied-held     copied-empty, with an older paused POV holding unpromoted writes, so the head
                   stays below the pause and recovery replays both the pause and its copy
   copied-unpaused copied-empty, unpaused before the SIGKILL: it must come back unpaused
+  repo-copied     copied-writes, but write on until the paused POV itself (its updates and its
+                  pause) has been copied forward twice (#963), so the records that wrote them have
+                  left the ring and only the copy holds them
+  repo-promoted   repo-copied, then unpaused and promoted before the SIGKILL: after the restart
+                  the global POV reads exactly the POV's writes, once
 
-After each restart it requires the POV to be paused (except copied-unpaused), its updates to be
-unpromoted (still pending, and not visible from a new POV of the global POV, after a wait), and
-then that unpausing it promotes them.
+After each restart it requires the POV to be paused (except copied-unpaused and repo-promoted),
+its updates to be unpromoted (still pending, and not visible from a new POV of the global POV,
+after a wait), and then that unpausing it promotes them.
 
 Needs root (losetup), like tests/restart_test.sh; run it through tests/pause_restart_test.sh.
 It ends with one summary line starting "PAUSE RESTART:" and exits nonzero on any violation.
@@ -65,16 +70,20 @@ paused_keys = (*(keys (int) @ <['p', free::(int)]>)::(int) as [int]);
 '''
 
 # name: (writes into the POV after its pause, write until the Pov records are copied forward,
-#        an older paused POV holding the head below the pause, unpause before the SIGKILL)
+#        an older paused POV holding the head below the pause, unpause before the SIGKILL,
+#        times the paused POV itself must be copied forward first)
 SCENARIOS = {
-    'copied-empty': (0, True, False, False),
-    'copied-writes': (5, True, False, False),
-    'copied-held': (0, True, True, False),
-    'copied-unpaused': (0, True, False, True),
-    'no-ring': (5, False, False, False),
-    'no-ring-empty': (0, False, False, False),
+    'copied-empty': (0, True, False, False, 0),
+    'copied-writes': (5, True, False, False, 0),
+    'copied-held': (0, True, True, False, 0),
+    'copied-unpaused': (0, True, False, True, 0),
+    'no-ring': (5, False, False, False, 0),
+    'no-ring-empty': (0, False, False, False, 0),
+    'repo-copied': (5, True, False, False, 2),
+    'repo-promoted': (5, True, False, True, 2),
 }
 COPIED = re.compile(r'TWalRetention: copied (\d+) Pov records forward')
+COPIED_REPOS = re.compile(r'TWalRetention: copied (\d+) of \d+ paused repos forward')
 
 
 def log(msg):
@@ -173,6 +182,9 @@ class Server:
     def copies(self):
         return sum(int(m.group(1)) for m in COPIED.finditer(self.log_text()))
 
+    def repo_copies(self):
+        return sum(int(m.group(1)) for m in COPIED_REPOS.finditer(self.log_text()))
+
 
 def visible_keys(c):
     """The 'p' keys a new POV of the global POV sees."""
@@ -180,10 +192,11 @@ def visible_keys(c):
     return sorted(int(v) for v in c.call(rpov, PKG, 'paused_keys'))
 
 
-def fill_until_copied(c, srv, args, need):
+def fill_until_copied(c, srv, args, need, repo_laps=0):
     """Write through a separate safe POV until `need` Pov records have been copied forward (the
-    oldest are copied first, and the fill POV is the newest, so these are the paused POVs'), then
-    keep going a little so the checkpoint head moves on. Returns None or an error."""
+    oldest are copied first, and the fill POV is the newest, so these are the paused POVs'), and
+    paused POVs copied forward `repo_laps` times, then keep going a little so the checkpoint head
+    moves on. Returns None or an error."""
     fpov = c.new_pov(safe=True, shared=True)
     blob = 'x' * args.fill_bytes
     n = 0
@@ -197,14 +210,33 @@ def fill_until_copied(c, srv, args, need):
         except (orly.InsufficientMemory, orly.InsufficientStorage):
             time.sleep(0.2)
             continue
-        if copied_at is None and srv.copies() >= need:
+        if copied_at is None and srv.copies() >= need and srv.repo_copies() >= repo_laps:
             copied_at = n
-            log(f'  Pov records copied forward after {n} fill writes')
+            log(f'  Pov records copied forward after {n} fill writes'
+                + (f', paused POVs {srv.repo_copies()} times' if repo_laps else ''))
         if copied_at is not None and n >= copied_at + args.fill_after:
             # Let the checkpointer (once a second) write a checkpoint with the new head.
             time.sleep(3)
             return None
-    return f'no Pov record copied forward within {args.fill_timeout}s ({n} fill writes)'
+    return (f'not copied forward within {args.fill_timeout}s ({n} fill writes; {srv.copies()} Pov records, '
+            f'{srv.repo_copies()} paused POVs of {repo_laps})')
+
+
+def wait_visible(c, writes, timeout=30):
+    """The 'p' keys global sees (but the holder's), once it sees `writes` of them or after `timeout`."""
+    deadline = time.monotonic() + timeout
+    while True:
+        seen = [k for k in visible_keys(c) if k != 1000]
+        if len(seen) >= writes or time.monotonic() >= deadline:
+            return seen
+        time.sleep(0.25)
+
+
+def finish(srv, kv):
+    if re.search(r'FATAL ERROR|TERMINATE', srv.log_text()):
+        kv.append('the log shows a FATAL ERROR or TERMINATE')
+    srv.stop()
+    return kv
 
 
 def run_scenario(args, work, name, kv):
@@ -223,7 +255,7 @@ def run_scenario(args, work, name, kv):
         err = srv.start(create=False)
         if err:
             return [f'restart after the install: {err}\n{srv.tail()}']
-        writes, fill, held, unpause = SCENARIOS[name]
+        writes, fill, held, unpause, laps = SCENARIOS[name]
         want = 'normal' if unpause else 'paused'
         with orly.connect(url, timeout=10, recv_timeout=120) as c:
             sid = c.new_session()
@@ -237,12 +269,18 @@ def run_scenario(args, work, name, kv):
             for i in range(1, writes + 1):
                 c.call(pov, PKG, 'put', {'n': i})
             if fill:
-                err = fill_until_copied(c, srv, args, 2 if held else 1)
+                err = fill_until_copied(c, srv, args, 2 if held else 1, laps)
                 if err:
                     return [err]
             if unpause:
                 c.unpause(pov)
                 time.sleep(3)
+                if writes:
+                    seen = wait_visible(c, writes)
+                    if seen != list(range(1, writes + 1)):
+                        kv.append(f'before the restart, after unpausing, global sees {seen}, not 1..{writes}')
+                    # Let a checkpoint pass the copies, so recovery replays the promotions alone.
+                    time.sleep(3)
             status = c.review(pov)['status']
             if status != want:
                 kv.append(f'before the restart the POV is {status!r}, not {want}')
@@ -258,31 +296,28 @@ def run_scenario(args, work, name, kv):
             log(f'  after the restart: status {review["status"]}, {review["pending"]} pending')
             if review['status'] != want:
                 kv.append(f'after the restart the POV is {review["status"]!r}, not {want}')
-            if int(review['pending']) != writes:
-                kv.append(f'after the restart the POV has {review["pending"]} updates pending, not {writes}')
+            pending = 0 if unpause else writes
+            if int(review['pending']) != pending:
+                kv.append(f'after the restart the POV has {review["pending"]} updates pending, not {pending}')
             # Give Tetris time to promote what it shouldn't.
             time.sleep(args.settle)
             seen = [k for k in visible_keys(c) if k != 1000]
-            if seen:
+            if unpause:
+                # Promoted before the SIGKILL: exactly once, from whichever records recovery read.
+                if seen != list(range(1, writes + 1)):
+                    kv.append(f'after the restart global sees {seen}, not 1..{writes}')
+            elif seen:
                 kv.append(f'the paused POV\'s updates were promoted after the restart: global sees {seen}')
             if review['status'] != 'paused':
-                return kv
+                return finish(srv, kv)
             c.unpause(pov)
-            deadline = time.monotonic() + 30
-            while time.monotonic() < deadline:
-                seen = [k for k in visible_keys(c) if k != 1000]
-                if len(seen) == writes:
-                    break
-                time.sleep(0.25)
+            seen = wait_visible(c, writes)
             if seen != list(range(1, writes + 1)):
                 kv.append(f'after unpausing, global sees {seen}, not 1..{writes}')
             if held:
                 if c.review(holder)['status'] != 'paused':
                     kv.append('after the restart the older paused POV is not paused')
-        text = srv.log_text()
-        if re.search(r'FATAL ERROR|TERMINATE', text):
-            kv.append('the log shows a FATAL ERROR or TERMINATE')
-        srv.stop()
+        return finish(srv, kv)
     finally:
         if srv.proc is not None:
             srv.kill()

@@ -1319,8 +1319,28 @@ void TManager::ClearReplaySeeds() {
   ReplaySeeds.clear();
 }
 
+bool TManager::ResetReplayNumbering(const Base::TUuid &repo_id, TSequenceNumber start) {
+  ReplaySeeds.erase(repo_id);
+  auto repo = TryGetLiveRepo(repo_id);
+  if (!repo) {
+    return false;
+  }
+  repo->SetNextSequenceNumber(start);
+  repo->SetReleasedUpTo(start > 0UL ? start - 1UL : 0UL);
+  return true;
+}
+
+void TManager::AdvanceReplayNumbering(const Base::TUuid &repo_id, TSequenceNumber next) {
+  auto repo = TryGetLiveRepo(repo_id);
+  if (repo && repo->GetNextSequenceNumber() < next) {
+    /* Its updates are where they are; only numbers it handed out and released go unused. */
+    repo->SetNextSequenceNumber(next);
+  }
+}
+
 size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena,
-                                              const TPushCallback &on_push, const THeadHold *head_hold) {
+                                              const TPushCallback &on_push, const THeadHold *head_hold,
+                                              const std::unordered_set<Base::TUuid> *skip_repos) {
   size_t num_applied = 0UL;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   std::vector<TCore>::const_iterator iter = core_vec.begin();
@@ -1345,13 +1365,15 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
       Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), repo_id);
       ++iter;
       Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), seq_num);
+      /* A repo a later copy rebuilds (#963): read past its mutations, as though it had gone. */
+      const bool skipped = skip_repos && skip_repos->count(repo_id);
       /* Apply only to a live repo.  Nothing on a slave pins its copy of a pov's repo, so the copy
          can be gone by now: one with no ttl goes as soon as the slave builds it, and the cache can
          let any other go.  Opening it by force built an empty repo whose sequence starts at 1,
          so the next mutation past 1 failed the sequence check below (an assert in debug, "missing
          data" in release), and a pov kept for a failover read through no parent (#671).  A
          skipped mutation still reaches whatever it was promoted into: that's its own mutation. */
-      auto repo = TryGetLiveRepo(repo_id);
+      auto repo = skipped ? TManager::TPtr<Indy::TRepo>() : TryGetLiveRepo(repo_id);
       switch (action) {
         case TTransactionAction::Push : {
           //std::cout << "Apply transaction PUSH [" << repo_id << "]\t[" << seq_num << "]" << std::endl;
@@ -1376,8 +1398,13 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
             entries.emplace_back(TIndexKey(index_id, TKey(key_core, arena)), TKey(val_core, arena), static_cast<TMutator>(mutator_raw));
           }
           //std::cout << "Push\t[" << repo_id << "]\t[" << seq_num << "]" << std::endl;
+          /* A skipped push's operation is still this record's: the copy that rebuilds the repo
+             passes no on_push, so its entries come back from here as they always did. */
           if (on_push) {
             pushed.emplace_back(repo_id, seq_num, &meta_core);
+          }
+          if (skipped) {
+            break;
           }
           if (repo && !ReplaySeeds.empty() && ReplaySeeds.erase(repo_id)) {
             /* A restored pov's first replayed update (see SeedNumberingFromReplay). */
@@ -1396,6 +1423,9 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
           //std::cout << "Apply transaction POP [" << repo_id << "]\t[" << seq_num << "]" << std::endl;
           //std::cout << "Pop\t[" << repo_id << "]\t[" << seq_num << "]" << std::endl;
           has_pop = true;
+          if (skipped) {
+            break;
+          }
           if (repo) {
             apply_transaction->Pop(repo, seq_num);
           } else {
@@ -1407,6 +1437,9 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
            nothing pending (#655); TTransaction checks it against our copy either way.  Status
            changes are rare, so say which ones we apply. */
         case TTransactionAction::Fail : {
+          if (skipped) {
+            break;
+          }
           if (repo) {
             LogStatusChange("fail", repo_id, seq_num, apply_transaction->Fail(repo, seq_num));
           } else {
@@ -1415,6 +1448,9 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
           break;
         }
         case TTransactionAction::Pause : {
+          if (skipped) {
+            break;
+          }
           if (repo) {
             LogStatusChange("pause", repo_id, seq_num, apply_transaction->Pause(repo, seq_num));
           } else {
@@ -1423,6 +1459,9 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
           break;
         }
         case TTransactionAction::UnPause : {
+          if (skipped) {
+            break;
+          }
           if (repo) {
             LogStatusChange("unpause", repo_id, seq_num, apply_transaction->UnPause(repo, seq_num));
           } else {

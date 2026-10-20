@@ -18,7 +18,12 @@
 
 #include <orly/indy/disk/wal.h>
 
+#include <atomic>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -966,3 +971,115 @@ FIXTURE(RingWrapAndCheckpointHeadScan) {
 }
 
 
+
+/* Runs `stop` (a WAL's destruction) and aborts the test if it hasn't returned within a minute: a
+   WAL that never stops would otherwise hang the suite rather than fail it. */
+static void StopWithin(const std::function<void ()> &stop) {
+  std::atomic<bool> stopped(false);
+  std::thread watchdog([&stopped] {
+    for (size_t i = 0UL; i < 600UL && !stopped.load(); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (!stopped.load()) {
+      fprintf(stderr, "the WAL did not stop within a minute\n");
+      abort();
+    }
+  });
+  stop();
+  stopped.store(true);
+  watchdog.join();
+}
+
+/* A WAL stopped with records still queued writes them all and stops, though every in-flight slot is
+   taken when it is told to (#963).  The leader went round again at once, holding the lock the
+   syncer needed to free a slot, so it never did.  Stopping as the syncer syncs is a race, so this
+   tries it many times, with one slot to make it likely. */
+FIXTURE(StopWithRecordsQueuedAndSlotsFull) {
+  for (size_t attempt = 0UL; attempt < 50UL; ++attempt) {
+    TFaultPlan plan;
+    TFaultDevice device(&plan, WalTestBlocks);
+    TWal::TConfig config;
+    config.BaseOffset = DiskUtil::PhysicalBlockSize;
+    config.CapacityBytes = 128UL * 1024UL;
+    config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+    config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+    config.StoreId = TestStoreId;
+    config.MaxInFlightGroups = 1UL;
+    const std::string data(1000UL, 'r');
+    auto wal = std::make_unique<TWal>(&device, config);
+    /* Twenty, so they fit the ring even one to a group. */
+    for (size_t i = 0UL; i < 20UL; ++i) {
+      wal->Append(TWalRecordType::Txn, data.data(), data.size());
+    }
+    StopWithin([&wal] { wal.reset(); });
+    const auto scan_res = TWal::Scan(&device, config);
+    if (!EXPECT_EQ(scan_res.Records.size(), 20UL)) {
+      break;
+    }
+  }
+}
+
+/* The same, made certain: the WAL is told to stop while it syncs the one group its one slot holds,
+   with more records queued behind it than one group holds.  The syncer used to leave as soon as that sync emptied the
+   slot, since it was stopping and nothing was in flight; the leader then wrote the next group into
+   the slot and waited for good for a syncer that had gone. */
+FIXTURE(StopWhileTheOnlySlotSyncs) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+  config.MaxInFlightGroups = 1UL;
+  std::atomic<bool> syncing(false), stop_called(false), first(true);
+  auto wal = std::make_unique<TWal>(&device, config);
+  wal->SetBeforeSyncForTest([&] {
+    if (!first.exchange(false)) {
+      return;
+    }
+    syncing.store(true);
+    while (!stop_called.load()) {
+      std::this_thread::yield();
+    }
+    /* Long enough for Stop() to have set Stopping. */
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  });
+  /* Ten thousand bytes each: the nine queued fill two groups, so the leader must wait for the slot. */
+  const std::string data(10000UL, 's');
+  wal->Append(TWalRecordType::Txn, data.data(), data.size());
+  while (!syncing.load()) {
+    std::this_thread::yield();
+  }
+  /* The slot is taken and its sync held, so these queue. */
+  for (size_t i = 1UL; i < 10UL; ++i) {
+    wal->Append(TWalRecordType::Txn, data.data(), data.size());
+  }
+  stop_called.store(true);
+  StopWithin([&wal] { wal.reset(); });
+  const auto scan_res = TWal::Scan(&device, config);
+  EXPECT_EQ(scan_res.Records.size(), 10UL);
+}
+
+/* With auto-seal off (a test's), a WAL stopped with its newest group synced but not sealed seals it
+   and stops, rather than going round for good waiting for a seal it would never write. */
+FIXTURE(StopUnsealedWithAutoSealOff) {
+  TFaultPlan plan;
+  TFaultDevice device(&plan, WalTestBlocks);
+  TWal::TConfig config;
+  config.BaseOffset = DiskUtil::PhysicalBlockSize;
+  config.CapacityBytes = 128UL * 1024UL;
+  config.CheckpointSlot0Offset = config.BaseOffset + config.CapacityBytes;
+  config.CheckpointSlot1Offset = config.CheckpointSlot0Offset + WalAlignment;
+  config.StoreId = TestStoreId;
+  auto wal = std::make_unique<TWal>(&device, config);
+  wal->SetAutoSealOnQuietForTest(false);
+  const std::string data = "unsealed";
+  const uint64_t lsn = wal->Append(TWalRecordType::Txn, data.data(), data.size());
+  /* Synced, never sealed: not durable. */
+  EXPECT_FALSE(wal->WaitForDurable(lsn, std::chrono::milliseconds(200)));
+  StopWithin([&wal] { wal.reset(); });
+  const auto scan_res = TWal::Scan(&device, config);
+  EXPECT_EQ(scan_res.Records.size(), 1UL);
+}

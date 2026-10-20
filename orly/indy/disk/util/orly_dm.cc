@@ -294,7 +294,7 @@ int main(int argc, char *argv[]) {
         continue;
       }
       if (dev_info.FormatVersion > 1UL) {
-        /* Format 2's retention records (#745) promise history to the store; there is no way back from it. */
+        /* Format 2's retention records (#745) promise history to the store, and format 3's features (#963) are in its WAL; there is no way back from either. */
         cerr << "Unsupported format version " << dev_info.FormatVersion << " on " << path_to_device
              << ": only format version 1 can be downgraded" << endl;
         return EXIT_FAILURE;

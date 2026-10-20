@@ -137,3 +137,73 @@ FIXTURE(FormatVersionFuture) {
   EXPECT_TRUE(TDeviceUtil::ProbeDevice(tmp_file.GetName(), dev_read));
   EXPECT_EQ(dev_read.FormatVersion, 2UL);
 }
+/* #963: the superblock carries the features a store has used, and a binary refuses a store that
+   used one it doesn't know. */
+FIXTURE(IncompatFeaturesRoundTrip) {
+  Base::TTmpFile tmp_file;
+  EXPECT_EQ(ftruncate(tmp_file.GetFd(), TDeviceUtil::BlockSize * 2), 0);
+  TDeviceUtil::TOrlyDevice dev_write;
+  dev_write.FormatVersion = 2UL;
+  dev_write.WalCheckpointBlocks = 256UL;
+  TDeviceUtil::ModifyDevice(tmp_file.GetName(), dev_write);
+  TDeviceUtil::TOrlyDevice dev_read;
+  EXPECT_TRUE(TDeviceUtil::ProbeDevice(tmp_file.GetName(), dev_read));
+  EXPECT_EQ(dev_read.IncompatFeatures, 0UL);
+  const auto [version, features] = TStoreFormat::WithFeature(dev_read.FormatVersion, dev_read.IncompatFeatures, TStoreFormat::WalRepoCopyFeature);
+  dev_write.FormatVersion = version;
+  dev_write.IncompatFeatures = features;
+  TDeviceUtil::ModifyDevice(tmp_file.GetName(), dev_write);
+  EXPECT_TRUE(TDeviceUtil::ProbeDevice(tmp_file.GetName(), dev_read));
+  EXPECT_EQ(dev_read.FormatVersion, 3UL);
+  /* A version 2 store kept retention records, and keeps saying so. */
+  EXPECT_EQ(dev_read.IncompatFeatures, TStoreFormat::RetentionFeature | TStoreFormat::WalRepoCopyFeature);
+  /* The word doesn't disturb the field before it. */
+  EXPECT_EQ(dev_read.WalCheckpointBlocks, 256UL);
+}
+
+FIXTURE(StoreFormatFeatures) {
+  /* What a store has used, by version. */
+  EXPECT_EQ(TStoreFormat::GetFeatures(0UL, 0UL), 0UL);
+  EXPECT_EQ(TStoreFormat::GetFeatures(1UL, 0UL), 0UL);
+  EXPECT_EQ(TStoreFormat::GetFeatures(2UL, 0UL), TStoreFormat::RetentionFeature);
+  /* Before version 3 the word is not read, whatever is there. */
+  EXPECT_EQ(TStoreFormat::GetFeatures(2UL, 0xffUL), TStoreFormat::RetentionFeature);
+  EXPECT_EQ(TStoreFormat::GetFeatures(3UL, TStoreFormat::WalRepoCopyFeature), TStoreFormat::WalRepoCopyFeature);
+  /* Taking a version 0 or 1 store to a feature keeps what it didn't have. */
+  EXPECT_TRUE(TStoreFormat::WithFeature(1UL, 0UL, TStoreFormat::WalRepoCopyFeature) == std::make_pair(3UL, TStoreFormat::WalRepoCopyFeature));
+  /* A version 3 store keeps its version and its other bits. */
+  EXPECT_TRUE(TStoreFormat::WithFeature(3UL, TStoreFormat::WalRepoCopyFeature, TStoreFormat::RetentionFeature) ==
+              std::make_pair(3UL, TStoreFormat::RetentionFeature | TStoreFormat::WalRepoCopyFeature));
+}
+
+FIXTURE(StoreFormatDowngradeRefused) {
+  /* This binary opens every version up to 3 with the features it knows. */
+  for (uint64_t version = 0UL; version <= 2UL; ++version) {
+    EXPECT_TRUE(TStoreFormat::CheckSupported(version, 0UL).empty());
+  }
+  EXPECT_TRUE(TStoreFormat::CheckSupported(3UL, TStoreFormat::KnownFeatures).empty());
+  /* A feature it doesn't know: a newer binary's store. */
+  const std::string unknown = TStoreFormat::CheckSupported(3UL, TStoreFormat::WalRepoCopyFeature | 4UL);
+  EXPECT_FALSE(unknown.empty());
+  EXPECT_NE(unknown.find("0x4"), std::string::npos);
+  EXPECT_FALSE(TStoreFormat::CheckSupported(4UL, 0UL).empty());
+  /* A binary from before #963 opens versions up to 2 only (TDiskEngine::MaxFormatVersion was 2),
+     so it refuses every store that has written a RepoCopy record: the first one takes it to 3. */
+  constexpr uint64_t OldMaxVersion = 2UL;
+  for (uint64_t version = 0UL; version <= 3UL; ++version) {
+    EXPECT_GT(TStoreFormat::WithFeature(version, 0UL, TStoreFormat::WalRepoCopyFeature).first, OldMaxVersion);
+  }
+}
+
+/* #963 review: a write of the block that fails throws, so EnableIncompatFeature's caller doesn't
+   take the store as marked.  /dev/full refuses every write (ENOSPC); fsync failing isn't reachable
+   from a test, but takes the same path. */
+FIXTURE(ModifyDeviceThrowsOnAFailedWrite) {
+  if (access("/dev/full", W_OK) != 0) {
+    return;
+  }
+  TDeviceUtil::TOrlyDevice dev_write;
+  dev_write.FormatVersion = 3UL;
+  const auto modify = [&dev_write] { TDeviceUtil::ModifyDevice("/dev/full", dev_write); };
+  EXPECT_THROW_FUNC(std::system_error, modify);
+}
