@@ -40,7 +40,10 @@ fi
 WORK="$(mktemp -d)"
 ORLYI_PID=
 cleanup() {
-  if [ -n "$ORLYI_PID" ]; then kill -9 "$ORLYI_PID" 2>/dev/null || true; fi
+  if [ -n "$ORLYI_PID" ]; then
+    kill -9 "$ORLYI_PID" 2>/dev/null || true
+    wait "$ORLYI_PID" 2>/dev/null || true
+  fi
   if [ -n "$KEEP_LOG" ]; then cp "$WORK/orlyi.log" "$KEEP_LOG" || true; fi
   rm -rf "$WORK"
 }
