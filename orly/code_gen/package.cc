@@ -542,7 +542,7 @@ void TPackage::WriteLink(TCppPrinter &out, const TRelPath &path) const {
                        does the same), so describe the link the same way -- the
                        inlined form has only TSelfRef, handled below (#115). */
                     if (Type::HasGroupRef(that->AsType())) {
-                      Type::InlinedMemberType(that->AsType()).Accept(*this);
+                      Type::InlinedOutsideType(that->AsType()).Accept(*this);
                       return;
                     }
                     Out

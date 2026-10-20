@@ -134,3 +134,38 @@ FIXTURE(MixedArms) {
   EXPECT_TRUE(Nav(pair.As<TObj>()->GetElems().at("l")) == stmt);
   EXPECT_TRUE(Nav(stmt.As<TVariant>()->GetElems().at("Step")) == expr);
 }
+
+/* An outside variant that holds a group member directly as an arm
+   (`w_t is <| Mut(fa) | X(int) |>`) must store that arm in the member's
+   canonical inlined form, the same type InlinedMemberType(fa) returns.
+   Rebuilding the member arm by arm instead gave a type one expansion
+   deeper (`A1(<| B0 | B1(<| A0 | A1(^1) |>) |>)` rather than
+   `A1(<| B0 | B1(^2) |>)`): the same values, a different stored type. */
+FIXTURE(OutsideVariantArmIsCanonicalMember) {
+  TTypeCzar czar;
+  /* fa is <| A0 | A1(fb) |>; fb is <| B0 | B1(fa) |>; */
+  auto m = MakeRecGroup({
+      {{"A0", TObj::Get({})}, {"A1", Ref(1)}},
+      {{"B0", TObj::Get({})}, {"B1", Ref(0)}},
+  });
+  TType fa = m[0], fb = m[1];
+
+  /* A member given to the outside-type entry point is its canonical form. */
+  EXPECT_TRUE(InlinedOutsideType(fa) == InlinedMemberType(fa));
+  EXPECT_TRUE(InlinedOutsideType(fb) == InlinedMemberType(fb));
+
+  TType w = TVariant::Get({{"Mut", fa}, {"X", TInt::Get()}});
+  TType inlined_w = InlinedOutsideType(w);
+  const auto &arms = inlined_w.As<TVariant>()->GetElems();
+  EXPECT_TRUE(arms.at("Mut") == InlinedMemberType(fa));
+  EXPECT_TRUE(arms.at("X") == TInt::Get());
+
+  /* A member reached through a container is canonical too. */
+  TType wl = TVariant::Get({{"Many", TList::Get(fa)}, {"X", TInt::Get()}});
+  TType inlined_wl = InlinedOutsideType(wl);
+  EXPECT_TRUE(inlined_wl.As<TVariant>()->GetElems().at("Many").As<TList>()->GetElem() ==
+              InlinedMemberType(fa));
+
+  /* Inlining is idempotent: an inlined form has no group refs left. */
+  EXPECT_TRUE(InlinedOutsideType(inlined_w) == inlined_w);
+}
