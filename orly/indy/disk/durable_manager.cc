@@ -18,6 +18,7 @@
 
 #include <orly/indy/disk/durable_manager.h>
 
+#include <cstring>
 #include <optional>
 
 #include <base/booster.h>
@@ -28,6 +29,17 @@ using namespace std;
 using namespace Base;
 using namespace Orly::Indy::Util;
 using namespace Orly::Indy::Disk;
+
+namespace {
+
+/* The leading size_t of a uuid's bytes, which are not aligned for one; read through memcpy. */
+size_t IdHash(const unsigned char *id) {
+  size_t hash;
+  memcpy(&hash, id, sizeof(hash));
+  return hash;
+}
+
+}  // namespace
 
 const Base::TUuid TDurableManager::DurableByIdFileId("20E91BAE-3465-4E9B-918F-C234DF84762A");
 
@@ -977,7 +989,7 @@ void TDurableManager::TSortedByIdFile::Write(TMemSlushLayer *mem_layer,
       if (!last_id || Base::CompareUuid(cur_id, last_id->GetRaw()) != 0) {
         last_id = TUuid(cur_id);
         if (cur_deadline_count >= latest_deadline_count) {
-          const size_t id_hash = *reinterpret_cast<size_t *>(const_cast<unsigned char *>(cur_id));
+          const size_t id_hash = IdHash(cur_id);
           out_stream.Write(&cur_id, sizeof(uuid_t));  // durable_id
           out_stream << (*csr).GetSeqNum();  // seq_num
           out_stream << (*csr).GetDeadlineCount();  // deadline_count
@@ -1173,7 +1185,7 @@ void TDurableManager::TSortedInFile::FindInHash(TSequenceNumber &cur_max_seq_num
   assert(InStream);
   uuid_t cur_id;
   TInStream hash_stream(HERE, Source::DurableMergeFileHash, RealTime, this, PageCache, HashIndexOffset);
-  const size_t id_hash = *reinterpret_cast<size_t *>(const_cast<unsigned char *>(id.GetRaw()));
+  const size_t id_hash = IdHash(id.GetRaw());
   size_t hash = id_hash % HashFieldSize;
   hash_stream.GoTo(HashIndexOffset + hash * (sizeof(uuid_t) + sizeof(size_t)));
   bool done = false;
@@ -1200,7 +1212,7 @@ void TDurableManager::TSortedInFile::FindInHash(TSequenceNumber &cur_max_seq_num
           InStream->Read(const_cast<char *>(serialized_form_out.data()), cur_serialized_size);
         }
         return;
-      } else if (*reinterpret_cast<size_t *>(const_cast<unsigned char *>(cur_id)) % HashFieldSize > hash) {
+      } else if (IdHash(cur_id) % HashFieldSize > hash) {
         return;
       } else {
         hash_stream.Skip(sizeof(size_t));
@@ -1232,7 +1244,7 @@ void TDurableManager::TSortedInFile::FindInHash(TSequenceNumber &cur_max_seq_num
             InStream->Read(const_cast<char *>(serialized_form_out.data()), cur_serialized_size);
           }
           return;
-        } else if (*reinterpret_cast<size_t *>(const_cast<unsigned char *>(cur_id)) % HashFieldSize > hash) {
+        } else if (IdHash(cur_id) % HashFieldSize > hash) {
           return;
         } else {
           hash_stream.Skip(sizeof(size_t));
@@ -1474,7 +1486,7 @@ void TDurableManager::TMergeSortedByIdFile::Write(const std::vector<size_t> &gen
         if (!last_id || Base::CompareUuid(cur_id, last_id->GetRaw()) != 0) {
           last_id = TUuid(cur_id);
           if (cur_deadline_count >= latest_deadline_count) {
-            const size_t id_hash = *reinterpret_cast<size_t *>(const_cast<unsigned char *>(cur_id));
+            const size_t id_hash = IdHash(cur_id);
             index_stream.Write(&cur_id, sizeof(uuid_t));  // durable_id
             index_stream << pop_num;  // seq_num
             index_stream << cur_deadline_count;  // deadline_count
