@@ -659,6 +659,12 @@ namespace Orly {
               const size_t hash_to_look_for = key.GetHash();
               const size_t modded_hash = hash_to_look_for % num_hash_fields;
 
+              /* Hash entries are truncated prefix cores (TryTruncateTuple clears UsesFullNote), so TCore::PrefixMatch can't
+                 take them; compare states instead. */
+              void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+              void *other_state_alloc = reinterpret_cast<uint8_t *>(key_state_alloc) + Sabot::State::GetMaxStateSize();
+              Sabot::State::TAny::TWrapper key_state(core.NewState(arena, key_state_alloc));
+
               in_stream.GoTo(byte_offset_of_hash_table + (modded_hash * TData::HashEntrySize));
               Atom::TCore cur_core;
               size_t cur_hash = 0;
@@ -669,7 +675,8 @@ namespace Orly {
                   assert(cur_core.IsTuple());
                   cur_hash = cur_core.ForceGetStoredHash();
                   if (cur_hash == hash_to_look_for) {
-                    if (IsPrefixMatch(core.PrefixMatch(arena, cur_core, file_arena))) {
+                    Sabot::TMatchResult res;
+                    if (IsPrefixMatch((res = MatchPrefixState(*key_state, *Sabot::State::TAny::TWrapper(cur_core.NewState(file_arena, other_state_alloc)))))) {
                       return true;
                     }
                   } else if (cur_hash % num_hash_fields > modded_hash) {
@@ -686,7 +693,8 @@ namespace Orly {
                 if (memcmp(&cur_core, &TData::NullCore, sizeof(Atom::TCore)) != 0) {
                   cur_hash = cur_core.ForceGetStoredHash();
                   if (cur_hash == hash_to_look_for) {
-                    if (IsPrefixMatch(core.PrefixMatch(arena, cur_core, file_arena))) {
+                    Sabot::TMatchResult res;
+                    if (IsPrefixMatch((res = MatchPrefixState(*key_state, *Sabot::State::TAny::TWrapper(cur_core.NewState(file_arena, other_state_alloc)))))) {
                       return true;
                     }
                   } else if (cur_hash % num_hash_fields > modded_hash) {
