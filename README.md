@@ -265,13 +265,26 @@ running), so collect them from the log:
 
 ```sh
 tools/jhm -c ubsan --test      # builds and runs every test under UBSan
-UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=0:report_error_type=1 \
-  ../out_orly/ubsan/orly/indy/context_fold.test 2>&1 | grep 'runtime error:'
+```
 
-# Orlyscript tests through a UBSan orlyc
-tools/jhm -c ubsan orly/orlyc
-ORLYC="$PWD/../out_orly/ubsan/orly/orlyc" \
-  UBSAN_OPTIONS=print_stacktrace=1 python3 tools/lang_test.py -d tests/lang_tests 2>&1 | grep 'runtime error:'
+`jhm --test` prints the output of a *failing* test only, and UBSan reports do
+not fail a test, so to see them run the binaries yourself and send the reports
+to files:
+
+```sh
+export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=0:report_error_type=1:log_path=/tmp/ubsan/r
+mkdir -p /tmp/ubsan
+../out_orly/ubsan/orly/indy/context_fold.test
+grep -h 'runtime error:' /tmp/ubsan/r.* | sort | uniq -c | sort -rn
+```
+
+Orlyscript tests go through a UBSan `orlyc`. Keep `log_path` set here:
+`lang_test.py` does not drain a child's output pipe until the child exits, so
+the many megabytes of stack traces a plain run prints will hang it.
+
+```sh
+tools/jhm -c ubsan orly/orlyc orly/server/orlyi
+ORLYC="$PWD/../out_orly/ubsan/orly/orlyc" python3 tools/lang_test.py -d tests/lang_tests
 ```
 
 On a machine with very large RAM, cap a standalone `orlyi` (cgroup limit) so
