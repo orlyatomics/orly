@@ -352,6 +352,15 @@ static TType UnrollAtDepth(const TType &type, const TType &binder, size_t depth)
       Out = ResolveGroupRef(that);
     }
     virtual void operator()(const TVariant *that) const {
+      /* A group member embedded in another type (e.g. as an arm of an
+         ordinary variant) is complete: its group references are its own, so
+         it travels unchanged rather than being expanded one level. */
+      std::vector<TType> group;
+      size_t index;
+      if (TryGetGroupMembers(that->AsType(), group, index)) {
+        Out = that->AsType();
+        return;
+      }
       TVariantElems elems;
       for (const auto &elem : that->GetElems()) {
         elems.emplace(elem.first, UnrollAtDepth(elem.second, Binder, Depth + 1));

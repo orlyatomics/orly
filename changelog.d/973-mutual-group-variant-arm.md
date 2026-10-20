@@ -1,0 +1,1 @@
+- **Fixed**: a member of a mutually recursive variant group used as an arm of an ordinary variant no longer aborts `orlyc` when that variant is stored, and constructing that variant (`w_t.Mut(fa.A0())`) is no longer rejected as a payload type mismatch ([#973](https://github.com/orlyatomics/orly/issues/973)).
