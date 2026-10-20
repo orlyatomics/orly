@@ -26,6 +26,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <chrono>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -98,7 +100,81 @@ namespace Orly {
         NO_COPY(TLocalWalkerCache);
         public:
 
+        /* Forward Declaration */
+        class TPresentWalkFile;
+
         TLocalWalkerCache() : LoaderCollection(this) {}
+
+        /* How often a runner frees the pooled walkers no reader has needed since the last time (#967). */
+        static constexpr std::chrono::seconds DefaultTrimInterval{10};
+
+        /* Change how often MaybeTrim trims. Tests set it so that they need not sleep, or so that no Get trims under
+           them. */
+        void SetTrimInterval(std::chrono::steady_clock::duration interval) {
+          TrimInterval = interval;
+        }
+
+        /* The walkers this runner pools now. */
+        size_t GetNumPooled() const {
+          return NumPooled;
+        }
+
+        /* Free, for every file and index, the pooled walkers that went unused since the last trim: as many as the
+           loader's free queue never dropped below (#967). Returns how many it freed. A walker is about 36 KiB of heap
+           (the object and its two arenas), and a loader used to keep as many as were ever out at once until its file
+           merged away. After a read-heavy benchmark of up to 256 concurrent sessions over about 400 files, that was
+           7.6 GiB of a 12.9 GiB heap, still held after five idle minutes, none of it in the memory plan. A steady load
+           keeps what it uses; a pool no reader touches is gone two trims later. Capping the pool instead made those
+           reads rebuild their walkers and halved read throughput. Runs on this runner. */
+        size_t Trim() {
+          return DeleteWalkers(TakeIdle());
+        }
+
+        /* Trim if TrimInterval has passed since the last one, and return how many walkers that freed. Runs on this
+           runner. */
+        size_t MaybeTrim() {
+          return std::chrono::steady_clock::now() - LastTrim >= TrimInterval ? Trim() : 0UL;
+        }
+
+        /* The first half of Trim: unlink from every loader the walkers it frees, and return them as a list. It does not
+           yield, so no loader can go away under it. Deleting a walker can yield (a stream waits out its read-ahead),
+           and in that time a Clear on this runner can delete a loader, so Trim deletes only after every loader is done
+           with. It counts as the trim, so a Get while the deletes yield doesn't start another one. */
+        TPresentWalkFile *TakeIdle() {
+          LastTrim = std::chrono::steady_clock::now();
+          TPresentWalkFile *idle = nullptr;
+          LoaderCollection.ForEachUniqueMember([&idle](TLoaderObj *loader) {
+            loader->TakeIdle(idle);
+            return true;
+          });
+          return idle;
+        }
+
+        /* Delete a list of walkers that TakeIdle or Clear unlinked, and return how many there were. A pooled walker
+           holds no reference to its loader, so this is safe after the loader is gone. May yield. A trim paused here can
+           briefly pin pages of a file that a Clear on this runner has already finished with (#910); that takes a
+           read-ahead still outstanding more than a trim interval after its walker went idle. */
+        static size_t DeleteWalkers(TPresentWalkFile *walkers) {
+          size_t num_deleted = 0UL;
+          while (walkers) {
+            TPresentWalkFile *next = walkers->NextWalker;
+            delete walkers;
+            ++num_deleted;
+            walkers = next;
+#ifndef NDEBUG
+            if (walkers && AfterWalkerDeleted) {
+              AfterWalkerDeleted();
+            }
+#endif
+          }
+          return num_deleted;
+        }
+
+#ifndef NDEBUG
+        /* Debug builds only: called between two deletes in DeleteWalkers, where a delete can yield, so a test can run
+           what a yield there would let run. */
+        inline static std::function<void()> AfterWalkerDeleted;
+#endif
 
         /* Forward Declaration */
         class TLoaderObj;
@@ -583,6 +659,7 @@ namespace Orly {
 
           TPresentWalkFile *NextWalker;
 
+          friend class TLocalWalkerCache;
           friend class TLoaderObj;
           friend class TPresentWalkFileWrapper;
 
@@ -592,6 +669,8 @@ namespace Orly {
                               const Base::TUuid &file_id,
                               size_t gen_id,
                               const Base::TUuid &index_id) {
+          /* A runner that keeps reading trims here; the layer cleaner's tour trims the ones that have gone quiet. */
+          MaybeTrim();
           TLoaderObj *loader = LoaderCollection.TryGetFirstMember(TWalkerKey(file_id, gen_id, index_id));
           if (!loader) {
             loader = new TLoaderObj(this, file_id, gen_id, index_id);
@@ -604,6 +683,12 @@ namespace Orly {
            own indexes left it pooled after the blocks were freed and reused (#910). One still checked out keeps its
            loader alive, and is deleted rather than pooled when it comes back. */
         void Clear(const Base::TUuid &file_id, size_t gen_id) {
+          DeleteWalkers(TakeFile(file_id, gen_id));
+        }
+
+        /* The first half of Clear: take the file's loaders out of the cache and return their pooled walkers as a list,
+           without yielding, as TakeIdle does. */
+        TPresentWalkFile *TakeFile(const Base::TUuid &file_id, size_t gen_id) {
           std::vector<TLoaderObj *> loaders;
           LoaderCollection.ForEachUniqueMember([&](TLoaderObj *loader) {
             const TWalkerKey &key = loader->GetKey();
@@ -612,9 +697,11 @@ namespace Orly {
             }
             return true;
           });
+          TPresentWalkFile *walkers = nullptr;
           for (TLoaderObj *loader : loaders) {
-            loader->Detach();
+            loader->Detach(walkers);
           }
+          return walkers;
         }
 
         /* Fiber-safe: see TFiberSafeLocal (#554, #578). */
@@ -644,6 +731,8 @@ namespace Orly {
             if (FreeQueue) {
               TPresentWalkFile *ret = FreeQueue;
               FreeQueue = ret->NextWalker;
+              --Owner->NumPooled;
+              LowWater = std::min(LowWater, --NumFree);
               return ret;
             }
             try {
@@ -662,6 +751,8 @@ namespace Orly {
             if (Owner == TLocalWalkerCache::Cache.Get() && CacheMembership.TryGetCollection()) {
               walker->NextWalker = FreeQueue;
               FreeQueue = walker;
+              ++Owner->NumPooled;
+              ++NumFree;
             } else {
               delete walker;
             }
@@ -672,19 +763,43 @@ namespace Orly {
             return CacheMembership.GetKey();
           }
 
-          /* Leave the cache and delete the pooled walkers. The loader itself goes once the last walker still checked
-             out comes back. Runs on the owning runner. */
-          void Detach() {
-            CacheMembership.Remove();
-            while (FreeQueue) {
-              TPresentWalkFile *to_delete = FreeQueue;
-              FreeQueue = to_delete->NextWalker;
-              delete to_delete;
+          /* Move the pooled walkers no reader took since the last trim, LowWater of them, from the cold end of the
+             queue (Return pushes at the front) onto `list`. Doesn't yield. Runs on the owning runner. */
+          void TakeIdle(TPresentWalkFile *&list) {
+            const size_t keep = NumFree - std::min(LowWater, NumFree);
+            TPresentWalkFile **link = &FreeQueue;
+            for (size_t i = 0UL; i < keep; ++i) {
+              assert(*link);
+              link = &(*link)->NextWalker;
             }
+            Splice(*link, list);
+            *link = nullptr;
+            LowWater = NumFree;
+          }
+
+          /* Leave the cache and move the pooled walkers onto `list`. The loader itself goes once the last walker still
+             checked out comes back, which may be now. Doesn't yield. Runs on the owning runner. */
+          void Detach(TPresentWalkFile *&list) {
+            CacheMembership.Remove();
+            Splice(FreeQueue, list);
+            FreeQueue = nullptr;
+            LowWater = 0UL;
             Release();
           }
 
           private:
+
+          /* Move the chain of pooled walkers from `walkers` on, onto the front of `list`, uncounting them. */
+          void Splice(TPresentWalkFile *walkers, TPresentWalkFile *&list) {
+            while (walkers) {
+              TPresentWalkFile *next = walkers->NextWalker;
+              walkers->NextWalker = list;
+              list = walkers;
+              --Owner->NumPooled;
+              --NumFree;
+              walkers = next;
+            }
+          }
 
           /* Drop one reference; the last one deletes the loader. */
           void Release() {
@@ -699,6 +814,11 @@ namespace Orly {
           /* Walkers waiting for reuse. Touched only on the owning runner. */
           TPresentWalkFile *FreeQueue;
 
+          /* How many walkers are on FreeQueue, and the fewest there have been since the last Trim. Touched only on the
+             owning runner. */
+          size_t NumFree = 0UL;
+          size_t LowWater = 0UL;
+
           /* One for the cache, while the loader is in it, plus one per walker checked out. */
           std::atomic<size_t> RefCount;
 
@@ -711,6 +831,13 @@ namespace Orly {
         typedef InvCon::UnorderedMultimap::TCollection<TLocalWalkerCache, TLoaderObj, TWalkerKey> TLoaderCollection;
 
         mutable typename TLoaderCollection::TImpl LoaderCollection;
+
+        /* The walkers on every loader's free queue. Touched only on this runner. */
+        size_t NumPooled = 0UL;
+
+        /* How often MaybeTrim trims, and when a trim last started. */
+        std::chrono::steady_clock::duration TrimInterval = DefaultTrimInterval;
+        std::chrono::steady_clock::time_point LastTrim = std::chrono::steady_clock::now();
 
       };  // TLocalWalkerCache
 

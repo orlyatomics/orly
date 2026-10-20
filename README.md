@@ -156,6 +156,9 @@ memory budget: 1024 MiB, from the cgroup limit in /sys/fs/cgroup/memory.max (fre
 memory plan: 732 MiB of the 1024 MiB budget; 356 MiB fixed (process baseline 32, append log 4, mem_sim_mb 256, mem_sim_slow_mb 64), 128 MiB kept for the heap, the rest scaled by 0.131836
 ```
 
+Peak RSS during a heavy read load can still exceed the budget, by up to
+about 2× ([#988](https://github.com/orlyatomics/orly/issues/988)).
+
 The smallest limit the image runs in is **768 MiB** (`--memory=768m`). Below
 747 MiB, `orlyi` refuses to start and says how much it needs. The floor is the
 mem-sim volumes (`ORLY_MEM_SIM_MB` + `ORLY_MEM_SIM_SLOW_MB`, 320 MiB by
