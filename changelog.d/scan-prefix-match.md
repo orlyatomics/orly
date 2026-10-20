@@ -1,0 +1,1 @@
+- **Fixed**: Disk and memory range walkers now check key order (`key > To`) before checking whether `key` unifies with `To`, and disk/memory present walkers and hash-table point lookups use `Atom::TCore::PrefixMatch` directly on tuple cores instead of allocating `Sabot::State` wrappers per entry.
