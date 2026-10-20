@@ -355,10 +355,18 @@ namespace {
   /* Rewrites every group reference reachable from `t` to its member's
      inlined form. Used for a type that is not itself a group member but
      reaches members from outside (e.g. an ordinary variant with a member as
-     an arm). Inlined forms are closed, so they can sit under extra binders. */
+     an arm). Inlined forms are closed, so they can sit under extra binders.
+
+     A member reached on the way is returned as its canonical inlined form
+     as it stands: walking into it arm by arm would rebuild it with its
+     siblings expanded one level deeper, which is the same value under a
+     different type. */
   TType InlineExternal(const TType &t) {
+    if (const auto it = MemberIndex().find(t); it != MemberIndex().end()) {
+      return it->second.first[it->second.second];
+    }
     if (const TGroupRef *gr = t.TryAs<TGroupRef>()) {
-      return InlinedMemberType(ResolveGroupRef(gr));
+      return InlineExternal(ResolveGroupRef(gr));
     }
     if (!HasGroupRef(t)) {
       return t;
@@ -394,11 +402,13 @@ namespace {
 
 }  // namespace
 
+TType Orly::Type::InlinedOutsideType(const TType &type) {
+  return InlineExternal(type);
+}
+
 TType Orly::Type::InlinedMemberType(const TType &member) {
   const auto it = MemberIndex().find(member);
-  if (it == MemberIndex().end()) {
-    return InlineExternal(member);
-  }
+  assert(it != MemberIndex().end());
   /* The group identity is exactly the members' canonical inlined de Bruijn
      forms, in canonical order; this member sits at it->second.second. */
   const TGroupId &gid = it->second.first;

@@ -71,6 +71,14 @@ namespace Orly {
        must be a type built by MakeRecGroup. */
     TType InlinedMemberType(const TType &member);
 
+    /* The storage form of any type that carries group references: a group
+       member gives exactly InlinedMemberType(member); any other type (an
+       ordinary variant, record or container reaching members from outside)
+       is rebuilt with every member it reaches replaced by that member's
+       canonical inlined form. Callers that may hold either kind use this;
+       InlinedMemberType is for a type known to be a member. */
+    TType InlinedOutsideType(const TType &type);
+
     /* The group-aware variant widening (subtype) relation `narrow ⊑ wide`
        (issue #104): the coinductive generalization of TVariant::IsWidenableTo
        across a mutually-recursive group. A `<| X(b) |> as <| Extra | X(b') |>`

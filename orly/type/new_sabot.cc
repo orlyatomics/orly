@@ -102,7 +102,7 @@ Sabot::Type::TAny *Orly::Type::TryNewSabot(void *buf, const Type::TType &type) {
          `::(member)` matches it on read-back. */
       const auto &lowered = type->GetLowered();
       if (lowered.HasGroupRef) {
-        Result = TryNewSabot(Buf, InlinedMemberType(type->AsType()));
+        Result = TryNewSabot(Buf, InlinedOutsideType(type->AsType()));
         return;
       }
       /* The record is built and interned once per variant type (#946). */
