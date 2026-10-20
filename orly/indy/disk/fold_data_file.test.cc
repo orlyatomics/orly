@@ -876,10 +876,10 @@ static uint64_t HashFileBytes(Sim::TMemEngine &mem_engine, const TUuid &file_id,
 
 /* #988: the sorters' buffers grow as they fill instead of taking their whole size up front, and the fold keeps its
    entries in a deque. Neither may change what is written. The source and its fold here are fully determined (fixed
-   file, index and update ids; a window from 0 keeps every update's id, so the fold mints none), and large enough
-   that each sorter's buffer grows several times. The fold's bytes must match those master wrote. Pool blocks are
-   zeroed on allocation, so the source's bytes no longer depend on what earlier fixtures left in reused blocks and
-   are pinned as well, alongside its content (every entry and update id). */
+   file, index and update ids; a window from 0 keeps every update's id, so the fold mints none), and large enough that
+   each sorter's buffer grows several times. The fold's bytes are pinned to the hash its zeroed blocks produce. Pool
+   blocks are zeroed on allocation, so the source's bytes no longer depend on what earlier fixtures left in reused
+   blocks and are pinned as well, alongside its content (every entry and update id). */
 FIXTURE(DataFileAndFoldBytesMatchMaster) {
   TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -976,6 +976,27 @@ static void WriteMarkerFile(Sim::TMemEngine &mem_engine, void *state_alloc, cons
   TDataFile(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, 1UL, 20UL, 0U, Medium);
 }
 
+/* Count the places a file's bytes hold the marker. */
+static size_t CountMarkers(Sim::TMemEngine &mem_engine, const TUuid &file_id, int64_t marker) {
+  TReader reader(HERE, mem_engine.GetEngine(), file_id, 1UL);
+  std::vector<uint8_t> bytes(reader.GetFileLength());
+  EXPECT_GT(bytes.size(), 0UL);
+  TDataFile::TDataInStream<0UL> in_stream(HERE, Source::MergeDataFileOther, RealTime, &reader,
+      mem_engine.GetEngine()->GetCache<TDataFile::TDataInStream<0UL>::PhysicalCachePageSize>(), 0UL);
+  for (size_t pos = 0UL; pos < bytes.size();) {
+    const size_t n = std::min<size_t>(bytes.size() - pos, 4096UL);
+    in_stream.Read(bytes.data() + pos, n);
+    pos += n;
+  }
+  size_t hits = 0UL;
+  for (size_t i = 0UL; i + sizeof(marker) <= bytes.size(); ++i) {
+    if (memcmp(bytes.data() + i, &marker, sizeof(marker)) == 0) {
+      ++hits;
+    }
+  }
+  return hits;
+}
+
 FIXTURE(ReusedPoolBlocksStartZeroed) {
   TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -986,23 +1007,9 @@ FIXTURE(ReusedPoolBlocksStartZeroed) {
     const TUuid file_b("bbbbbbbb-0000-4000-8000-000000000002"), index_b("bbbbbbbb-0000-4000-8000-0000000000bb");
     WriteMarkerFile(mem_engine, state_alloc, file_a, index_a, 3000UL, marker);
     WriteMarkerFile(mem_engine, state_alloc, file_b, index_b, 50UL, 1L);
-    TReader reader(HERE, mem_engine.GetEngine(), file_b, 1UL);
-    std::vector<uint8_t> bytes(reader.GetFileLength());
-    TDataFile::TDataInStream<0UL> in_stream(HERE, Source::MergeDataFileOther, RealTime, &reader,
-        mem_engine.GetEngine()->GetCache<TDataFile::TDataInStream<0UL>::PhysicalCachePageSize>(), 0UL);
-    for (size_t pos = 0UL; pos < bytes.size();) {
-      const size_t n = std::min<size_t>(bytes.size() - pos, 4096UL);
-      in_stream.Read(bytes.data() + pos, n);
-      pos += n;
-    }
-    size_t hits = 0UL;
-    for (size_t i = 0UL; i + sizeof(marker) <= bytes.size(); ++i) {
-      if (memcmp(bytes.data() + i, &marker, sizeof(marker)) == 0) {
-        ++hits;
-      }
-    }
-    EXPECT_GT(bytes.size(), 0UL);
-    EXPECT_EQ(hits, 0UL);
+    /* A's own bytes must hold the marker, or B holding none of it proves nothing. */
+    EXPECT_GT(CountMarkers(mem_engine, file_a, marker), 0UL);
+    EXPECT_EQ(CountMarkers(mem_engine, file_b, marker), 0UL);
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();
