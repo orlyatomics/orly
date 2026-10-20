@@ -116,7 +116,12 @@ namespace Orly {
 
       };
 
-      static constexpr size_t DiskArenaMaxCacheSize = 128;
+      /* The pages a disk arena's stream keeps pinned in its own small cache, in front of the shared page cache. Every
+         file walker holds two arenas, and the cache's slots are allocated with the arena whether or not they are used,
+         so at 128 a walker was about 35 KiB, and a read ladder over a few hundred files, which has a walker out per
+         file per index per session, peaked near twice the memory budget (#988). A point read touches a handful of
+         arena pages, so 8 slots keep its hits; the rest it finds in the page cache. */
+      static constexpr size_t DiskArenaMaxCacheSize = 8;
 
       template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, size_t StreamLocalCacheSize, bool ScanAheadAllowed>
       class TDiskArena

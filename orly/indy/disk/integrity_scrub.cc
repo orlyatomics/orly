@@ -160,7 +160,7 @@ namespace {
     NO_COPY(TScrubDataFileReader);
     public:
 
-    using TArena = TDiskArena<DUtil::LogicalPageSize, DUtil::LogicalBlockSize, DUtil::PhysicalBlockSize, DUtil::CheckedPage, 128, true>;
+    using TArena = TDiskArena<DUtil::LogicalPageSize, DUtil::LogicalBlockSize, DUtil::PhysicalBlockSize, DUtil::CheckedPage, DiskArenaMaxCacheSize, true>;
 
     TScrubDataFileReader(DUtil::TPageCache *page_cache,
                          const Base::TUuid &file_id,

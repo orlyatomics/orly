@@ -2242,7 +2242,7 @@ class TMergeDataFileImpl {
 
     static constexpr size_t PhysicalCachePageSize = PhysicalBlockSize / (LogicalBlockSize / LogicalBlockSize);
 
-    using TArena = TDiskArena<LogicalBlockSize, LogicalBlockSize, PhysicalBlockSize, PageCheckedBlock, 128, true>;
+    using TArena = TDiskArena<LogicalBlockSize, LogicalBlockSize, PhysicalBlockSize, PageCheckedBlock, DiskArenaMaxCacheSize, true>;
 
     TReader(const Base::TCodeLocation &code_location /* DEBUG */, uint8_t util_src, TEngine *engine, const Base::TUuid &file_id, size_t gen_id)
         : TReadFile(code_location, util_src, engine, file_id, Low, gen_id) {
