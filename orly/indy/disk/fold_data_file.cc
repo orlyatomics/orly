@@ -368,7 +368,7 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
       }
     }
     /* The source is in key order already; sort anyway (newest first within a key), so the output
-       is in a memory layer's order whatever the source's. Check first: stable_sort takes a scratch buffer as large as
+       is in a memory layer's order whatever the source's. Check first: stable_sort takes a scratch buffer of up to half
        the range, which an already ordered range doesn't need. */
     const auto entry_less = [](const TDataFile::TEntryView &a, const TDataFile::TEntryView &b) {
       const auto comp = a.Key.Compare(b.Key);

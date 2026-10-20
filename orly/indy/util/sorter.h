@@ -29,6 +29,7 @@
 #include <iterator>
 #include <type_traits>
 #include <algorithm>
+#include <cstddef>
 #include <cstdlib>
 
 #include <base/class_traits.h>
@@ -300,9 +301,11 @@ namespace Orly {
         /* The buffer grows as it fills, up to MaxSize, rather than taking MaxSize up front: most sorters
            hold far fewer values (#988). */
         void Grow() {
-          /* Moving values into the new buffer and freeing the old one without destructors is only right for these. */
+          /* A sorter never runs its values' destructors (here, in Clear or in its own destructor), moves them into a
+             new buffer, and stores them in malloc'd memory. Only these types make that right. */
           static_assert(std::is_nothrow_move_constructible_v<TVal>);
           static_assert(std::is_trivially_destructible_v<TVal>);
+          static_assert(alignof(TVal) <= alignof(std::max_align_t));
           const size_t new_capacity = std::min(MaxSize, std::max<size_t>(Capacity * 2U, InitialCapacity));
           TVal *data = reinterpret_cast<TVal *>(malloc(sizeof(TVal) * new_capacity));
           if (!data) {
