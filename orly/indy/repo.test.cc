@@ -1135,7 +1135,12 @@ FIXTURE(DuplicateNotesReadAsOneKey) {
 }
 
 /* #592 follow-up: --prune_merge_history=false keeps every update through the same merges that
-   otherwise drop the superseded ones. */
+   otherwise drop the superseded ones.
+
+   A merge drops an input's history, not its current versions: those it keeps whole, as history of
+   the output. So a superseded version goes at the second merge it is in. Since #968 the eight files
+   below go in one merge, which keeps all eight rounds; a ninth file and one more merge drop all but
+   the newest two. */
 FIXTURE(PruneMergeHistoryFlag) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     TRunnerFileCaches file_caches;
@@ -1148,8 +1153,16 @@ FIXTURE(PruneMergeHistoryFlag) {
         root.Flush();
       }
       root.MergeDisk(16UL);
+      EXPECT_EQ(root.CountLayers(), 1UL);
+      EXPECT_EQ(root.CountWalk(), root.NumCommits);
       for (int64_t key = 0L; key < 20L; ++key) {
-        EXPECT_EQ(root.Read(key), root.Int(800L + key));
+        root.Commit({{key, 900L + key, TMutator::Assign}});
+      }
+      root.Flush();
+      root.MergeDisk(16UL);
+      EXPECT_EQ(root.CountLayers(), 1UL);
+      for (int64_t key = 0L; key < 20L; ++key) {
+        EXPECT_EQ(root.Read(key), root.Int(900L + key));
       }
       const size_t walked = root.CountWalk();
       if (prune) {
@@ -1252,6 +1265,57 @@ FIXTURE(DiskMergeSkipsAPairThatCannotFit) {
       root.MergeDisk(3UL);
       EXPECT_EQ(root.CountLayers(), 2UL);
       for (int64_t key : {0L, 4499L, 4500L, 8999L, 20000L, 20001L}) {
+        EXPECT_EQ(root.Read(key), root.Int(key));
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #968: a disk merge takes a run of files, not just a pair. Ten one-key files sit in one gen set. The
+   first pass merges the oldest MaxDiskMergeInputs of them into one file, which is still in that set,
+   so the second merges it with the last two. Pairwise, that took nine passes. A big file after the
+   small ones is in a higher set, so the run takes it too; a small file after the big one stops the
+   run, since its set is lower. */
+FIXTURE(DiskMergeTakesARunOfFiles) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    {
+      TRootRepoFixture root(true);
+      static_assert(TSafeRepo::MaxDiskMergeInputs == 8UL);
+      for (int64_t key = 0L; key < 10L; ++key) {
+        root.Commit({{key, key, TMutator::Assign}});
+        root.Flush();
+      }
+      EXPECT_EQ(root.CountLayers(), 10UL);
+      root.MergeDisk(1UL);
+      EXPECT_EQ(root.CountLayers(), 3UL);
+      root.MergeDisk(1UL);
+      EXPECT_EQ(root.CountLayers(), 1UL);
+      for (int64_t key = 0L; key < 10L; ++key) {
+        EXPECT_EQ(root.Read(key), root.Int(key));
+      }
+      /* Two one-key files, a thousand-key file, then a one-key file. */
+      root.Commit({{100L, 100L, TMutator::Assign}});
+      root.Flush();
+      root.Commit({{101L, 101L, TMutator::Assign}});
+      root.Flush();
+      vector<tuple<int64_t, int64_t, TMutator>> entries;
+      for (int64_t key = 1000L; key < 2000L; ++key) {
+        entries.emplace_back(key, key, TMutator::Assign);
+      }
+      root.Commit(entries);
+      root.Flush();
+      root.Commit({{102L, 102L, TMutator::Assign}});
+      root.Flush();
+      EXPECT_EQ(root.CountLayers(), 5UL);
+      /* The oldest file (ten keys) and the two small ones after it are in one set, and the big one is
+         in a higher set, so the run is the first four; the last small file is in a lower set. */
+      root.MergeDisk(1UL);
+      EXPECT_EQ(root.CountLayers(), 2UL);
+      for (int64_t key : {0L, 9L, 100L, 101L, 102L, 1000L, 1999L}) {
         EXPECT_EQ(root.Read(key), root.Int(key));
       }
     }
