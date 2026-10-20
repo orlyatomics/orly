@@ -382,8 +382,8 @@ namespace Orly {
               }
               case Range: {
                 /* A key unifying with To is in range (To may be a pattern, #735); otherwise it is past the range once it orders
-                   after To. */
-                return (!UnifiesWithTo(key) && TKey(key, IndexArena.get()) > To) ? TPlace::Past : TPlace::In;
+                   after To.  Check the order first so interior keys (<= To) skip UnifiesWithTo. */
+                return (TKey(key, IndexArena.get()) > To && !UnifiesWithTo(key)) ? TPlace::Past : TPlace::In;
               }
             }
             assert(false);
@@ -526,11 +526,7 @@ namespace Orly {
 
           /* True iff the key (in the index arena) unifies with To. */
           bool UnifiesWithTo(const Atom::TCore &key) const {
-            void *to_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
-            void *cur_state_alloc = static_cast<uint8_t *>(to_state_alloc) + Sabot::State::GetMaxStateSize();
-            return MatchPrefixState(
-                *Sabot::State::TAny::TWrapper(To.GetCore().NewState(To.GetArena(), to_state_alloc)),
-                *Sabot::State::TAny::TWrapper(key.NewState(IndexArena.get(), cur_state_alloc))) == Sabot::TMatchResult::Unifies;
+            return To.GetCore().PrefixMatch(To.GetArena(), key, IndexArena.get()) == Sabot::TMatchResult::Unifies;
           }
 
           /* Forget any history replay a previous walk left armed. Walkers are

@@ -297,9 +297,11 @@ TMemoryLayer::TMatchPresentWalker &TMemoryLayer::TMatchPresentWalker::operator++
 
 void TMemoryLayer::TMatchPresentWalker::Refresh() const {
   if (Valid && !Cached) {
-    void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
-    void *search_state_alloc = reinterpret_cast<uint8_t *>(key_state_alloc) + Sabot::State::GetMaxStateSize();
-    Sabot::State::TAny::TWrapper key_state(Key.GetKey().GetCore().NewState(Key.GetKey().GetArena(), key_state_alloc));
+    const Atom::TCore &key_core = Key.GetKey().GetCore();
+    Atom::TCore::TArena *const key_arena = Key.GetKey().GetArena();
+    const bool key_is_tuple = key_core.IsTuple();
+    void *key_state_alloc = nullptr;
+    void *search_state_alloc = nullptr;
     for (; Csr; ++Csr) {
       Cached = true;
       const auto &csr_index_id = Csr->GetIndexKey().GetIndexId();
@@ -308,8 +310,20 @@ void TMemoryLayer::TMatchPresentWalker::Refresh() const {
         return;
       }
       if (Key.GetIndexId() == csr_index_id) {
-        Sabot::State::TAny::TWrapper cur_state(Csr->GetKey().GetCore().NewState(Csr->GetKey().GetArena(), search_state_alloc));
-        Sabot::TMatchResult result = MatchPrefixState(*key_state, *cur_state);
+        const Atom::TCore &cur_core = Csr->GetKey().GetCore();
+        Atom::TCore::TArena *const cur_arena = Csr->GetKey().GetArena();
+        Sabot::TMatchResult result;
+        if (key_is_tuple && cur_core.IsTuple()) {
+          result = key_core.PrefixMatch(key_arena, cur_core, cur_arena);
+        } else {
+          if (!key_state_alloc) {
+            key_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+            search_state_alloc = reinterpret_cast<uint8_t *>(key_state_alloc) + Sabot::State::GetMaxStateSize();
+          }
+          Sabot::State::TAny::TWrapper key_state(key_core.NewState(key_arena, key_state_alloc));
+          Sabot::State::TAny::TWrapper cur_state(cur_core.NewState(cur_arena, search_state_alloc));
+          result = MatchPrefixState(*key_state, *cur_state);
+        }
         switch (result) {
           case Sabot::TMatchResult::NoMatch: {
             /* Once a match has been seen, the first NoMatch ends the run. That is sound only because free members trail
@@ -330,9 +344,9 @@ void TMemoryLayer::TMatchPresentWalker::Refresh() const {
           }
           case Sabot::TMatchResult::Unifies: {
             PassedMatch = true;
-            Item.KeyArena = Csr->GetKey().GetArena();
-            Item.OpArena = Csr->GetKey().GetArena();
-            Item.Key = Csr->GetKey().GetCore();
+            Item.KeyArena = cur_arena;
+            Item.OpArena = cur_arena;
+            Item.Key = cur_core;
             Item.Op = Csr->GetOp();
             Item.SequenceNumber = Csr->GetSequenceNumber();
             Item.Mutator = Csr->GetMutator();
@@ -393,9 +407,11 @@ TMemoryLayer::TRangePresentWalker &TMemoryLayer::TRangePresentWalker::operator++
 
 void TMemoryLayer::TRangePresentWalker::Refresh() const {
   if (Valid && !Cached) {
-    void *to_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
-    void *cur_state_alloc = static_cast<uint8_t *>(to_state_alloc) + Sabot::State::GetMaxStateSize();
-    Sabot::State::TAny::TWrapper to_state(To.GetKey().GetCore().NewState(To.GetKey().GetArena(), to_state_alloc));
+    const Atom::TCore &to_core = To.GetKey().GetCore();
+    Atom::TCore::TArena *const to_arena = To.GetKey().GetArena();
+    const bool to_is_tuple = to_core.IsTuple();
+    void *to_state_alloc = nullptr;
+    void *cur_state_alloc = nullptr;
     for (; Csr; ++Csr) {
       Cached = true;
       const auto &csr_index_id = Csr->GetIndexKey().GetIndexId();
@@ -409,11 +425,25 @@ void TMemoryLayer::TRangePresentWalker::Refresh() const {
            pattern whose free members are its rightmost ones (#735); a key
            unifying with To is in range either way, and otherwise the key
            is past the range once it orders after To. */
-        Sabot::State::TAny::TWrapper cur_state(Csr->GetKey().GetCore().NewState(Csr->GetKey().GetArena(), cur_state_alloc));
-        if (MatchPrefixState(*to_state, *cur_state) != Sabot::TMatchResult::Unifies &&
-            Atom::IsGt(OrderStates(*cur_state, *to_state))) {
-          Valid = false;
-          return;
+        if (Csr->GetKey() > To.GetKey()) {
+          const Atom::TCore &cur_core = Csr->GetKey().GetCore();
+          Atom::TCore::TArena *const cur_arena = Csr->GetKey().GetArena();
+          Sabot::TMatchResult match_res;
+          if (to_is_tuple && cur_core.IsTuple()) {
+            match_res = to_core.PrefixMatch(to_arena, cur_core, cur_arena);
+          } else {
+            if (!to_state_alloc) {
+              to_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+              cur_state_alloc = static_cast<uint8_t *>(to_state_alloc) + Sabot::State::GetMaxStateSize();
+            }
+            Sabot::State::TAny::TWrapper to_state(to_core.NewState(to_arena, to_state_alloc));
+            Sabot::State::TAny::TWrapper cur_state(cur_core.NewState(cur_arena, cur_state_alloc));
+            match_res = MatchPrefixState(*to_state, *cur_state);
+          }
+          if (match_res != Sabot::TMatchResult::Unifies) {
+            Valid = false;
+            return;
+          }
         }
         Item.KeyArena = Csr->GetKey().GetArena();
         Item.OpArena = Csr->GetKey().GetArena();

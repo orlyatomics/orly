@@ -659,6 +659,8 @@ namespace Orly {
               const size_t hash_to_look_for = key.GetHash();
               const size_t modded_hash = hash_to_look_for % num_hash_fields;
 
+              /* Hash entries are truncated prefix cores (TryTruncateTuple clears UsesFullNote), so TCore::PrefixMatch can't
+                 take them; compare states instead. */
               void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
               void *other_state_alloc = reinterpret_cast<uint8_t *>(key_state_alloc) + Sabot::State::GetMaxStateSize();
               Sabot::State::TAny::TWrapper key_state(core.NewState(arena, key_state_alloc));
