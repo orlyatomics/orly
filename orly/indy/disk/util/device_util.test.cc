@@ -207,3 +207,27 @@ FIXTURE(ModifyDeviceThrowsOnAFailedWrite) {
   const auto modify = [&dev_write] { TDeviceUtil::ModifyDevice("/dev/full", dev_write); };
   EXPECT_THROW_FUNC(std::system_error, modify);
 }
+
+FIXTURE(MatchesDeviceGlobs) {
+  /* No globs: every device (#970). */
+  EXPECT_TRUE(TDeviceUtil::MatchesDeviceGlobs("loop0", {}));
+  EXPECT_TRUE(TDeviceUtil::MatchesDeviceGlobs("loop2", {"loop2"}));
+  EXPECT_FALSE(TDeviceUtil::MatchesDeviceGlobs("loop21", {"loop2"}));
+  EXPECT_FALSE(TDeviceUtil::MatchesDeviceGlobs("loop0", {"loop2"}));
+  /* A leading /dev/ on the glob is ignored. */
+  EXPECT_TRUE(TDeviceUtil::MatchesDeviceGlobs("loop2", {"/dev/loop2"}));
+  EXPECT_TRUE(TDeviceUtil::MatchesDeviceGlobs("ram1", {"ram*"}));
+  EXPECT_TRUE(TDeviceUtil::MatchesDeviceGlobs("ram1", {"/dev/ram*"}));
+  EXPECT_FALSE(TDeviceUtil::MatchesDeviceGlobs("loop1", {"ram*"}));
+  EXPECT_TRUE(TDeviceUtil::MatchesDeviceGlobs("loop3", {"loop[23]"}));
+  EXPECT_FALSE(TDeviceUtil::MatchesDeviceGlobs("loop4", {"loop[23]"}));
+  /* Any of several. */
+  EXPECT_TRUE(TDeviceUtil::MatchesDeviceGlobs("nvme0n1", {"loop1", "nvme*"}));
+  EXPECT_FALSE(TDeviceUtil::MatchesDeviceGlobs("sda", {"loop1", "nvme*"}));
+}
+
+FIXTURE(TryGetValFromDeviceInfoMissingFile) {
+  /* A device, or a device file, that isn't there reads as empty rather than throwing (#970). */
+  EXPECT_FALSE(TDeviceUtil::TryGetValFromDeviceInfo("orlynosuchdev9", "queue/rq_affinity").has_value());
+  EXPECT_FALSE(TDeviceUtil::GetRqAffinity("orlynosuchdev9").has_value());
+}

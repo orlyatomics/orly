@@ -403,6 +403,10 @@ namespace Orly {
         /* Size of the WAL ring in megabytes (#755). Default 256. */
         size_t WalMB = 256;
 
+        /* The block devices the volume scan may use, as names or shell globs ("loop3", "/dev/ram*").
+           Empty, the default, scans every device on the host (#970). */
+        std::vector<std::string> Devices;
+
         /* The exactly-once table (#733): how many completed writes it keeps across all POVs, how old,
            by the operation id's own time, one may be, and the largest outcome it keeps. */
         size_t OperationRetentionCount = 4096;

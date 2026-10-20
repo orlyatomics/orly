@@ -23,6 +23,9 @@
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
+#include <tuple>
+#include <vector>
 
 #include <syslog.h>
 
@@ -40,15 +43,41 @@ TDiskUtil::TDiskUtil(Base::TScheduler *scheduler,
                      const std::optional<std::string> &instance_filter,
                      bool do_fsync,
                      const TCacheCb &cache_cb,
-                     bool do_corruption_check)
+                     bool do_corruption_check,
+                     const std::vector<std::string> &device_globs)
     : Scheduler(scheduler), Controller(controller), CacheCb(cache_cb) {
-  TDeviceUtil::ForEachDevice([this, &instance_filter, do_corruption_check, do_fsync](const char *path) {
+  /* (volume, device number) -> the device found for it, to catch copies of one volume (#970). */
+  std::vector<std::tuple<TVolumeId, size_t, string>> found;
+  TDeviceUtil::ForEachDevice([this, &instance_filter, &device_globs, &found, do_corruption_check, do_fsync](const char *path) {
     TDeviceUtil::TOrlyDevice device_info;
     string path_to_device = "/dev/";
     path_to_device += path;
-    bool ret = TDeviceUtil::ProbeDevice(path_to_device.c_str(), device_info);
     AllDeviceSet.emplace(path_to_device);
+    /* Only the devices asked for are probed (#970). */
+    if (!TDeviceUtil::MatchesDeviceGlobs(path, device_globs)) {
+      return true;
+    }
+    bool ret = TDeviceUtil::ProbeDevice(path_to_device.c_str(), device_info);
     if (ret && (!instance_filter || device_info.VolumeId.GetInstanceName() == *instance_filter)) {
+      /* A copy of a volume (a dd'd image on a RAM disk or a loop device, say) has the same
+         superblock as the original.  Two devices both claiming one place in one volume can't
+         both be used: opening a store, that is an error, naming both; a scan of the whole host
+         (orly_dm) keeps the first and warns (#970). */
+      for (const auto &[vol_id, dev_num, other] : found) {
+        if (vol_id == device_info.VolumeId && dev_num == device_info.VolumeDeviceNumber) {
+          std::ostringstream msg;
+          msg << "Devices [" << other << "] and [" << path_to_device << "] are both device [" << dev_num << "] of volume ["
+              << device_info.VolumeId.GetInstanceName() << ", " << device_info.VolumeId.Id
+              << "]: copies of one volume.  Name the one to use (orlyi --device, orly_dm --scan) (#970)";
+          if (instance_filter) {
+            syslog(LOG_ERR, "%s", msg.str().c_str());
+            throw std::runtime_error(msg.str());
+          }
+          syslog(LOG_WARNING, "%s; skipping [%s]", msg.str().c_str(), path_to_device.c_str());
+          return true;
+        }
+      }
+      found.emplace_back(device_info.VolumeId, device_info.VolumeDeviceNumber, path_to_device);
       OrlyDeviceMap.emplace(path_to_device, device_info);
       auto ret = VolumeById.find(device_info.VolumeId);
       if (ret != VolumeById.end()) {

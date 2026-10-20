@@ -925,6 +925,19 @@ jobs:
       - name: tests/saved_repo_restart_test.sh
         run: ./tests/saved_repo_restart_test.sh
 
+      # Two byte copies of one volume opened in parallel, each orlyi given its own --device, and a
+      # volume on a brd RAM disk, which has no queue/rq_affinity (#970). brd is optional on the
+      # runner; without it that step is skipped and says so.
+      - name: tests/device_select_test.sh
+        run: |
+          RAM=()
+          if sudo modprobe brd rd_nr=1 rd_size=4194304 2>/dev/null && [ -b /dev/ram0 ]; then
+            RAM=(--ram=/dev/ram0)
+          else
+            echo "brd not available on this runner; skipping the RAM disk step"
+          fi
+          ./tests/device_select_test.sh "${RAM[@]}"
+
   lang-tests:
     name: lang_test.py
     needs: todo-lint

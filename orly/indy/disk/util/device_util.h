@@ -22,8 +22,10 @@
 
 #include <algorithm>
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/dir_iter.h>
@@ -158,6 +160,17 @@ namespace Orly {
 
           static size_t GetValFromDeviceInfo(const std::string &dev_name, const std::string &path_to_field);
 
+          /* As GetValFromDeviceInfo(), but empty, not an exception, when the device has no such
+             file: a bio-based device (a brd RAM disk) has no queue/rq_affinity, say (#970). */
+          static std::optional<size_t> TryGetValFromDeviceInfo(const std::string &dev_name, const std::string &path_to_field);
+
+          /* True if `dev_name`, a name as /proc/partitions gives it ("loop2"), matches one of
+             `globs`, or if there are none.  Each glob is an fnmatch(3) pattern ("loop2",
+             "loop[23]", "ram*"); a leading "/dev/" is ignored, so "/dev/loop2" matches too.  This
+             is how a process is limited to some of the host's devices: several copies of one
+             volume, with the same instance name, on different devices (#970). */
+          static bool MatchesDeviceGlobs(const std::string &dev_name, const std::vector<std::string> &globs);
+
           static size_t GetDiscardGranularity(const std::string &dev_name) {
             return GetValFromDeviceInfo(dev_name, "queue/discard_granularity");
           }
@@ -166,8 +179,9 @@ namespace Orly {
             return GetValFromDeviceInfo(dev_name, "queue/discard_max_bytes");
           }
 
-          static size_t GetRqAffinity(const std::string &dev_name) {
-            return GetValFromDeviceInfo(dev_name, "queue/rq_affinity");
+          /* Empty for a device with no request queue to steer (#970). */
+          static std::optional<size_t> GetRqAffinity(const std::string &dev_name) {
+            return TryGetValFromDeviceInfo(dev_name, "queue/rq_affinity");
           }
 
           static size_t GetMaxSegments(const std::string &dev_name) {
