@@ -1,0 +1,106 @@
+/* <orly/lang_tests/general/variants_recursive_key.orly>
+
+   End-to-end test for issue #980: a recursive sum-type value can be part of
+   a KEY, not just a stored value.
+
+   A key's sabot type carries the recursive TSelfRef leaf wherever the
+   variant's fixed-shape record refers back to itself.  Matching a key
+   pattern against the stored keys walks both types in lock-step, so it
+   meets those leaves on both sides at once -- or a leaf on one side and the
+   spelled-out variant on the other, since a stored key's type is rebuilt
+   from its value while a free slot keeps the declared type.  This covers a
+   self-recursive variant alone and inside a compound key, several stored
+   values that must stay distinct, free slots of and after a recursive type
+   in key ranges, and members of a mutually recursive group.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+nd is <| L | N(nd) |>;
+tree is <| Leaf(int) | Branch(<{.l: tree, .r: tree}>) |>;
+json is <| JNull | JNum(int) | JArr([json]) |>;
+
+fa is <| A0 | A1(fb) |>;
+fb is <| B0 | B1(fa) |>;
+
+read_nd = (*<[k]>::(int)) where {
+  k = given::(nd);
+};
+
+read_tree = (*<['t', 1, k]>::(int)) where {
+  k = given::(tree);
+};
+
+/* The repro from the issue: a recursive value is the whole key. */
+with {
+  <[nd.N(nd.L())]> <- 5;
+} test {
+  t1: *<[nd.N(nd.L())]>::(int) == 5;
+  t2: read_nd(.k: nd.N(nd.L())) == 5;
+  /* A different recursive value is a different key. */
+  t3: *<[nd.N(nd.N(nd.L()))]>::(int?) is unknown;
+};
+
+/* Several values of one recursive type, each under its own key. */
+with {
+  <[nd.L()]> <- 10;
+  <[nd.N(nd.L())]> <- 11;
+  <[nd.N(nd.N(nd.L()))]> <- 12;
+} test {
+  t4: read_nd(.k: nd.L()) == 10;
+  t5: read_nd(.k: nd.N(nd.L())) == 11;
+  t6: read_nd(.k: nd.N(nd.N(nd.L()))) == 12;
+  t7: *(keys (int) @ <[free::(nd)]>)::(int) as [int] == [10, 11, 12];
+};
+
+/* A record arm with two self fields, inside a compound key. */
+with {
+  <['t', 1, tree.Leaf(1)]> <- 20;
+  <['t', 1, tree.Branch(<{.l: tree.Leaf(1), .r: tree.Leaf(2)}>)]> <- 21;
+} test {
+  t8: read_tree(.k: tree.Leaf(1)) == 20;
+  t9: read_tree(.k: tree.Branch(<{.l: tree.Leaf(1), .r: tree.Leaf(2)}>)) == 21;
+  t10: *<['t', 1, tree.Branch(<{.l: tree.Leaf(2), .r: tree.Leaf(1)}>)]>::(int?) is unknown;
+  t11: (*(keys (int) @ <['t', 1, free::(tree)]>)::(int) as {int}) == {20, 21};
+};
+
+/* A container-of-self arm in a key. */
+with {
+  <[json.JArr([json.JNum(1), json.JNull()])]> <- 30;
+} test {
+  t12: *<[json.JArr([json.JNum(1), json.JNull()])]>::(int) == 30;
+};
+
+/* A member of a mutually recursive group in a key. */
+with {
+  <[fa.A1(fb.B1(fa.A0()))]> <- 40;
+  <[fb.B1(fa.A1(fb.B0()))]> <- 41;
+} test {
+  t13: *<[fa.A1(fb.B1(fa.A0()))]>::(int) == 40;
+  t14: *<[fb.B1(fa.A1(fb.B0()))]>::(int) == 41;
+  t15: (*(keys (int) @ <[free::(fa)]>)::(int) as [int]) == [40];
+};
+
+/* A free slot after a recursive key part only ranges over keys whose
+   recursive part is exactly the one given. */
+with {
+  <[nd.L(), 1]> <- 50;
+  <[nd.N(nd.L()), 2]> <- 51;
+  <[nd.N(nd.L()), 3]> <- 52;
+  <[nd.N(nd.N(nd.L())), 4]> <- 53;
+} test {
+  t16: (*(keys (int) @ <[nd.N(nd.L()), free::(int)]>)::(int) as [int]) == [51, 52];
+  t17: (*(keys (int) @ <[nd.L(), free::(int)]>)::(int) as [int]) == [50];
+  t18: (*(keys (int) @ <[free::(nd), free::(int)]>)::(int) as [int]) == [50, 51, 52, 53];
+};
