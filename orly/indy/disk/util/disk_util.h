@@ -39,7 +39,8 @@ namespace Orly {
                     const std::optional<std::string> &instance_filter,
                     bool do_fsync,
                     const TCacheCb &cache_cb,
-                    bool do_corruption_check = true);
+                    bool do_corruption_check = true,
+                    const std::vector<std::string> &device_globs = {});
 
           void List(std::stringstream &ss) const;
 

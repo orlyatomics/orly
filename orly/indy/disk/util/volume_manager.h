@@ -759,8 +759,11 @@ namespace Orly {
             }
             const std::string path_to_device_info = TDeviceUtil::GetPathToDeviceInfo(std::string(device_name));
             std::string rq_affinity_path = path_to_device_info + std::string("queue/rq_affinity");
-            const size_t rq_affinity = TDeviceUtil::GetRqAffinity(device_name);
-            if (rq_affinity != 2) {
+            const std::optional<size_t> rq_affinity = TDeviceUtil::GetRqAffinity(device_name);
+            if (!rq_affinity) {
+              /* A bio-based device (a brd RAM disk) has no request queue, so nothing to set (#970). */
+              syslog(LOG_INFO, "Device [%s] has no [%s]; nothing to set", device_path, rq_affinity_path.c_str());
+            } else if (*rq_affinity != 2) {
               syslog(LOG_ALERT, "Performance degradation: please set rq_affinity [%s] for device [%s] to 2", rq_affinity_path.c_str(), device_path);
             }
             MaxSegments = TDeviceUtil::GetMaxSegments(device_name);

@@ -60,7 +60,8 @@ namespace Orly {
                       bool no_realtime = false,
                       bool durable_acks = false,
                       size_t wal_mb = 256,
-                      bool persist_retention = false)
+                      bool persist_retention = false,
+                      const std::vector<std::string> &device_globs = {})
             : Scheduler(scheduler),
               SystemBlockId(0UL),
               FileAppendLogBlocks((append_log_mb * 1024 * 1024) / Util::PhysicalBlockSize) {
@@ -149,7 +150,7 @@ namespace Orly {
               }
             };
             DiskController = std::make_unique<TDiskController>();
-            DiskUtil = std::make_unique<TDiskUtil>(scheduler, DiskController.get(), instance_name, do_fsync, CacheCb, true);
+            DiskUtil = std::make_unique<TDiskUtil>(scheduler, DiskController.get(), instance_name, do_fsync, CacheCb, true, device_globs);
             VolMan = DiskUtil->GetVolumeManager(instance_name);
             std::vector<std::vector<TPersistentDevice *>> device_vec;
             size_t pos = 0UL;

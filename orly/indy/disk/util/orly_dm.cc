@@ -79,6 +79,9 @@ class TCmd final
   /* The device set. */
   std::set<std::string> DeviceSet;
 
+  /* The devices the scan looks at, as names or shell globs; empty means all of them (#970). */
+  std::vector<std::string> ScanGlobs;
+
   private:
 
   /* Our meta-type. */
@@ -137,6 +140,11 @@ class TCmd final
           &TCmd::DeviceSet, "dev", Optional, /*"dev\0",*/
           "The list of devices on which to act."
       );
+      Param(
+          &TCmd::ScanGlobs, "scan", Optional, "scan\0",
+          "Look only at these devices, as names or shell globs (\"loop3\", \"/dev/ram*\"); repeat for more. "
+          "Without it every device on the host is scanned (#970)."
+      );
     }
 
   };  // TCmd::TMeta
@@ -170,7 +178,7 @@ int main(int argc, char *argv[]) {
   }
   TCacheCb cache_cb = [](TCacheInstr /*cache_instr*/, const TOffset /*logical_start_offset*/, void */*buf*/, size_t /*count*/) {};
   TDiskController controller;
-  TDiskUtil disk_util(&scheduler, &controller, std::optional<std::string>(), false /*fsync*/, cache_cb, true);
+  TDiskUtil disk_util(&scheduler, &controller, std::optional<std::string>(), false /*fsync*/, cache_cb, true, cmd.ScanGlobs);
   if (cmd.List) {
     const char *str_pattern = "|\%12s |%7s |%15s |%5s |%5s |%21s |%20s |%7s |\n";
     const char *num_pattern = "|\%12s |%7s |%15s |%5ld |%5ld |%21ld |%20ld |%7s |\n";
@@ -187,7 +195,10 @@ int main(int argc, char *argv[]) {
            "Kind");
     printf("%s", break_line);
     std::vector<std::tuple<bool, std::string, TDeviceUtil::TOrlyDevice>> device_vec;
-    TDeviceUtil::ForEachDevice([&str_pattern, &num_pattern, &device_vec](const char *path) {
+    TDeviceUtil::ForEachDevice([&str_pattern, &num_pattern, &device_vec, &cmd](const char *path) {
+      if (!TDeviceUtil::MatchesDeviceGlobs(path, cmd.ScanGlobs)) {
+        return true;
+      }
       TDeviceUtil::TOrlyDevice device_info;
       string path_to_device = "/dev/";
       path_to_device += path;
@@ -214,7 +225,10 @@ int main(int argc, char *argv[]) {
         int vol_comp = strcmp(lhs_device_info.VolumeId.InstanceName, rhs_device_info.VolumeId.InstanceName);
         if (vol_comp == 0) {
           if (lhs_device_info.VolumeId.Id == rhs_device_info.VolumeId.Id) {
-            assert(lhs_device_info.VolumeDeviceNumber != rhs_device_info.VolumeDeviceNumber);
+            /* Copies of one volume share a device number; list them in name order (#970). */
+            if (lhs_device_info.VolumeDeviceNumber == rhs_device_info.VolumeDeviceNumber) {
+              return lhs_dev_name < rhs_dev_name;
+            }
             return lhs_device_info.VolumeDeviceNumber < rhs_device_info.VolumeDeviceNumber;
           }
           return lhs_device_info.VolumeId.Id < rhs_device_info.VolumeId.Id;

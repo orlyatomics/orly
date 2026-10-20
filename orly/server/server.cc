@@ -563,6 +563,12 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
 
   Param(
+      &TCmd::Devices, "device", Optional, "device\0",
+      "A block device the volume scan may use, as a name or a shell glob (\"loop3\", \"/dev/ram*\"); repeat for more. "
+      "Without it every device on the host is scanned, and two copies of one volume (same instance name) are an error (#970)."
+  );
+
+  Param(
       &TCmd::OperationRetentionCount, "operation_retention_count", Optional, "operation_retention_count\0",
       "How many completed writes the exactly-once table keeps, across all POVs (#733). Default 4096. 0 turns the table off, so an operation id is accepted and ignored; that is for testing."
   );
@@ -1482,7 +1488,8 @@ void TServer::Init() {
           Cmd.IsDurableAcksEnabled(),
           Cmd.WalMB,
           /* #745 stage 3: format 2 only once asked for history; an upgrade never grows the disk on its own. */
-          Cmd.RetentionVersions || Cmd.RetentionSeconds);
+          Cmd.RetentionVersions || Cmd.RetentionSeconds,
+          Cmd.Devices);
       engine_ptr = DiskEngine->GetEngine();
     }
     assert(engine_ptr);

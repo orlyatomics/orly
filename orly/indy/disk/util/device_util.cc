@@ -16,6 +16,10 @@
 
 #include <orly/indy/disk/util/device_util.h>
 
+#include <fnmatch.h>
+#include <unistd.h>
+
+#include <cerrno>
 #include <fstream>
 #include <istream>
 #include <stdexcept>
@@ -168,6 +172,28 @@ std::string TDeviceUtil::GetPathToDeviceInfo(const std::string &dev_path) {
   path_to_partition_info += '/';
 
   return path_to_partition_info;
+}
+
+std::optional<size_t> TDeviceUtil::TryGetValFromDeviceInfo(const std::string &dev_name, const std::string &path_to_field) {
+  const std::string info_path = GetPathToDeviceInfo(dev_name) + path_to_field;
+  if (access(info_path.c_str(), F_OK) != 0 && errno == ENOENT) {
+    return std::nullopt;
+  }
+  return GetValFromDeviceInfo(dev_name, path_to_field);
+}
+
+bool TDeviceUtil::MatchesDeviceGlobs(const std::string &dev_name, const std::vector<std::string> &globs) {
+  if (globs.empty()) {
+    return true;
+  }
+  static const std::string dev_prefix = "/dev/";
+  for (const auto &glob : globs) {
+    const std::string pattern = glob.compare(0, dev_prefix.size(), dev_prefix) == 0 ? glob.substr(dev_prefix.size()) : glob;
+    if (fnmatch(pattern.c_str(), dev_name.c_str(), 0) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 size_t TDeviceUtil::GetValFromDeviceInfo(const std::string &dev_name, const std::string &path_to_field) {
