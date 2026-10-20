@@ -1563,6 +1563,9 @@ void TServer::Init() {
       std::unordered_map<Base::TUuid, std::string> pkg_key_mapping;
       Indy::Fiber::TJumpRunnable idns_jumper([this, &pkg_key_mapping] {
           pkg_key_mapping = RepoManager->GetIndexNamespaceMapping();
+          if (!Cmd.Create) {
+            RepoManager->NoteSavedReposOnOpen();
+          }
       });
       idns_jumper(FramePoolManager.get(), &BGFastRunner);
       //auto pkg_key_mapping = RepoManager->GetIndexNamespaceMapping();
@@ -1854,17 +1857,28 @@ void TServer::Init() {
                pointer closes), and the Pov record holds no deadline to resume from anyway (#858). */
             auto pov_ttl = std::chrono::seconds(pov.TtlSec);
             RepoManager->GetRepo(pov_id, pov_ttl, parent_repo, pov.Policy == static_cast<char>(TPov::TPolicy::Safe), true);
-            try {
-              DurableManager->Open<TPov>(pov_id);
-            } catch (...) {
-              DurableManager->New<TPov>(pov_id, pov_ttl, pov.SessionId, static_cast<TPov::TAudience>(pov.Audience), static_cast<TPov::TPolicy>(pov.Policy), pov.SharedParents);
-            }
             retention->NoteRestoredPov(pov_id, pov.Lsn, pov.Body);
             RepoManager->SeedNumberingFromReplay(pov_id);
             restored.insert(pov_id);
             restored_povs.push_back(pov_id);
             progress = true;
           }
+        }
+        /* Restore the durable TPov records as one batch rather than opening and closing each
+           TPtr<TPov> in turn, which waited on a 1-entry durable file write per POV. */
+        if (!restored_povs.empty()) {
+          Durable::TSem restore_sem;
+          for (size_t i = 0; i < restored_povs.size(); ++i) {
+            const Base::TUuid &pov_id = restored_povs[i];
+            const TPovRecord &pov = pov_records.at(pov_id);
+            const auto pov_ttl = std::chrono::seconds(pov.TtlSec);
+            Durable::TSem *const sem = (i + 1 == restored_povs.size()) ? &restore_sem : nullptr;
+            DurableManager->Restore<TPov>(pov_id, pov_ttl, sem, pov.SessionId,
+                                          static_cast<TPov::TAudience>(pov.Audience),
+                                          static_cast<TPov::TPolicy>(pov.Policy),
+                                          pov.SharedParents, true);
+          }
+          restore_sem.Pop();
         }
 
         /* Step 7: Replay transactions through slave apply path.  Each one pins the record it came

@@ -602,6 +602,11 @@ namespace Orly {
 
       void OnSlaveJoin(const Base::TFd &fd);
 
+      /* Before WAL recovery on a reopened store, note the saved-repo entries that came back with
+         the system repo so ConstructRepo() skips writing duplicate entries for restored safe povs.
+         Walks the system repo, so it needs a runner with a frame pool. */
+      void NoteSavedReposOnOpen();
+
       /* After a restart, note every saved-repo entry the system repo brought back, so the next
          repo creation removes those whose repos are gone: all of them but the global repo's and
          those of repos live by now, the safe povs WAL recovery restored (#173, #439, #966).  Call
@@ -745,12 +750,16 @@ namespace Orly {
 
       std::unordered_map<Base::TUuid, TSlaveSync> SlaveSyncViewMap;
 
-      /* Covers DiscardedSavedRepos. */
+      /* Covers DiscardedSavedRepos and SavedReposOnOpen. */
       std::mutex DiscardedSavedReposMutex;
 
       /* Repos with a ttl above 0, discarded since the last system-repo write that created a repo,
          whose saved-repo entries that write removes (#671). */
       std::vector<Base::TUuid> DiscardedSavedRepos;
+
+      /* Saved-repo entries present in the system repo at open, before WAL recovery restores safe
+         povs; a restored pov whose entry is already here needs no new system-repo transaction. */
+      std::unordered_set<Base::TUuid> SavedReposOnOpen;
 
       friend class Orly::Server::TServer;
 

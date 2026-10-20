@@ -233,6 +233,13 @@ namespace Orly {
       template <typename TSomeObj>
       TPtr<TSomeObj> Open(const TId &id);
 
+      /* Restore a durable in the closed state with a fresh TTL deadline (#858) without probing disk
+         first.  When 'sem' is non-null, it is pushed once the saved record is on disk (or at once
+         if ttl is zero or the save fails), so a caller restoring a batch of durables can wait once
+         on the last item rather than syncing a separate 1-entry file per object. */
+      template <typename TSomeObj, typename... TArgs>
+      void Restore(const TId &id, const TTtl &ttl, TSem *sem, TArgs &&... args);
+
       /* Read the durable with the given id via 'visit' without disturbing its ttl countdown
          (#366).  Open() always resets a resident-but-closed durable's pending deadline (and,
          once released, re-arms a fresh one), which is exactly right for a caller that means to
@@ -730,6 +737,58 @@ namespace Orly {
           OpenableObjs.erase(iter);
           throw;
         }
+      }
+    }
+
+    template <typename TSomeObj, typename... TArgs>
+    void TManager::Restore(const TId &id, const TTtl &ttl, TSem *sem, TArgs &&... args) {
+      std::lock_guard<std::mutex> lock(Mutex);
+      auto iter = OpenableObjs.insert(std::pair<TId, TObj *>(id, nullptr)).first;
+      TObj *&openable_obj = iter->second;
+      if (openable_obj) {
+        if (openable_obj->PtrCount > 0) {
+          THROW_ERROR(TAlreadyExists) << "in cache" << Base::EndOfPart << "id = " << id;
+        }
+        if (openable_obj->Deadline) {
+          ClosedObjs.erase(std::make_pair(*openable_obj->Deadline, id));
+        }
+        delete openable_obj;
+        openable_obj = nullptr;
+        ++LeftCount;
+      }
+      TSomeObj *some_obj = nullptr;
+      try {
+        some_obj = new TSomeObj(this, id, ttl, std::forward<TArgs>(args)...);
+        openable_obj = some_obj;
+      } catch (...) {
+        OpenableObjs.erase(iter);
+        throw;
+      }
+      bool saved = false;
+      if (ttl.count() > 0) {
+        some_obj->Deadline = TDeadline::clock::now() + ttl;
+        try {
+          std::string blob;
+          /* extra */ {
+            auto recorder = std::make_shared<Io::TRecorder>();
+            Io::TBinaryOutputOnlyStream strm(recorder);
+            some_obj->Write(strm);
+            strm.Flush();
+            recorder->CopyOut(blob);
+          }
+          Save(id, *some_obj->Deadline, ttl, blob, sem);
+          some_obj->OnDisk = true;
+          saved = true;
+        } catch (const std::exception &ex) {
+          some_obj->Log(LOG_ERR, "saving", ex);
+        }
+      }
+      if (!saved && sem) {
+        sem->Push();
+      }
+      const bool cached = saved ? TryCacheObj(some_obj) : false;
+      if (!cached) {
+        DestroyObj(some_obj);
       }
     }
 

@@ -113,7 +113,8 @@ namespace Orly {
            const Base::TUuid &session_id,
            TAudience audience,
            TPolicy policy,
-           const TSharedParents &shared_parents);
+           const TSharedParents &shared_parents,
+           bool reloaded = false);
 
       /* Open an existing pov. */
       TPov(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm);

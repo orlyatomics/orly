@@ -101,9 +101,11 @@ bool TManager::TryCacheObj(TObj *obj) noexcept {
   bool success = false;
   if (MaxCacheSize) {
     try {
-      /* The object is entering the cache.  It should have no sem right now, but it will need one later. */
-      assert(!(obj->Sem));
-      obj->Sem = new TSem;
+      /* The object is entering the cache.  OnPtrRelease() steals Sem to wait on, while Restore()
+         leaves the constructor's Sem in place; allocate one only when needed. */
+      if (!obj->Sem) {
+        obj->Sem = new TSem;
+      }
       /* Discard objects from the cache until there's room for the new object.
          Start with the object with the soonest deadline and work forward. */
       while (ClosedObjs.size() >= MaxCacheSize) {
