@@ -1,1 +1,0 @@
-- **Fixed**: A mutual-group member held as an arm of an ordinary variant is now stored in the member's canonical inlined form, the same type the member itself is stored as, instead of a copy expanded one level deeper; `InlinedMemberType` is now only for a type known to be a member, and `InlinedOutsideType` covers the rest ([#974](https://github.com/orlyatomics/orly/pull/974)).

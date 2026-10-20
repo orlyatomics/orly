@@ -195,3 +195,19 @@ FIXTURE(RecordElemsByIdxIsCached) {
       { "a", Type::TInt::Get() }, { "b", Type::TStr::Get() }, { "c", Type::TReal::Get() } })));
   EXPECT_TRUE(RoundTrip(rec_type) == rec_type);
 }
+
+/* `w_t is <| Mut(fa) | X(int) |>` with `fa`/`fb` a mutual group: the stored
+   record's `Mut` field is `fa`'s own stored type, not a copy expanded one
+   level deeper. */
+FIXTURE(OutsideVariantStoresMemberCanonically) {
+  const auto Ref = [](size_t k) { return Type::TGroupRef::Get({}, k); };
+  const auto members = Type::MakeRecGroup({
+      {{"A0", Type::TObj::Get({})}, {"A1", Ref(1)}},
+      {{"B0", Type::TObj::Get({})}, {"B1", Ref(0)}},
+  });
+  const Type::TType fa = members[0];
+  const Type::TType w = Type::TVariant::Get({{"Mut", fa}, {"X", Type::TInt::Get()}});
+  const string stored_w = ToString(w);
+  const string expected = "Mut: opt(" + ToString(fa) + ")";
+  EXPECT_TRUE(stored_w.find(expected) != string::npos);
+}
