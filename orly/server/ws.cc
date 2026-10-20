@@ -592,6 +592,7 @@ class TWsImpl final
         assert(stmt);
         TUuid durable_id = Translate(stmt->GetIdExpr());
         const int64_t seconds = stmt->GetIntExpr()->GetLexeme().AsInt();
+        /* Refused here so that a negative ttl cannot reach the assert in TObj::SetTtl once SetTimeToLive is re-enabled. */
         if (seconds < 0) {
           throw invalid_argument("set ttl: the ttl must not be negative");
         }
