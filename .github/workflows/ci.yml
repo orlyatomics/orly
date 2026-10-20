@@ -920,6 +920,11 @@ jobs:
       - name: tests/pause_restart_test.sh
         run: ./tests/pause_restart_test.sh
 
+      # A restart keeps the saved-repo entries of the safe POVs WAL recovery restores, and removes
+      # the others' (#966).
+      - name: tests/saved_repo_restart_test.sh
+        run: ./tests/saved_repo_restart_test.sh
+
   lang-tests:
     name: lang_test.py
     needs: todo-lint

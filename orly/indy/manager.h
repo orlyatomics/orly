@@ -603,9 +603,10 @@ namespace Orly {
       void OnSlaveJoin(const Base::TFd &fd);
 
       /* After a restart, note every saved-repo entry the system repo brought back, so the next
-         repo creation removes those whose repos are gone: all of them but the global repo's, as
-         no other repo survives a restart (#173, #439).  Walks the system repo, so it needs a
-         runner with a frame pool (#671). */
+         repo creation removes those whose repos are gone: all of them but the global repo's and
+         those of repos live by now, the safe povs WAL recovery restored (#173, #439, #966).  Call
+         it after that recovery.  Walks the system repo, so it needs a runner with a frame pool
+         (#671). */
       void QueueSavedReposLeftByRestart();
 
       inline virtual std::mutex &GetReplicationQueueLock() NO_THROW {

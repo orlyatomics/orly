@@ -1556,11 +1556,6 @@ void TServer::Init() {
       std::unordered_map<Base::TUuid, std::string> pkg_key_mapping;
       Indy::Fiber::TJumpRunnable idns_jumper([this, &pkg_key_mapping] {
           pkg_key_mapping = RepoManager->GetIndexNamespaceMapping();
-          /* No repo but the global one survives a restart, so neither should their saved-repo
-             entries in the system repo (#671). */
-          if (!Cmd.Create) {
-            RepoManager->QueueSavedReposLeftByRestart();
-          }
       });
       idns_jumper(FramePoolManager.get(), &BGFastRunner);
       //auto pkg_key_mapping = RepoManager->GetIndexNamespaceMapping();
@@ -1981,6 +1976,16 @@ void TServer::Init() {
         }
       });
       TetrisManager->ResumePromotion();
+    }
+    /* The saved-repo entries in the system repo of repos that did not survive the restart go with
+       the next repo creation (#671).  Only after WAL recovery: the safe povs it restores did
+       survive, and noting their entries before they were live had the first restore remove the
+       others' entries and each restore write its own back, on every open (#966). */
+    if (!Cmd.Create) {
+      Indy::Fiber::TJumpRunnable saved_repo_jumper([this] {
+        RepoManager->QueueSavedReposLeftByRestart();
+      });
+      saved_repo_jumper(FramePoolManager.get(), &BGFastRunner);
     }
     /* A slave keeps the exactly-once entries its master's writes carry, as recovery does (#862). */
     RepoManager->SetReplicatedPushCallback(

@@ -1784,9 +1784,15 @@ void TManager::QueueSavedReposLeftByRestart() {
   TSuprena arena;
   auto view = make_unique<Indy::TRepo::TView>(SystemRepo);
   auto walker_ptr = SystemRepo->NewPresentWalker(view, TIndexKey(SystemRepoIndexId, TKey(make_tuple(SavedRepoMagicNumber, Native::TFree<Base::TUuid>()), &arena, state_alloc)), false);
-  const std::vector<TUuid> left = CollectSavedRepoIds(*walker_ptr);
+  std::vector<TUuid> left = CollectSavedRepoIds(*walker_ptr);
+  /* A repo live by now came back too: a safe pov that WAL recovery restored (#966).  Its entry
+     stays until it goes. */
+  const size_t total = left.size();
+  left.erase(std::remove_if(left.begin(), left.end(), [this](const TUuid &repo_id) {
+    return repo_id == SystemRepoId || repo_id == GlobalPovId || IsLiveRepo(repo_id);
+  }), left.end());
   RequeueSavedRepoRemovals(left);
-  syslog(LOG_INFO, "TManager: [%ld] saved-repo entries came back with the system repo; the next repo creation removes those whose repos are gone (#671)", left.size());
+  syslog(LOG_INFO, "TManager: [%ld] saved-repo entries came back with the system repo, [%ld] of them of live repos; the next repo creation removes the others (#671, #966)", total, total - left.size());
 }
 
 void TManager::RequeueSavedRepoRemovals(const std::vector<TUuid> &repo_ids) noexcept {
