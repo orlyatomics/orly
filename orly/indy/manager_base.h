@@ -768,6 +768,9 @@ namespace Orly {
           return ShuttingDown;
         }
 
+        /* Visit each runner and free the walkers it pooled that no reader has needed lately (#967). */
+        void TrimWalkerPools();
+
         void RunLayerCleaner();
 
         /* Make RunLayerCleaner return: raise the stop flag and fire its

@@ -813,6 +813,13 @@ class TRootRepoFixture {
   ~TRootRepoFixture() {
     Repo.Reset();
     Manager.reset();
+    /* The test's manager tours no runners, so nothing cleared the walkers this runner pooled for the repo's files,
+       and they pin pages of Engine. Free them while Engine is alive: a later trim would release the pins into a
+       cache that is gone (#967). Two trims free every pooled walker, since none is taken in between. */
+    if (auto *cache = Disk::TLocalWalkerCache::Cache.Get()) {
+      cache->Trim();
+      cache->Trim();
+    }
   }
 
   TIndexKey IndexKey(int64_t key) {

@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <optional>
 #include <vector>
 
@@ -99,6 +100,40 @@ namespace Orly {
         public:
 
         TLocalWalkerCache() : LoaderCollection(this) {}
+
+        /* How often a runner frees the pooled walkers no reader has needed since the last time (#967). */
+        static constexpr std::chrono::seconds TrimInterval{10};
+
+        /* The walkers this runner pools now. */
+        size_t GetNumPooled() const {
+          return NumPooled;
+        }
+
+        /* Free, for every file and index, the pooled walkers that went unused since the last trim: as many as the
+           loader's free queue never dropped below (#967). A walker is about 36 KiB of heap (the object and its two
+           arenas), and a loader used to keep as many as were ever out at once until its file merged away. After an M1
+           read ladder that was 7.6 GiB of a 12.9 GiB heap, still held after five idle minutes, none of it in the
+           memory plan. A steady load keeps what it uses; a pool no reader touches is gone two trims later. Capping
+           the pool instead made reads over a store of 400 files rebuild their walkers and halved read throughput.
+           Runs on this runner. */
+        void Trim() {
+          std::vector<TLoaderObj *> loaders;
+          LoaderCollection.ForEachUniqueMember([&](TLoaderObj *loader) {
+            loaders.push_back(loader);
+            return true;
+          });
+          for (TLoaderObj *loader : loaders) {
+            loader->Trim();
+          }
+          LastTrim = std::chrono::steady_clock::now();
+        }
+
+        /* Trim if TrimInterval has passed since the last one. Runs on this runner. */
+        void MaybeTrim() {
+          if (std::chrono::steady_clock::now() - LastTrim >= TrimInterval) {
+            Trim();
+          }
+        }
 
         /* Forward Declaration */
         class TLoaderObj;
@@ -592,6 +627,8 @@ namespace Orly {
                               const Base::TUuid &file_id,
                               size_t gen_id,
                               const Base::TUuid &index_id) {
+          /* A runner that keeps reading trims here; the layer cleaner's tour trims the ones that have gone quiet. */
+          MaybeTrim();
           TLoaderObj *loader = LoaderCollection.TryGetFirstMember(TWalkerKey(file_id, gen_id, index_id));
           if (!loader) {
             loader = new TLoaderObj(this, file_id, gen_id, index_id);
@@ -644,6 +681,8 @@ namespace Orly {
             if (FreeQueue) {
               TPresentWalkFile *ret = FreeQueue;
               FreeQueue = ret->NextWalker;
+              --Owner->NumPooled;
+              LowWater = std::min(LowWater, --NumFree);
               return ret;
             }
             try {
@@ -662,6 +701,8 @@ namespace Orly {
             if (Owner == TLocalWalkerCache::Cache.Get() && CacheMembership.TryGetCollection()) {
               walker->NextWalker = FreeQueue;
               FreeQueue = walker;
+              ++Owner->NumPooled;
+              ++NumFree;
             } else {
               delete walker;
             }
@@ -672,6 +713,26 @@ namespace Orly {
             return CacheMembership.GetKey();
           }
 
+          /* Delete the pooled walkers no reader took since the last trim, LowWater of them, from the cold end of the
+             queue: Return pushes at the front. Runs on the owning runner. */
+          void Trim() {
+            const size_t keep = NumFree - std::min(LowWater, NumFree);
+            TPresentWalkFile **link = &FreeQueue;
+            for (size_t i = 0UL; i < keep; ++i) {
+              link = &(*link)->NextWalker;
+            }
+            TPresentWalkFile *to_delete = *link;
+            *link = nullptr;
+            while (to_delete) {
+              TPresentWalkFile *next = to_delete->NextWalker;
+              delete to_delete;
+              --Owner->NumPooled;
+              --NumFree;
+              to_delete = next;
+            }
+            LowWater = NumFree;
+          }
+
           /* Leave the cache and delete the pooled walkers. The loader itself goes once the last walker still checked
              out comes back. Runs on the owning runner. */
           void Detach() {
@@ -679,8 +740,11 @@ namespace Orly {
             while (FreeQueue) {
               TPresentWalkFile *to_delete = FreeQueue;
               FreeQueue = to_delete->NextWalker;
+              --Owner->NumPooled;
+              --NumFree;
               delete to_delete;
             }
+            LowWater = 0UL;
             Release();
           }
 
@@ -699,6 +763,11 @@ namespace Orly {
           /* Walkers waiting for reuse. Touched only on the owning runner. */
           TPresentWalkFile *FreeQueue;
 
+          /* How many walkers are on FreeQueue, and the fewest there have been since the last Trim. Touched only on the
+             owning runner. */
+          size_t NumFree = 0UL;
+          size_t LowWater = 0UL;
+
           /* One for the cache, while the loader is in it, plus one per walker checked out. */
           std::atomic<size_t> RefCount;
 
@@ -711,6 +780,12 @@ namespace Orly {
         typedef InvCon::UnorderedMultimap::TCollection<TLocalWalkerCache, TLoaderObj, TWalkerKey> TLoaderCollection;
 
         mutable typename TLoaderCollection::TImpl LoaderCollection;
+
+        /* The walkers on every loader's free queue. Touched only on this runner. */
+        size_t NumPooled = 0UL;
+
+        /* When Trim last ran. */
+        std::chrono::steady_clock::time_point LastTrim = std::chrono::steady_clock::now();
 
       };  // TLocalWalkerCache
 

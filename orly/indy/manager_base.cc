@@ -27,6 +27,7 @@
 #include <base/cpu_clock.h>
 #include <base/shutting_down.h>
 #include <base/util/time.h>
+#include <orly/indy/disk/present_walk_file.h>
 
 using namespace std;
 using namespace std::chrono;
@@ -385,6 +386,7 @@ void TManager::RunLayerCleaner() {
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
     Disk::Util::TDiskController::TEvent::LocalEventPool = new TThreadLocalGlobalPoolManager<Disk::Util::TDiskController::TEvent>::TThreadLocalPool(Disk::Util::TDiskController::TEvent::DiskEventPoolManager.get());
   }
+  auto next_walker_trim = steady_clock::now() + Disk::TLocalWalkerCache::TrimInterval;
   for (;;) {
     LayerCleanerTimer.Pop();
     if (LayerCleanerStopping) {
@@ -394,6 +396,28 @@ void TManager::RunLayerCleaner() {
     /* First, so the layers of a repo it discards go on this pass. */
     DiscardExpiredObjs();
     RemoveLayersFromQueue();
+    /* #967: a runner that has stopped reading never trims its walker pool itself, so visit each one. The tour is the
+       one RemoveLayersFromQueue makes. */
+    if (Engine->IsDiskBased() && steady_clock::now() >= next_walker_trim) {
+      TrimWalkerPools();
+      next_walker_trim = steady_clock::now() + Disk::TLocalWalkerCache::TrimInterval;
+    }
+  }
+}
+
+void TManager::TrimWalkerPools() {
+  Fiber::TRunner *const home_runner = Fiber::TRunner::LocalRunner;
+  bool moved = false;
+  ForEachScheduler([&moved](Fiber::TRunner *runner) {
+    Fiber::SwitchTo(runner);
+    moved = true;
+    if (Disk::TLocalWalkerCache *cache = Disk::TLocalWalkerCache::Cache.Get()) {
+      cache->Trim();
+    }
+    return true;
+  });
+  if (moved) {
+    Fiber::SwitchTo(home_runner);
   }
 }
 

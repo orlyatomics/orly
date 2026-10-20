@@ -457,3 +457,88 @@ FIXTURE(ClearWithWalkerOut) {
     GracefullShutdown();
   });
 }
+
+/* #967: a trim frees the pooled walkers no reader took since the last one, and keeps the ones readers did. Each
+   walker's Get may trim on its own once TrimInterval passes; this test runs well inside it. */
+FIXTURE(PoolIsTrimmed) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRAIITest required_thread_locals;
+    const TScheduler::TPolicy scheduler_policy(10, 10, milliseconds(10));
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+
+    Sim::TMemEngine mem_engine(&scheduler,
+                               256 /* disk space: 256MB */,
+                               256,
+                               16384 /* page cache slots: 64MB */,
+                               1 /* num page lru */,
+                               1024 /* block cache slots: 64MB */,
+                               1 /* num block lru */);
+    TEngine *engine = mem_engine.GetEngine();
+
+    Base::TUuid data_file_id(TUuid::TimeAndMAC);
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    size_t data_gen_id = 1;
+    TSequenceNumber seq_num = 0U;
+    Base::TUuid int_idx(Base::TUuid::Twister);
+    Base::TUuid other_idx(Base::TUuid::Twister);
+    /* data file */ {
+      TMockMem mem_layer;
+      for (int64_t i = 0; i < 11; i += 2) {
+        Insert(mem_layer, ++seq_num, int_idx, static_cast<int64_t>(rand()), i);
+        Insert(mem_layer, ++seq_num, other_idx, static_cast<int64_t>(rand()), i);
+      }
+      TDataFile data_file(engine, TVolume::TDesc::Fast, &mem_layer, data_file_id, data_gen_id, 20UL, 0U, RealTime);
+    }
+    Disk::TLocalWalkerCache *cache = Disk::TLocalWalkerCache::Cache.Get();
+    cache->Trim();
+    auto new_walker = [&](const Base::TUuid &idx) {
+      return std::make_unique<TPresentWalkFileWrapper>(engine, data_file_id, data_gen_id, idx, TKey(make_tuple(0L), &arena, state_alloc));
+    };
+    /* Twenty walkers out at once over two indexes, then all back in the pool. */ {
+      std::vector<std::unique_ptr<TPresentWalkFileWrapper>> out;
+      for (size_t i = 0UL; i < 20UL; ++i) {
+        out.push_back(new_walker(i % 2UL ? int_idx : other_idx));
+        EXPECT_TRUE(*out.back());
+      }
+      EXPECT_EQ(cache->GetNumPooled(), 0UL);
+      out.clear();
+      EXPECT_EQ(cache->GetNumPooled(), 20UL);
+    }
+    /* The pool grew from empty since the last trim, so a trim keeps it all. */
+    cache->Trim();
+    EXPECT_EQ(cache->GetNumPooled(), 20UL);
+    /* Readers need three walkers of one index at once, then go. The next trim keeps those three and frees the rest. */ {
+      std::vector<std::unique_ptr<TPresentWalkFileWrapper>> out;
+      for (size_t i = 0UL; i < 3UL; ++i) {
+        out.push_back(new_walker(int_idx));
+        EXPECT_TRUE(*out.back());
+      }
+      EXPECT_EQ(cache->GetNumPooled(), 17UL);
+    }
+    EXPECT_EQ(cache->GetNumPooled(), 20UL);
+    cache->Trim();
+    EXPECT_EQ(cache->GetNumPooled(), 3UL);
+    /* A trimmed pool still hands out walkers that read. */ {
+      auto walker = new_walker(int_idx);
+      EXPECT_TRUE(*walker);
+      EXPECT_EQ(cache->GetNumPooled(), 2UL);
+    }
+    /* Nothing taken since: the next trim empties it, and the pages they held go with them. */
+    cache->Trim();
+    EXPECT_EQ(cache->GetNumPooled(), 1UL);
+    cache->Trim();
+    EXPECT_EQ(cache->GetNumPooled(), 0UL);
+    /* Clearing the file leaves nothing held. */ {
+      Disk::TLocalWalkerCache::Cache->Clear(data_file_id, data_gen_id);
+      EXPECT_EQ(cache->GetNumPooled(), 0UL);
+      TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
+      EXPECT_EQ(CountHeldBlocks(engine, 64UL), 0U);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+    GracefullShutdown();
+  });
+}
