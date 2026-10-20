@@ -24,6 +24,7 @@
 #include <base/booster.h>
 #include <orly/indy/disk/util/hash_util.h>
 #include <base/util/time.h>
+#include <orly/time.h>
 
 using namespace std;
 using namespace Base;
@@ -347,7 +348,7 @@ bool TDurableManager::TrySaveRecord(const Durable::TId &id, const Durable::TTtl 
   if (HasFailed()) {
     return false;
   }
-  return AddEntry(id, Durable::TDeadline(std::chrono::system_clock::now() + ttl), ttl, serialized_form, sem, replicate, true);
+  return AddEntry(id, Durable::TDeadline(Orly::AddTtl(std::chrono::system_clock::now(), ttl)), ttl, serialized_form, sem, replicate, true);
 }
 
 bool TDurableManager::AddEntry(const Durable::TId &id, const Durable::TDeadline &deadline, const Durable::TTtl &ttl, const std::string &serialized_form, Durable::TSem *sem,

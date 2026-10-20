@@ -1000,7 +1000,7 @@ void TManager::TObj::OnPtrRelease() noexcept {
       Sem = nullptr;
       if (Ttl.count() > 0 && !DiscardOnClose) {
         /* We have a non-zero time-to-live, so establish a deadline and save the object. */
-        Deadline = TDeadline::clock::now() + Ttl;
+        Deadline = Orly::AddTtl(TDeadline::clock::now(), Ttl);
         try {
           /* For now, let's not write this repo to this disk, as we don't want a system repo transaction per read that opens a POV. */
           sem->Push();

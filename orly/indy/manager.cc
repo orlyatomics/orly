@@ -29,6 +29,7 @@
 #include <orly/indy/file_sync.h>
 #include <orly/native/defs.h>
 #include <orly/server/meta_record.h>
+#include <orly/time.h>
 #include <base/util/time.h>
 
 #include <sstream>
@@ -1182,7 +1183,7 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
                worked while Save() signalled synchronously before returning; with the sem now
                pushed after the disk write (#277) it would be a use-after-free. */
             replication_streamer.ForEachDurable([this, &now](const Base::TUuid &durable_id, const TTtl &durable_ttl, const std::string &serialized_obj) {
-              Manager->DurableManager->Save(durable_id, TDeadline(now + durable_ttl), durable_ttl, serialized_obj, nullptr);
+              Manager->DurableManager->Save(durable_id, AddTtl(now, durable_ttl), durable_ttl, serialized_obj, nullptr);
             });
           }
           /* Store the transaction changes next */ {
@@ -1274,7 +1275,7 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
                worked while Save() signalled synchronously before returning; with the sem now
                pushed after the disk write (#277) it would be a use-after-free. */
             replication_streamer.ForEachDurable([this, &now](const Base::TUuid &durable_id, const TTtl &durable_ttl, const std::string &serialized_obj) {
-              Manager->DurableManager->Save(durable_id, TDeadline(now + durable_ttl), durable_ttl, serialized_obj, nullptr);
+              Manager->DurableManager->Save(durable_id, AddTtl(now, durable_ttl), durable_ttl, serialized_obj, nullptr);
             });
           }
           /* Apply the transactions next */

@@ -489,7 +489,9 @@ namespace Orly {
 
             Base::TThreadLocalGlobalPoolManager<TEvent>::TThreadLocalPool *EventPool;
 
-            TKind Kind;
+            /* Starts as a kind whose reset has nothing to destroy, so an event that is torn down without ever having been
+               initialised (the pool builds them up front) resets cleanly. */
+            TKind Kind = TriggeredRead;
 
             struct iocb Iocb;
 

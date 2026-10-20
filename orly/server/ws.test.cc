@@ -492,9 +492,11 @@ FIXTURE(TryAtTimeAndSave) {
       pov + " at save \"known\" pkg/v1 f <{}> <{.at: 7}>;",
       pov + " at time \"2026-01-01T00:00:00Z\" pkg/v1 f <{}> <{.op_id: \"read-1\"}>;",
       pov + " at save \"known\" pkg/v1 f [<{}>, <{}>];",
-      pov + " at time \"2026-01-01T00:00:00Z\" [pkg/v1 f <{}>, pkg/v1 f <{}>];"}, closed);
+      pov + " at time \"2026-01-01T00:00:00Z\" [pkg/v1 f <{}>, pkg/v1 f <{}>];",
+      pov + " at time \"0000-01-01T00:00:00Z\" pkg/v1 f <{}>;",
+      pov + " at time \"1700-01-01T00:00:00Z\" pkg/v1 f <{}>;"}, closed);
   EXPECT_FALSE(closed);
-  if (EXPECT_EQ(replies.size(), 13U)) {
+  if (EXPECT_EQ(replies.size(), 15U)) {
     EXPECT_EQ(replies[1]["status"], Base::TJson("ok"));
     EXPECT_EQ(replies[1]["version"], Base::TJson(500));
     EXPECT_EQ(replies[2], replies[1]);
@@ -512,6 +514,12 @@ FIXTURE(TryAtTimeAndSave) {
     EXPECT_EQ(replies[7]["requested"], Base::TJson(5));
     for (size_t i = 8; i < 13; ++i) {
       EXPECT_EQ(replies[i]["status"], Base::TJson("exception"));
+      EXPECT_EQ(replies[i].TryFind("version"), nullptr);
+    }
+    /* Years before the clock can count (0000) or before the overflow-prone 1733 (1700) are older than the window,
+       never the newest version (#989). */
+    for (size_t i = 13; i < 15; ++i) {
+      EXPECT_EQ(replies[i]["status"], Base::TJson("version_unavailable"));
       EXPECT_EQ(replies[i].TryFind("version"), nullptr);
     }
   }

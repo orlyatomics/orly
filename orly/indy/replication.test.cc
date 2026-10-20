@@ -65,6 +65,8 @@ FIXTURE(DurableTtlSurvivesTheStream) {
     { Base::TUuid(Base::TUuid::Twister), seconds(600), "a pov" },
     { Base::TUuid(Base::TUuid::Twister), seconds(1), "a short one" },
     { Base::TUuid(Base::TUuid::Twister), seconds(86400), "a long one" },
+    /* Never expires: too long for nanoseconds, so it arrives as the most they can count. */
+    { Base::TUuid(Base::TUuid::Twister), TTtl::max(), "a forever one" },
   };
   string wire;
   /* master side */ {
@@ -92,7 +94,7 @@ FIXTURE(DurableTtlSurvivesTheStream) {
   EXPECT_EQ(got.size(), sent.size());
   for (size_t i = 0; i < got.size() && i < sent.size(); ++i) {
     EXPECT_TRUE(got[i].Id == sent[i].Id);
-    EXPECT_EQ(got[i].Ttl.count(), sent[i].Ttl.count());
+    EXPECT_EQ(got[i].Ttl.count(), min(sent[i].Ttl, duration_cast<TTtl>(nanoseconds::max())).count());
     EXPECT_EQ(got[i].Obj, sent[i].Obj);
   }
 }

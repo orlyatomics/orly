@@ -145,6 +145,14 @@ TSequenceNumber TRepo::ResolveTime(chrono::system_clock::time_point when) {
   if (when > system_now) {
     throw Server::TTimeUnavailable("that time is in the future", oldest, newest);
   }
+  /* Reject a time older than the retention window before subtracting it from now: a time far enough
+     back (the clock's minimum, or any year before about 1733) makes `system_now - when` overflow and
+     wrap, which would resolve to the newest version instead of failing.  The window is capped far
+     beyond any real one so that this subtraction cannot overflow either. */
+  const auto window = chrono::seconds(min<size_t>(seconds, 4'000'000'000UL));
+  if (when < system_now - window) {
+    throw Server::TTimeUnavailable("that time is older than the retention window", oldest, newest);
+  }
   lock_guard<mutex> lock(RetentionLock);
   const auto steady_now = chrono::steady_clock::now();
   /* A sample now, so that a time just before it needn't resolve to one a spacing ago. */
