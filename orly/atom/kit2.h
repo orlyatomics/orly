@@ -20,12 +20,16 @@
 
 #include <cassert>
 #include <cstdlib>
+#include <cstring>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 #include <base/class_traits.h>
 #include <base/thrower.h>
+#include <base/unaligned.h>
 #include <orly/atom/comparison.h>
 #include <orly/native/all.h>
 #include <orly/sabot/match_prefix_state.h>
@@ -154,7 +158,7 @@ namespace Orly {
 
       inline Orly::Sabot::TMatchResult PrefixMatch(TArena *this_arena, const TCore &that_core, TArena *that_arena) const;
 
-      inline const uint32_t *TryGetElemCount() const;
+      inline std::optional<uint32_t> TryGetElemCount() const;
 
       /* Get a sabot around our type. */
       Type::TAny *GetType(TArena *arena, void *type_alloc) const;
@@ -175,8 +179,8 @@ namespace Orly {
       bool TrySplit(
           TArena *arena, size_t lhs_size, TExtensibleArena *lhs_arena, TCore &lhs_core, TExtensibleArena *rhs_arena, TCore &rhs_core) const;
 
-      /* return the address of the indirection offset if there is one. */
-      const TOffset *TryGetOffset() const;
+      /* Return the indirection offset if there is one.  This is a copy: the offset sits at an unaligned address in the core. */
+      std::optional<TOffset> TryGetOffset() const;
 
       private:
 
@@ -321,16 +325,21 @@ namespace Orly {
          This function is used only when accessing the name of elements in records. */
       void CopyOut(TArena *arena, std::string &out) const;
 
-      /* Interpret direct data as the given type, regardless of the tycon. */
+      /* Interpret direct data as the given type, regardless of the tycon.
+         A core is packed, so it has alignment 1 and sits at whatever offset it has in its note, and its direct data has only the alignment
+         of wherever the core happens to sit: misaligned for any type wider than a byte exactly when the core is.  We hand back a copy
+         rather than a reference into the core. */
       template <typename TVal>
-      const TVal &ForceAs() const {
-        return *reinterpret_cast<const TVal *>(DirectBlob);
-      }
-
-      /* Interpret direct data as the given type, regardless of the tycon. */
-      template <typename TVal>
-      TVal &ForceAs() {
-        return *reinterpret_cast<TVal *>(DirectBlob);
+      TVal ForceAs() const {
+        if constexpr (std::is_same_v<TVal, TUuid>) {
+          /* A uuid is not trivially copyable (it has copy constructors), but all it holds is its bytes. */
+          uuid_t bytes;
+          static_assert(sizeof(bytes) <= MaxDirectSize, "A uuid must fit in direct storage.");
+          std::memcpy(bytes, DirectBlob, sizeof(bytes));
+          return TUuid(bytes);
+        } else {
+          return Base::ReadUnaligned<TVal>(DirectBlob);
+        }
       }
 
       /* Zero the direct storage area and set the tycon. */
@@ -363,12 +372,20 @@ namespace Orly {
       /* If the small is small enough, store it directly; otherwise, propose a null-terminated array of chars and take it as our state. */
       void InitStr(TExtensibleArena *arena, const char *start, const char *limit);
 
-      /* Set the tycon, then init the direct storage area by copy-constructing a value into it, padding with zeroes as needed. */
+      /* Set the tycon, then init the direct storage area by copying the bytes of a value into it, padding with zeroes as needed.
+         The area is packed and may be misaligned for TVal, so a typed store (a placement new of a TVal) is not allowed; copy the bytes.
+         TUuid is not trivially copyable (it has copy constructors) but holds nothing except its bytes and has alignment 1, so it
+         can be constructed in place. */
       template <typename TVal>
       void InitDirect(TTycon tycon, const TVal &val) {
         static_assert(sizeof(TVal) <= MaxDirectSize, "TVal is value too large to store directly.");
         Init(tycon);
-        new (DirectBlob) TVal(val);
+        if constexpr (std::is_trivially_copyable_v<TVal>) {
+          std::memcpy(DirectBlob, &val, sizeof(TVal));
+        } else {
+          static_assert(alignof(TVal) == 1, "A value that is not trivially copyable must have no alignment requirement to be stored directly.");
+          new (DirectBlob) TVal(val);
+        }
       }
 
       /* Propose a note of an array of cores (copy-constructed from the given state) and take it as our state.
@@ -1319,11 +1336,11 @@ namespace Orly {
       return lhs_count == rhs_count ? Orly::Sabot::TMatchResult::Unifies : Orly::Sabot::TMatchResult::PrefixMatch;
     }
 
-    inline const uint32_t *TCore::TryGetElemCount() const {
+    inline std::optional<uint32_t> TCore::TryGetElemCount() const {
       if (Tycon >= TTycon::Desc) {
-        return &IndirectCoreArray.ElemCount;
+        return IndirectCoreArray.ElemCount;
       }
-      return nullptr;
+      return std::nullopt;
     }
 
     inline size_t TCore::ForceGetIndirectHash() const {
@@ -1336,35 +1353,35 @@ namespace Orly {
     inline bool TCore::TryGetQuickHash(size_t &out_hash) const {
       switch (Tycon) {
         case TTycon::Int8: {
-          out_hash = std::_Hash_impl::hash(&ForceAs<int8_t>(), sizeof(int8_t));
+          { const int8_t val = ForceAs<int8_t>(); out_hash = std::_Hash_impl::hash(&val, sizeof(int8_t)); }
           return true;
         }
         case TTycon::Int16: {
-          out_hash = std::_Hash_impl::hash(&ForceAs<int16_t>(), sizeof(int16_t));
+          { const int16_t val = ForceAs<int16_t>(); out_hash = std::_Hash_impl::hash(&val, sizeof(int16_t)); }
           return true;
         }
         case TTycon::Int32: {
-          out_hash = std::_Hash_impl::hash(&ForceAs<int32_t>(), sizeof(int32_t));
+          { const int32_t val = ForceAs<int32_t>(); out_hash = std::_Hash_impl::hash(&val, sizeof(int32_t)); }
           return true;
         }
         case TTycon::Int64: {
-          out_hash = std::_Hash_impl::hash(&ForceAs<int64_t>(), sizeof(int64_t));
+          { const int64_t val = ForceAs<int64_t>(); out_hash = std::_Hash_impl::hash(&val, sizeof(int64_t)); }
           return true;
         }
         case TTycon::UInt8: {
-          out_hash = std::_Hash_impl::hash(&ForceAs<uint8_t>(), sizeof(uint8_t));
+          { const uint8_t val = ForceAs<uint8_t>(); out_hash = std::_Hash_impl::hash(&val, sizeof(uint8_t)); }
           return true;
         }
         case TTycon::UInt16: {
-          out_hash = std::_Hash_impl::hash(&ForceAs<uint16_t>(), sizeof(uint16_t));
+          { const uint16_t val = ForceAs<uint16_t>(); out_hash = std::_Hash_impl::hash(&val, sizeof(uint16_t)); }
           return true;
         }
         case TTycon::UInt32: {
-          out_hash = std::_Hash_impl::hash(&ForceAs<uint32_t>(), sizeof(uint32_t));
+          { const uint32_t val = ForceAs<uint32_t>(); out_hash = std::_Hash_impl::hash(&val, sizeof(uint32_t)); }
           return true;
         }
         case TTycon::UInt64: {
-          out_hash = std::_Hash_impl::hash(&ForceAs<uint64_t>(), sizeof(uint64_t));
+          { const uint64_t val = ForceAs<uint64_t>(); out_hash = std::_Hash_impl::hash(&val, sizeof(uint64_t)); }
           return true;
         }
         case TTycon::Bool: {
@@ -1677,7 +1694,7 @@ namespace Orly {
         public:  \
         T##name(const TCore *core)  \
             : Core(core) {}  \
-        virtual const val_t &Get() const {  \
+        virtual val_t Get() const override {  \
           return Core->ForceAs<val_t>();  \
         }  \
         virtual Type::T##name *Get##name##Type(void *type_alloc) const override {  \

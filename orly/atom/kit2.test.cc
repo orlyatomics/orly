@@ -18,7 +18,10 @@
 
 #include <orly/atom/kit2.h>
 
+#include <algorithm>
+#include <array>
 #include <cstring>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -280,8 +283,14 @@ FIXTURE(Typical) {
    codec (issue #115): the SelfRef tycon round-trips through TCore as a direct
    scalar carrying its de Bruijn depth.  This is the on-disk half of the
    new_sabot.test bridge round-trip. */
+/* The type czar may exist only once, whichever fixture needs it first. */
+static Type::TTypeCzar &Czar() {
+  static Type::TTypeCzar czar;
+  return czar;
+}
+
 FIXTURE(RecursiveType) {
-  static Type::TTypeCzar type_czar;
+  Czar();
   /* tree is <| Leaf(int) | Branch(<{ .l: tree, .r: tree }>) |> */
   Type::TVariantElems arms;
   arms["Leaf"] = Type::TInt::Get();
@@ -486,4 +495,162 @@ FIXTURE(NoteEqualityIgnoresUnusedBits) {
   /* A real difference still counts. */
   copy.back() ^= 1U;
   EXPECT_FALSE(note->HasSameBytes(*copied));
+}
+
+/* #993: a core is packed (alignment 1) and sits at arbitrary offsets in a note, so its direct data is read by copying, never through a typed reference. The layout, the
+   bytes a scalar leaves in its cell (which are what the disk stores) and the quick hash (which is persisted) must not
+   change with the way the data is read.  The expected values below were taken from master e996a9dc, which read through
+   references, and the test passes there unmodified. */
+static_assert(sizeof(TCore) == 1 + MaxDirectSize, "A core is a tycon byte and the direct storage area.");
+
+static array<uint8_t, sizeof(TCore)> CellBytes(const TCore &core) {
+  array<uint8_t, sizeof(TCore)> bytes;
+  memcpy(bytes.data(), &core, sizeof(TCore));
+  return bytes;
+}
+
+static string Hex(const array<uint8_t, sizeof(TCore)> &bytes) {
+  string out;
+  for (uint8_t byte: bytes) {
+    out += "0123456789abcdef"[byte >> 4];
+    out += "0123456789abcdef"[byte & 15];
+    out += ' ';
+  }
+  return out;
+}
+
+/* The bytes of a cell: the value little-endian, then zeroes, then the tycon in the last byte. */
+static array<uint8_t, sizeof(TCore)> Expect(uint8_t tycon, initializer_list<uint8_t> value) {
+  array<uint8_t, sizeof(TCore)> bytes;
+  bytes.fill(0);
+  bytes[sizeof(TCore) - 1] = tycon;
+  copy(value.begin(), value.end(), bytes.begin());
+  return bytes;
+}
+
+static size_t QuickHash(const TCore &core) {
+  size_t hash = 0;
+  EXPECT_TRUE(core.TryGetQuickHash(hash));
+  return hash;
+}
+
+/* A core holding a scalar. */
+template <typename TVal>
+static TCore Make(const TVal &val) {
+  static TTestArena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  return TCore(val, &arena, state_alloc);
+}
+
+FIXTURE(CellBytesAndQuickHashAreUnchanged) {
+  /* Tycons are on-disk values: Int8 is 48 and the integers follow in order. */
+  TCore core = Make<int8_t>(-101);
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(48, {0x9b})));
+  EXPECT_EQ(QuickHash(core), 0xf0f8104cae9faf85UL);
+  core = Make(static_cast<int16_t>(-12345));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(49, {0xc7, 0xcf})));
+  EXPECT_EQ(QuickHash(core), 0xc2491f24fcc23ec3UL);
+  core = Make(static_cast<int32_t>(0x01020304));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(50, {0x04, 0x03, 0x02, 0x01})));
+  EXPECT_EQ(QuickHash(core), 0x4c089d3ca9d430f5UL);
+  core = Make(static_cast<int64_t>(-0x0102030405060708LL));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(51, {0xf8, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe})));
+  EXPECT_EQ(QuickHash(core), 0x8fd965119b5b9ed3UL);
+  core = Make(static_cast<uint8_t>(200));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(52, {0xc8})));
+  EXPECT_EQ(QuickHash(core), 0xcdc196a1997d4ddfUL);
+  core = Make(static_cast<uint16_t>(54321));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(53, {0x31, 0xd4})));
+  EXPECT_EQ(QuickHash(core), 0x402ac515aa514a62UL);
+  core = Make(static_cast<uint32_t>(0xdeadbeefU));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(54, {0xef, 0xbe, 0xad, 0xde})));
+  EXPECT_EQ(QuickHash(core), 0x305c1b46e1e71b08UL);
+  core = Make(static_cast<uint64_t>(0x0123456789abcdefULL));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(55, {0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01})));
+  EXPECT_EQ(QuickHash(core), 0x8428d319057264f0UL);
+  /* The rest hash through std::hash; these literals are master's values too. */
+  core = Make(static_cast<bool>(true));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(56, {0x01})));
+  EXPECT_EQ(QuickHash(core), 1UL);
+  core = Make(static_cast<char>('q'));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(57, {'q'})));
+  EXPECT_EQ(QuickHash(core), 113UL);
+  core = Make(static_cast<float>(1.5f));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(58, {0x00, 0x00, 0xc0, 0x3f})));
+  EXPECT_EQ(QuickHash(core), 6335102473512021944UL);
+  core = Make(static_cast<double>(-2.25));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(59, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xc0})));
+  EXPECT_EQ(QuickHash(core), 12702181646673766799UL);
+  const Sabot::TStdDuration duration(Sabot::TStdDuration::rep(0x0102030405060708LL));
+  core = Make(duration);
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(60, {0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01})));
+  EXPECT_EQ(QuickHash(core), 72623859790382856UL);
+  const Sabot::TStdTimePoint time_point(duration);
+  core = Make(time_point);
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(61, {0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01})));
+  EXPECT_EQ(QuickHash(core), 72623859790382856UL);
+  const Base::TUuid uuid("01234567-89ab-cdef-0123-456789abcdef");
+  core = Make(uuid);
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(62, {0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef})));
+  EXPECT_EQ(QuickHash(core), 17279655951921914625UL);
+  /* A direct str and a direct blob keep their bytes in the cell, and the tycon says how many are used. */
+  core = Make(string("abc"));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(0x14, {'a', 'b', 'c'})));
+  EXPECT_EQ(QuickHash(core), 3663726644998027833UL);
+  const uint8_t blob_data[3] = { 101, 102, 103 };
+  core = Make(Native::TBlob(blob_data, 3));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(0x2c, {101, 102, 103})));
+  EXPECT_EQ(QuickHash(core), 9943231452169811944UL);
+  /* A SelfRef is a direct uint64 de Bruijn depth. */
+  {
+    Czar();
+    void *sabot_alloc = alloca(1000);
+    Sabot::Type::TAny::TWrapper sabot(Type::NewSabot(sabot_alloc, Type::TSelfRef::Get(0x0102030405060708ULL)));
+    static TTestArena arena;
+    core = TCore(&arena, *sabot);
+    EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(75, {0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01})));
+    EXPECT_EQ(QuickHash(core), 72623859790382856UL);
+  }
+}
+
+/* Scalars order and read back through the sabot as the values they hold, wherever in memory their cell sits. */
+FIXTURE(ScalarsReadBackFromACellAtAnyAlignment) {
+  TTestArena arena;
+  /* A core embedded at every byte offset of a buffer, so the direct data lands on every alignment. */
+  alignas(16) uint8_t buf[sizeof(TCore) + 16];
+  for (size_t shift = 0; shift < 16; ++shift) {
+    const TCore source = Make<int64_t>(-0x0102030405060708LL);
+    memcpy(buf + shift, &source, sizeof(TCore));
+    const TCore *core = reinterpret_cast<const TCore *>(buf + shift);
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    ostringstream strm;
+    Sabot::State::TAny::TWrapper(core->NewState(&arena, state_alloc))->Accept(Sabot::TStateDumper(strm));
+    EXPECT_EQ(strm.str(), "-72623859790382856");
+    size_t hash = 0;
+    EXPECT_TRUE(core->TryGetQuickHash(hash));
+    EXPECT_EQ(hash, 0x8fd965119b5b9ed3UL);
+  }
+}
+
+FIXTURE(ScalarOrder) {
+  TTestArena arena;
+  auto order = [&arena](const TCore &lhs, const TCore &rhs) {
+    Atom::TComparison comp = Atom::TComparison::Eq;
+    EXPECT_TRUE(lhs.TryQuickOrderComparison(&arena, rhs, &arena, comp));
+    return comp;
+  };
+  TCore lhs = Make<int16_t>(-5);
+  TCore rhs = Make<int16_t>(7);
+  EXPECT_TRUE(order(lhs, rhs) == Atom::TComparison::Lt);
+  EXPECT_TRUE(order(rhs, lhs) == Atom::TComparison::Gt);
+  EXPECT_TRUE(order(lhs, lhs) == Atom::TComparison::Eq);
+  lhs = Make(1.5);
+  rhs = Make(-1.5);
+  EXPECT_TRUE(order(lhs, rhs) == Atom::TComparison::Gt);
+  lhs = Make<uint64_t>(1ULL << 63);
+  rhs = Make<uint64_t>(1);
+  EXPECT_TRUE(order(lhs, rhs) == Atom::TComparison::Gt);
+  TCore::TOrderedArenaCompare compare(&arena);
+  EXPECT_TRUE(compare(rhs, lhs));
+  EXPECT_FALSE(compare(lhs, rhs));
 }

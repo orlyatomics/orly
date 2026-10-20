@@ -649,7 +649,7 @@ namespace Orly {
           bool FindInHash(const TKey &key, size_t &out_offset, TInStream &in_stream, TArena *file_arena) const {
             assert(key.GetCore().IsTuple());
             const Atom::TCore &core = key.GetCore();
-            const Atom::TCore::TOffset *const off = core.TryGetOffset();
+            const std::optional<Atom::TCore::TOffset> off = core.TryGetOffset();
             assert(off);
             Atom::TCore::TArena *const arena = key.GetArena();
             void *pin_alloc = alloca(sizeof(Atom::TCore::TArena::TFinalPin));

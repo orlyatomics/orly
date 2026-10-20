@@ -27,7 +27,7 @@ void TKey::CheckFreesTrail() const {
   if (!GetArena() || !GetCore().IsTuple()) {
     return;
   }
-  const Atom::TCore::TOffset *const off = GetCore().TryGetOffset();
+  const std::optional<Atom::TCore::TOffset> off = GetCore().TryGetOffset();
   assert(off);
   void *pin_alloc = alloca(sizeof(Atom::TCore::TArena::TFinalPin));
   Atom::TCore::TArena::TFinalPin::TWrapper pin(

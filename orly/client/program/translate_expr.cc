@@ -478,7 +478,7 @@ State::TBool::TBool(const TTrueExpr *)
 State::TBool::TBool(const TFalseExpr *)
     : Val(false) {}
 
-const bool &State::TBool::Get() const {
+bool State::TBool::Get() const {
   return Val;
 }
 
@@ -491,7 +491,7 @@ State::TInt::TInt(const TIntExpr *expr) {
   Val = expr->GetLexeme().AsInt();
 }
 
-const int64_t &State::TInt::Get() const {
+int64_t State::TInt::Get() const {
   return Val;
 }
 
@@ -504,7 +504,7 @@ State::TReal::TReal(const TRealExpr *expr) {
   Val = expr->GetLexeme().AsDouble();
 }
 
-const double &State::TReal::Get() const {
+double State::TReal::Get() const {
   return Val;
 }
 
@@ -517,7 +517,7 @@ State::TId::TId(const TIdExpr *expr) {
   Val = Base::TUuid(Tools::Nycr::TLexeme::RemoveCurlyBraces(expr->GetLexeme().GetText()).c_str());
 }
 
-const TUuid &State::TId::Get() const {
+TUuid State::TId::Get() const {
   return Val;
 }
 
@@ -530,7 +530,7 @@ State::TTimePnt::TTimePnt(const TTimePntExpr *expr) {
   Val = expr->GetLexeme().AsTimePnt();
 }
 
-const Sabot::TStdTimePoint &State::TTimePnt::Get() const {
+Sabot::TStdTimePoint State::TTimePnt::Get() const {
   return Val;
 }
 
@@ -543,7 +543,7 @@ State::TTimeDiff::TTimeDiff(const TTimeDiffExpr *expr) {
   Val = expr->GetLexeme().AsTimeDiff();
 }
 
-const Sabot::TStdDuration &State::TTimeDiff::Get() const {
+Sabot::TStdDuration State::TTimeDiff::Get() const {
   return Val;
 }
 
@@ -1000,7 +1000,7 @@ State::TEmptyRecord::TPinBase *State::TEmptyRecord::Pin(void *alloc) const {
 State::TVariantWhich::TVariantWhich(int64_t val)
     : Val(val) {}
 
-const int64_t &State::TVariantWhich::Get() const {
+int64_t State::TVariantWhich::Get() const {
   return Val;
 }
 

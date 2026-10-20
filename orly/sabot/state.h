@@ -172,8 +172,9 @@ namespace Orly {
         /* Pull our template parameter into scope. */
         using TVal = TVal_;
 
-        /* Override to provide access to the state. */
-        virtual const TVal &Get() const = 0;
+        /* Override to provide access to the state.  This returns a copy, not a reference, because an implementer that keeps its
+           value packed (such as a core, whose direct data is not aligned for its type) has no properly aligned object to refer to. */
+        virtual TVal Get() const = 0;
 
         protected:
 

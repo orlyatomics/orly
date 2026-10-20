@@ -33,8 +33,8 @@ TCore::TBadType::TBadType()
     : runtime_error("core or note is of incorrect type") {}
 
 bool TCore::TOrderedArenaCompare::operator()(const TCore &lhs, const TCore &rhs) const {
-  const TOffset *lhs_offset = lhs.TryGetOffset();
-  const TOffset *rhs_offset = rhs.TryGetOffset();
+  const std::optional<TOffset> lhs_offset = lhs.TryGetOffset();
+  const std::optional<TOffset> rhs_offset = rhs.TryGetOffset();
   if (lhs_offset && rhs_offset) { /* both are indirections */
     return *lhs_offset < *rhs_offset;
   } else if (!lhs_offset && !rhs_offset) { /* neither is an indirection */
@@ -555,7 +555,7 @@ void TCore::Remap(const TRemap &remap) {
   }
 }
 
-const TCore::TOffset *TCore::TryGetOffset() const {
+std::optional<TCore::TOffset> TCore::TryGetOffset() const {
   switch (Tycon) {
     case TTycon::Int8:
     case TTycon::Int16:
@@ -581,7 +581,7 @@ const TCore::TOffset *TCore::TryGetOffset() const {
     }
     case TTycon::Blob:
     case TTycon::Str: {
-      return &IndirectScalarArray.Offset;
+      return IndirectScalarArray.Offset;
       break;
     }
     case TTycon::Free:
@@ -592,7 +592,7 @@ const TCore::TOffset *TCore::TryGetOffset() const {
     case TTycon::Map:
     case TTycon::Record:
     case TTycon::Tuple: {
-      return &IndirectCoreArray.Offset;
+      return IndirectCoreArray.Offset;
       break;
     }
     default: {
@@ -602,7 +602,7 @@ const TCore::TOffset *TCore::TryGetOffset() const {
       }
     }
   }
-  return nullptr;
+  return std::nullopt;
 }
 
 bool TCore::TryTruncateTuple() {
@@ -1102,7 +1102,7 @@ void TCore::TNote::ForOffset(const std::function<void (Atom::TCore::TOffset)> &c
       const TCore *csr, *limit;
       Get(csr, limit);
       for (; csr < limit; ++csr) {
-        const TOffset *offset = csr->TryGetOffset();
+        const std::optional<TOffset> offset = csr->TryGetOffset();
         if (offset) {
           cb(*offset);
         }
@@ -1114,7 +1114,7 @@ void TCore::TNote::ForOffset(const std::function<void (Atom::TCore::TOffset)> &c
       const TPairOfCores *csr, *limit;
       Get(csr, limit);
       for (; csr < limit; ++csr) {
-        const TOffset *offset = csr->first.TryGetOffset();
+        std::optional<TOffset> offset = csr->first.TryGetOffset();
         if (offset) {
           cb(*offset);
         }

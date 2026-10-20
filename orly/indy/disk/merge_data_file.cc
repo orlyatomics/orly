@@ -167,7 +167,7 @@ class TMergeDataFileImpl {
                 /* add the sequence number */
                 seq_keeper->Emplace(item.SeqNum);
                 /* put the key arena offset into the index specific keeper filter */
-                const Atom::TCore::TOffset *offset = item.Key.TryGetOffset();
+                std::optional<Atom::TCore::TOffset> offset = item.Key.TryGetOffset();
                 if (offset) {
                   key_arena_keeper.Emplace(*offset);
                 }
@@ -242,7 +242,7 @@ class TMergeDataFileImpl {
               /* if this history key is part of a transaction we want to keep, then add its key / value arena offsets to the arena keeper filters */
               if (hist_filter_csr->NewKey) {
                 hist_filter_vec[cur_hist_offset] = true;
-                const Atom::TCore::TOffset *offset = item.Key.TryGetOffset();
+                std::optional<Atom::TCore::TOffset> offset = item.Key.TryGetOffset();
                 if (offset) {
                   key_arena_keeper.Emplace(*offset);
                 }
@@ -282,10 +282,10 @@ class TMergeDataFileImpl {
             in_stream.Skip(sizeof(size_t) * 2UL);
             for (; filter_csr && *filter_csr < seq_num; ++filter_csr) {}
             if (filter_csr && *filter_csr == seq_num) {
-              if (const Atom::TCore::TOffset *offset = meta_core.TryGetOffset()) {
+              if (std::optional<Atom::TCore::TOffset> offset = meta_core.TryGetOffset()) {
                 main_arena_keeper.Emplace(*offset);
               }
-              if (const Atom::TCore::TOffset *offset = id_core.TryGetOffset()) {
+              if (std::optional<Atom::TCore::TOffset> offset = id_core.TryGetOffset()) {
                 main_arena_keeper.Emplace(*offset);
               }
             }
@@ -390,10 +390,10 @@ class TMergeDataFileImpl {
                 continue;
               }
             }
-            if (const Atom::TCore::TOffset *offset = meta_core.TryGetOffset()) {
+            if (std::optional<Atom::TCore::TOffset> offset = meta_core.TryGetOffset()) {
               access_sorter.Emplace(u * 2UL, *offset);
             }
-            if (const Atom::TCore::TOffset *offset = id_core.TryGetOffset()) {
+            if (std::optional<Atom::TCore::TOffset> offset = id_core.TryGetOffset()) {
               access_sorter.Emplace(u * 2UL + 1UL, *offset);
             }
           }
@@ -487,11 +487,11 @@ class TMergeDataFileImpl {
                     ThrowIfCancelled();
                     const typename TReader::TIndexFile::TKeyItem &item = *key_cursor;
                     if (!CanTailTombstones || !item.Value.IsTombstone() || item.NumHistKeys > 0) {
-                      const Atom::TCore::TOffset *key_off = item.Key.TryGetOffset();
+                      std::optional<Atom::TCore::TOffset> key_off = item.Key.TryGetOffset();
                       if (key_off) {
                         key_access_sorter.Emplace(++idx, *key_off);
                       }
-                      const Atom::TCore::TOffset *val_off = item.Value.TryGetOffset();
+                      std::optional<Atom::TCore::TOffset> val_off = item.Value.TryGetOffset();
                       if (val_off) {
                         val_access_sorter.Emplace(++idx, *val_off);
                       }
@@ -501,11 +501,11 @@ class TMergeDataFileImpl {
                   for (typename TReader::TIndexFile::TKeyCursor key_cursor(source_file.get()); key_cursor; ++key_cursor) {
                     ThrowIfCancelled();
                     const typename TReader::TIndexFile::TKeyItem &item = *key_cursor;
-                    const Atom::TCore::TOffset *key_off = item.Key.TryGetOffset();
+                    std::optional<Atom::TCore::TOffset> key_off = item.Key.TryGetOffset();
                     if (key_off) {
                       key_access_sorter.Emplace(++idx, *key_off);
                     }
-                    const Atom::TCore::TOffset *val_off = item.Value.TryGetOffset();
+                    std::optional<Atom::TCore::TOffset> val_off = item.Value.TryGetOffset();
                     if (val_off) {
                       val_access_sorter.Emplace(++idx, *val_off);
                     }
@@ -542,11 +542,11 @@ class TMergeDataFileImpl {
                     assert(cur_hist_offset < hist_filter_vec.size());
                     if (hist_filter_vec[cur_hist_offset]) {
                       const typename TReader::TIndexFile::THistoryKeyItem &item = *history_cursor;
-                      const Atom::TCore::TOffset *key_off = item.Key.TryGetOffset();
+                      std::optional<Atom::TCore::TOffset> key_off = item.Key.TryGetOffset();
                       if (key_off) {
                         key_access_sorter.Emplace(++idx, *key_off);
                       }
-                      const Atom::TCore::TOffset *val_off = item.Value.TryGetOffset();
+                      std::optional<Atom::TCore::TOffset> val_off = item.Value.TryGetOffset();
                       if (val_off) {
                         val_access_sorter.Emplace(++idx, *val_off);
                       }
@@ -556,11 +556,11 @@ class TMergeDataFileImpl {
                   for (typename TReader::TIndexFile::THistoryKeyCursor history_cursor(source_file.get()); history_cursor; ++history_cursor) {
                     ThrowIfCancelled();
                     const typename TReader::TIndexFile::THistoryKeyItem &item = *history_cursor;
-                    const Atom::TCore::TOffset *key_off = item.Key.TryGetOffset();
+                    std::optional<Atom::TCore::TOffset> key_off = item.Key.TryGetOffset();
                     if (key_off) {
                       key_access_sorter.Emplace(++idx, *key_off);
                     }
-                    const Atom::TCore::TOffset *val_off = item.Value.TryGetOffset();
+                    std::optional<Atom::TCore::TOffset> val_off = item.Value.TryGetOffset();
                     if (val_off) {
                       val_access_sorter.Emplace(++idx, *val_off);
                     }

@@ -507,7 +507,7 @@ namespace Orly {
 
           TBool(const TFalseExpr *);
 
-          virtual const bool &Get() const override;
+          virtual bool Get() const override;
 
           virtual Sabot::Type::TBool *GetBoolType(void *type_alloc) const override;
 
@@ -523,7 +523,7 @@ namespace Orly {
 
           TInt(const TIntExpr *expr);
 
-          virtual const int64_t &Get() const override;
+          virtual int64_t Get() const override;
 
           virtual Sabot::Type::TInt64 *GetInt64Type(void *type_alloc) const override;
 
@@ -539,7 +539,7 @@ namespace Orly {
 
           TReal(const TRealExpr *expr);
 
-          virtual const double &Get() const override;
+          virtual double Get() const override;
 
           virtual Sabot::Type::TDouble *GetDoubleType(void *type_alloc) const override;
 
@@ -555,7 +555,7 @@ namespace Orly {
 
           TId(const TIdExpr *expr);
 
-          virtual const Base::TUuid &Get() const override;
+          virtual Base::TUuid Get() const override;
 
           virtual Sabot::Type::TUuid *GetUuidType(void *type_alloc) const override;
 
@@ -571,7 +571,7 @@ namespace Orly {
 
           TTimePnt(const TTimePntExpr *expr);
 
-          virtual const Sabot::TStdTimePoint &Get() const override;
+          virtual Sabot::TStdTimePoint Get() const override;
 
           virtual Sabot::Type::TTimePoint *GetTimePointType(void *type_alloc) const override;
 
@@ -587,7 +587,7 @@ namespace Orly {
 
           TTimeDiff(const TTimeDiffExpr *expr);
 
-          virtual const Sabot::TStdDuration &Get() const override;
+          virtual Sabot::TStdDuration Get() const override;
 
           virtual Sabot::Type::TDuration *GetDurationType(void *type_alloc) const override;
 
@@ -887,7 +887,7 @@ namespace Orly {
 
           TVariantWhich(int64_t val);
 
-          virtual const int64_t &Get() const override;
+          virtual int64_t Get() const override;
 
           virtual Sabot::Type::TInt64 *GetInt64Type(void *type_alloc) const override;
 
