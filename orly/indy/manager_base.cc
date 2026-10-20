@@ -511,6 +511,16 @@ void TManager::RunMergeMem() {
           should_sleep = true;
           cont = true;
         } else {
+          /* When both a root repo and child POVs are due, step the root repo first so child POV
+             churn cannot starve root merges, WAL checkpoints, or memory-layer reclamation. */
+          if (repo->GetParentRepo()) {
+            for (TRepoQueue::TCursor csr(&MergeMemQueue); csr && csr->GetTimeOfNextMergeMem() <= now; ++csr) {
+              if (!csr->GetParentRepo()) {
+                repo = &*csr;
+                break;
+              }
+            }
+          }
           repo->SetTimeOfNextMergeMem(now + MergeMemDelay);
           repo_id = repo->GetId();
           repo->MergeMemMembership.Remove();
@@ -582,6 +592,14 @@ void TManager::RunMergeDisk() {
           should_sleep = true;
           cont = true;
         } else {
+          if (repo->GetParentRepo()) {
+            for (TRepoQueue::TCursor csr(&MergeDiskQueue); csr && csr->GetTimeOfNextMergeDisk() <= now; ++csr) {
+              if (!csr->GetParentRepo()) {
+                repo = &*csr;
+                break;
+              }
+            }
+          }
           repo->SetTimeOfNextMergeDisk(now + MergeDiskDelay);
           repo_id = repo->GetId();
           repo->MergeDiskMembership.Remove();
@@ -639,6 +657,10 @@ void TManager::EnqueueMergeMem(TRepo *repo) {
   /* acquire MergeMem lock */ {
     std::lock_guard<std::mutex> lock(MergeMemLock);
     if (repo->MergeMemMembership.TryGetCollector() == nullptr) {
+      const auto now = steady_clock::now();
+      if (repo->GetTimeOfNextMergeMem() < now) {
+        repo->SetTimeOfNextMergeMem(now);
+      }
       MergeMemQueue.Insert(&repo->MergeMemMembership);
       MergeMemSem.Push();
     }
@@ -649,6 +671,10 @@ void TManager::EnqueueMergeDisk(TRepo *repo) {
   /* acquire MergeDisk lock */ {
     Fiber::TFiberLock::TLock lock(MergeDiskLock);
     if (repo->MergeDiskMembership.TryGetCollector() == nullptr) {
+      const auto now = steady_clock::now();
+      if (repo->GetTimeOfNextMergeDisk() < now) {
+        repo->SetTimeOfNextMergeDisk(now);
+      }
       MergeDiskQueue.Insert(&repo->MergeDiskMembership);
       MergeDiskSem.Push();
     }

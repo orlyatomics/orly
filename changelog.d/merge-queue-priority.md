@@ -1,0 +1,1 @@
+- **Fixed**: `EnqueueMergeMem` and `EnqueueMergeDisk` now clamp idle repos' next-merge timestamps to `now`, and `RunMergeMem` / `RunMergeDisk` prefer due root repos over due child POVs so child POV churn cannot starve `GlobalRepo` memory flushes, disk compactions, or WAL checkpoints.
