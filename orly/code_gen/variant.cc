@@ -130,6 +130,49 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
       break;
     }
   }
+  /* True if a payload type converts to and from a sabot natively, without
+     going through Var: scalars, records and containers of them, and closed
+     variants (which have their own Native specializations). An optional or
+     anything self-referential does not qualify, so its variant keeps the
+     AsVar path. */
+  std::function<bool (const Type::TType &)> has_native_sabot =
+      [&](const Type::TType &t) -> bool {
+    if (Type::HasFreeSelfRef(t)) {
+      return false;
+    }
+    if (t.Is<Type::TBool>() || t.Is<Type::TInt>() || t.Is<Type::TReal>() || t.Is<Type::TStr>()
+        || t.Is<Type::TId>() || t.Is<Type::TTimePnt>() || t.Is<Type::TTimeDiff>()
+        || t.Is<Type::TVariant>()) {
+      return true;
+    }
+    if (const auto *list = t.TryAs<Type::TList>()) {
+      return has_native_sabot(list->GetElem());
+    }
+    if (const auto *set = t.TryAs<Type::TSet>()) {
+      return has_native_sabot(set->GetElem());
+    }
+    if (const auto *dict = t.TryAs<Type::TDict>()) {
+      return has_native_sabot(dict->GetKey()) && has_native_sabot(dict->GetVal());
+    }
+    if (const auto *obj = t.TryAs<Type::TObj>()) {
+      for (const auto &field : obj->GetElems()) {
+        if (!has_native_sabot(field.second)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  };
+  /* A variant whose every arm has a native sabot gets a native sabot of its
+     own (Native::Variant, #946); any other keeps routing through AsVar(). */
+  bool native_sabot = !is_recursive;
+  for (const auto &elem : elems) {
+    if (!has_native_sabot(elem.second)) {
+      native_sabot = false;
+      break;
+    }
+  }
   auto boxed_name = [&class_name](const string &tag) {
     return class_name + "_Boxed" + tag;
   };
@@ -259,6 +302,10 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
       // sabot conversion it routes through).
       << "#include <orly/native/type.h>" << Eol
       << "#include <orly/type/new_sabot.h>" << Eol;
+  if (native_sabot) {
+    // Native::Variant, the native sabot of a variant whose arms all have one.
+    out << "#include <orly/native/variant.h>" << Eol;
+  }
   if (is_recursive) {
     // Rt::TBox / DeepBox / DeepUnbox (recursive arm storage, #103/#116),
     // Type::TSelfRef (the TDt specialization reconstructs the declared
@@ -714,8 +761,12 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
         }
 
         out << Eol
-            << "private:" << Eol
-            << "size_t Which;" << Eol;
+            << "private:" << Eol;
+        if (native_sabot) {
+          /* Reads the active payload in place for the native sabot. */
+          out << "friend class Orly::Native::VariantArms<" << class_name << ">;" << Eol;
+        }
+        out << "size_t Which;" << Eol;
         for (const auto &elem : elems) {
           out << storage_type(elem.first, elem.second) << " V" << elem.first << ";" << Eol;
         }
@@ -1229,35 +1280,105 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
      record and its type sabot is an empty record (which breaks a SET of
      variants -- the empty-record element type mismatches the variant values).
 
-     - State::Factory routes the VALUE through AsVar() -> Var::TVariant ->
-       Var::NewSabot, which reuses the SS::TObj(const Var::TVariant *) adapter
-       (the fixed-shape variant-record encoding).
-     - Type::For routes the TYPE through Orly::Type::NewSabot on the declared
-       variant type, which the type-sabot visitor (orly/type/new_sabot.cc)
-       maps to the same fixed-shape record. Both stay in lock-step. */ {
+     - If every arm has a native sabot, both route to Native::Variant
+       (orly/native/variant.h), which builds the fixed-shape variant record
+       straight from the value, through a generated VariantArms<>.
+     - Otherwise State::Factory routes the VALUE through AsVar() ->
+       Var::TVariant -> Var::NewSabot (Var::SS::TVariantRec), and Type::For
+       routes the TYPE through Orly::Type::NewSabot on the declared variant
+       type, which maps it to the same fixed-shape record.
+     All of these must stay in lock-step. */ {
     TNamespacePrinter nsp(vector<string>{"Orly", "Native"}, out);
-    out << "template <>" << Eol
-        << "class State::Factory<Rt::Variants::" << class_name << "> final {" << Eol
-        << "  NO_CONSTRUCTION(Factory);" << Eol
-        << "  public:" << Eol
-        << "  static Sabot::State::TAny *New(const Rt::Variants::" << class_name
-        << " &val, void *state_alloc) {" << Eol
-        << "    return State::Factory<Var::TVar>::New(val.AsVar(), state_alloc);" << Eol
-        << "  }" << Eol
-        << "}; // State::Factory<" << class_name << ">" << Eol
-        << Eol
-        << "template <>" << Eol
-        << "class Type::For<Rt::Variants::" << class_name << "> final {" << Eol
-        << "  NO_CONSTRUCTION(For);" << Eol
-        << "  public:" << Eol
-        << "  static Sabot::Type::TAny *GetType(void *type_alloc) {" << Eol
-        << "    return Orly::Type::NewSabot(type_alloc, Orly::Type::TDt<Rt::Variants::"
-        << class_name << ">::GetType());" << Eol
-        << "  }" << Eol
-        << "  static Sabot::Type::TRecord *GetRecordType(void *type_alloc) {" << Eol
-        << "    return dynamic_cast<Sabot::Type::TRecord *>(GetType(type_alloc));" << Eol
-        << "  }" << Eol
-        << "}; // Type::For<" << class_name << ">" << Eol;
+    if (native_sabot) {
+      /* The variant's own native sabot (#946): the same fixed-shape record,
+         built straight from the value. Converting through AsVar() interned
+         the variant type and allocated a Var per value, which was most of
+         the cost of returning variant values from a read. */
+      const string vt = "Rt::Variants::" + class_name;
+      out << "template <>" << Eol
+          << "class VariantArms<" << vt << "> final {" << Eol
+          << "  NO_CONSTRUCTION(VariantArms);" << Eol
+          << "  public:" << Eol
+          << "  static size_t GetArmCount() {" << Eol
+          << "    return " << elems.size() << ";" << Eol
+          << "  }" << Eol
+          << "  static const char *GetArmName(size_t arm) {" << Eol
+          << "    switch (arm) {" << Eol;
+      size_t idx = 0;
+      for (const auto &elem : elems) {
+        out << "      case " << idx++ << ": return \"" << elem.first << "\";" << Eol;
+      }
+      out << "    }" << Eol
+          << "    throw Sabot::TIdxTooBig();" << Eol
+          << "  }" << Eol
+          << "  static size_t GetWhich(const " << vt << " &val) {" << Eol
+          << "    return val.Which;" << Eol
+          << "  }" << Eol
+          << "  static Sabot::Type::TOpt *NewArmOptType(size_t arm, void *type_alloc) {" << Eol
+          << "    switch (arm) {" << Eol;
+      idx = 0;
+      for (const auto &elem : elems) {
+        out << "      case " << idx++ << ": return Type::For<std::optional<"
+            << storage_type(elem.first, elem.second) << ">>::GetOptType(type_alloc);" << Eol;
+      }
+      out << "    }" << Eol
+          << "    throw Sabot::TIdxTooBig();" << Eol
+          << "  }" << Eol
+          << "  static Sabot::State::TAny *NewPayloadState(const " << vt << " &val, void *state_alloc) {" << Eol
+          << "    switch (val.Which) {" << Eol;
+      idx = 0;
+      for (const auto &elem : elems) {
+        out << "      case " << idx++ << ": return State::New(val.V" << elem.first << ", state_alloc);" << Eol;
+      }
+      out << "    }" << Eol
+          << "    throw Sabot::TIdxTooBig();" << Eol
+          << "  }" << Eol
+          << "}; // VariantArms<" << class_name << ">" << Eol
+          << Eol
+          << "template <>" << Eol
+          << "class State::Factory<" << vt << "> final {" << Eol
+          << "  NO_CONSTRUCTION(Factory);" << Eol
+          << "  public:" << Eol
+          << "  static Sabot::State::TAny *New(const " << vt << " &val, void *state_alloc) {" << Eol
+          << "    return Variant<" << vt << ">::NewState(val, state_alloc);" << Eol
+          << "  }" << Eol
+          << "}; // State::Factory<" << class_name << ">" << Eol
+          << Eol
+          << "template <>" << Eol
+          << "class Type::For<" << vt << "> final {" << Eol
+          << "  NO_CONSTRUCTION(For);" << Eol
+          << "  public:" << Eol
+          << "  static Sabot::Type::TAny *GetType(void *type_alloc) {" << Eol
+          << "    return Variant<" << vt << ">::NewType(type_alloc);" << Eol
+          << "  }" << Eol
+          << "  static Sabot::Type::TRecord *GetRecordType(void *type_alloc) {" << Eol
+          << "    return Variant<" << vt << ">::NewType(type_alloc);" << Eol
+          << "  }" << Eol
+          << "}; // Type::For<" << class_name << ">" << Eol;
+    } else {
+      out << "template <>" << Eol
+          << "class State::Factory<Rt::Variants::" << class_name << "> final {" << Eol
+          << "  NO_CONSTRUCTION(Factory);" << Eol
+          << "  public:" << Eol
+          << "  static Sabot::State::TAny *New(const Rt::Variants::" << class_name
+          << " &val, void *state_alloc) {" << Eol
+          << "    return State::Factory<Var::TVar>::New(val.AsVar(), state_alloc);" << Eol
+          << "  }" << Eol
+          << "}; // State::Factory<" << class_name << ">" << Eol
+          << Eol
+          << "template <>" << Eol
+          << "class Type::For<Rt::Variants::" << class_name << "> final {" << Eol
+          << "  NO_CONSTRUCTION(For);" << Eol
+          << "  public:" << Eol
+          << "  static Sabot::Type::TAny *GetType(void *type_alloc) {" << Eol
+          << "    return Orly::Type::NewSabot(type_alloc, Orly::Type::TDt<Rt::Variants::"
+          << class_name << ">::GetType());" << Eol
+          << "  }" << Eol
+          << "  static Sabot::Type::TRecord *GetRecordType(void *type_alloc) {" << Eol
+          << "    return dynamic_cast<Sabot::Type::TRecord *>(GetType(type_alloc));" << Eol
+          << "  }" << Eol
+          << "}; // Type::For<" << class_name << ">" << Eol;
+    }
   } // namespace Orly::Native
 
   out << Eol;
