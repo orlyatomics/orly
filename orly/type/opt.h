@@ -40,8 +40,9 @@ namespace Orly {
          (TVariant::GetLowered), so an arm whose payload is `T?` is stored as
          `T??`. The outer optional says whether the arm was taken and the inner
          one is the payload, which keeps "arm not taken" apart from "arm taken
-         with an unknown payload" (#978). Only the storage lowering and its
-         inverse (sabot_to_type) call this. */
+         with an unknown payload" (#978). Called where that lowering is built or
+         read back: TVariant::GetLowered, sabot_to_type, and Var::TOpt::GetType,
+         which Var::ToVar uses for any incoming state, client input included. */
       static TType GetStored(const TType &type);
 
       private:
