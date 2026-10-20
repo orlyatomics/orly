@@ -12,14 +12,16 @@
       "-g",
       "-O1",
       "-fsanitize=undefined,float-cast-overflow",
-      "-fno-omit-frame-pointer"
+      "-fno-omit-frame-pointer",
+      "-U_FORTIFY_SOURCE"
     ],
     "+gcc": [
       "-DDEBUG",
       "-g",
       "-O1",
       "-fsanitize=undefined,float-cast-overflow",
-      "-fno-omit-frame-pointer"
+      "-fno-omit-frame-pointer",
+      "-U_FORTIFY_SOURCE"
     ],
     "flex": {
       "+g++": [

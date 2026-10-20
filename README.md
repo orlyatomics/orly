@@ -258,7 +258,9 @@ control that makes `orlyi` race on purpose and requires TSan to report it.
 A `ubsan` config builds with UndefinedBehaviorSanitizer
 (`-fsanitize=undefined,float-cast-overflow`) to find signed overflow,
 misaligned or null accesses, bad shifts, out-of-range enum/bool loads and the
-like. It is not part of CI yet. Reports are recoverable (the program keeps
+like. Like the `asan` config it builds with `-U_FORTIFY_SOURCE`: the fibers
+switch stacks with `longjmp`, which glibc's fortified `longjmp` rejects. It is
+not part of CI yet. Reports are recoverable (the program keeps
 running), so collect them from the log:
 
 ```sh
