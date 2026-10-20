@@ -34,6 +34,36 @@ using namespace Base;
 using namespace Orly::Indy::L0;
 using namespace Util;
 
+/* tcmalloc's MallocExtension, linked into release builds (release.jhm). Weak, so that debug and
+   sanitizer builds, which use glibc malloc, link without it and ReleaseFreeHeap does nothing. */
+extern "C" {
+int MallocExtension_GetNumericProperty(const char *property, size_t *value) __attribute__((weak));
+void MallocExtension_ReleaseToSystem(size_t num_bytes) __attribute__((weak));
+}
+
+namespace {
+
+/* How much of tcmalloc's free page heap ReleaseFreeHeap leaves mapped, so the next merge's first
+   allocations need not fault pages straight back in. */
+constexpr size_t KeepFreeHeapBytes = 256UL << 20;
+
+/* Return tcmalloc's free page heap to the kernel, keeping KeepFreeHeapBytes of it (#967). A disk
+   merge allocates and frees hundreds of MiB of working memory, and tcmalloc keeps what it frees
+   mapped. On an M1 settle from a post-ingest snapshot, with no reads at all, the free page heap
+   reached 4.38 GiB beside 6.15 GiB in use 20 minutes in, and RSS climbed from 4.3 to 10.6 GB:
+   memory no other allocation in the process was asking for, counted against the budget. */
+void ReleaseFreeHeap() {
+  if (!MallocExtension_GetNumericProperty || !MallocExtension_ReleaseToSystem) {
+    return;
+  }
+  size_t free_bytes = 0;
+  if (MallocExtension_GetNumericProperty("tcmalloc.pageheap_free_bytes", &free_bytes) && free_bytes > KeepFreeHeapBytes) {
+    MallocExtension_ReleaseToSystem(free_bytes - KeepFreeHeapBytes);
+  }
+}
+
+}  // namespace
+
 TManager::TRepo::~TRepo() {
   assert(MappingCollection.IsEmpty()); /* otherwise didn't call PreDtor */
   /* A repo can die while it waits in the mem-merge queue (#614). Leave the queue under its
@@ -599,6 +629,7 @@ void TManager::RunMergeDisk() {
     }  // release MergeDisk lock
     /* As in RunMergeMem: only the id leaves the lock (#614). */
     StepQueuedMergeDisk(repo_id);
+    ReleaseFreeHeap();
   }
   /* De-Register ourselves for CPU time collection */ {
     lock_guard<mutex> lock(MergeThreadCPUMutex);
