@@ -1,0 +1,1 @@
+- **Added**: a `ubsan` jhm config (`tools/jhm -c ubsan ...`) that builds with UndefinedBehaviorSanitizer plus `float-cast-overflow`, alongside the existing `asan` and `tsan` configs. It is not wired into CI; the README documents how to build and run the suite under it.

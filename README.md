@@ -253,6 +253,28 @@ so WebSocket sessions, Tetris, the merges and the reporting port are covered
 too. It fails on any un-suppressed report from `orlyi`, after a negative
 control that makes `orlyi` race on purpose and requires TSan to report it.
 
+### UndefinedBehaviorSanitizer build
+
+A `ubsan` config builds with UndefinedBehaviorSanitizer
+(`-fsanitize=undefined,float-cast-overflow`) to find signed overflow,
+misaligned or null accesses, bad shifts, out-of-range enum/bool loads and the
+like. It is not part of CI yet. Reports are recoverable (the program keeps
+running), so collect them from the log:
+
+```sh
+tools/jhm -c ubsan --test      # builds and runs every test under UBSan
+UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=0:report_error_type=1 \
+  ../out_orly/ubsan/orly/indy/context_fold.test 2>&1 | grep 'runtime error:'
+
+# Orlyscript tests through a UBSan orlyc
+tools/jhm -c ubsan orly/orlyc
+ORLYC="$PWD/../out_orly/ubsan/orly/orlyc" \
+  UBSAN_OPTIONS=print_stacktrace=1 python3 tools/lang_test.py -d tests/lang_tests 2>&1 | grep 'runtime error:'
+```
+
+On a machine with very large RAM, cap a standalone `orlyi` (cgroup limit) so
+it does not size its budget from free memory.
+
 ## Security
 
 By default Orly has **no authentication or authorization**. Any client that can reach
