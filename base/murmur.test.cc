@@ -54,7 +54,7 @@ FIXTURE(Typical) {
   double min, max, mean, sigma;
   diff_calc.Report(min, max, mean, sigma);
   EXPECT_GE(min,      16.00);  // We always flipped at least a quarter of the bits.
-  EXPECT_GE(mean,     31.00);  // On average, we flipped about half of the bits (31.9 measured; was 32.00, never reached once every bit is tested).
+  EXPECT_GE(mean,     30.50);  // Expected 32 +/- 0.5 over 63 samples (about 3 standard errors of slack); 31.87 measured.
   EXPECT_LE(sigma,     8.00);  // We have a reasonably tight clustering around the mean.
   /* Look for sticky bits. */
   bit_calc[0].Report(min, max, mean, sigma);
