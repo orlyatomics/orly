@@ -24,6 +24,7 @@
 #pragma once
 
 #include <cassert>
+#include <cstring>
 
 #include <algorithm>
 #include <exception>
@@ -148,7 +149,7 @@ namespace Orly {
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(size_t)) {
               CheckBuf();
-              *reinterpret_cast<size_t *>(Buf->GetData() + (PageInBuf * PhysicalPageSize) + offset) = out;
+              std::memcpy(Buf->GetData() + (PageInBuf * PhysicalPageSize) + offset, &out, sizeof(out));
               ByteIndex += sizeof(size_t);
             } else {
               Write(&out, sizeof(size_t));
@@ -159,7 +160,7 @@ namespace Orly {
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(int64_t)) {
               CheckBuf();
-              *reinterpret_cast<int64_t *>(Buf->GetData() + (PageInBuf * PhysicalPageSize) + offset) = out;
+              std::memcpy(Buf->GetData() + (PageInBuf * PhysicalPageSize) + offset, &out, sizeof(out));
               ByteIndex += sizeof(int64_t);
             } else {
               Write(&out, sizeof(int64_t));
@@ -181,7 +182,7 @@ namespace Orly {
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(uint16_t)) {
               CheckBuf();
-              *reinterpret_cast<uint16_t *>(Buf->GetData() + (PageInBuf * PhysicalPageSize) + offset) = out;
+              std::memcpy(Buf->GetData() + (PageInBuf * PhysicalPageSize) + offset, &out, sizeof(out));
               ByteIndex += sizeof(uint16_t);
             } else {
               Write(&out, sizeof(uint16_t));
@@ -192,7 +193,7 @@ namespace Orly {
             size_t offset = ByteIndex % PageSize;
             if (PageSize - offset >= sizeof(uint32_t)) {
               CheckBuf();
-              *reinterpret_cast<uint32_t *>(Buf->GetData() + (PageInBuf * PhysicalPageSize) + offset) = out;
+              std::memcpy(Buf->GetData() + (PageInBuf * PhysicalPageSize) + offset, &out, sizeof(out));
               ByteIndex += sizeof(uint32_t);
             } else {
               Write(&out, sizeof(uint32_t));
