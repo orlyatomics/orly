@@ -876,10 +876,10 @@ static uint64_t HashFileBytes(Sim::TMemEngine &mem_engine, const TUuid &file_id,
 
 /* #988: the sorters' buffers grow as they fill instead of taking their whole size up front, and the fold keeps its
    entries in a deque. Neither may change what is written. The source and its fold here are fully determined (fixed
-   file, index and update ids; a window from 0 keeps every update's id, so the fold mints none), and large enough
-   that each sorter's buffer grows several times. The fold's bytes must match those master wrote. The source's bytes
-   cannot be pinned the same way: the writer pads one section from a reused buffer, so a span of it carries whatever
-   an earlier fixture left there. Its length and its content (every entry and update id) are pinned instead. */
+   file, index and update ids; a window from 0 keeps every update's id, so the fold mints none), and large enough that
+   each sorter's buffer grows several times. The fold's bytes are pinned to the hash its zeroed blocks produce. Pool
+   blocks are zeroed on allocation, so the source's bytes no longer depend on what earlier fixtures left in reused
+   blocks and are pinned as well, alongside its content (every entry and update id). */
 FIXTURE(DataFileAndFoldBytesMatchMaster) {
   TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -939,16 +939,77 @@ FIXTURE(DataFileAndFoldBytesMatchMaster) {
       mix(id.GetRaw(), 16UL);
     }
     size_t source_length = 0UL, fold_length = 0UL;
-    HashFileBytes(mem_engine, file_id, 1UL, source_length);
+    const uint64_t source_hash = HashFileBytes(mem_engine, file_id, 1UL, source_length);
     const uint64_t fold_hash = HashFileBytes(mem_engine, file_id, 2UL, fold_length);
     std::cerr << "source " << source_length << " bytes, " << source.size() << " entries, " << ids.size()
-              << " updates, content hash " << std::hex << content_hash << "; fold " << std::dec << fold_length
-              << " bytes, hash " << std::hex << fold_hash << std::dec << std::endl;
+              << " updates, content hash " << std::hex << content_hash << ", hash " << source_hash << "; fold "
+              << std::dec << fold_length << " bytes, hash " << std::hex << fold_hash << std::dec << std::endl;
     EXPECT_EQ(ids.size(), num_updates);
     EXPECT_EQ(source_length, 1373568UL);
     EXPECT_EQ(content_hash, 0x8dee51a577f4a729ULL);
+    EXPECT_EQ(source_hash, 0x4275a9238fa18dd8ULL);
     EXPECT_EQ(fold_length, 1373568UL);
-    EXPECT_EQ(fold_hash, 0xd39af752f0630c88ULL);
+    EXPECT_EQ(fold_hash, 0x28f54d0e26231e40ULL);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* Writers send whole pool blocks to disk, including the tail of each section's last block that they leave unwritten.
+   A block reused from an earlier write must come back zeroed, or that tail carries the earlier write's bytes into the
+   new file. Write file A full of a marker value, then a small unmarked file B in the same process: B must hold none
+   of A's markers. */
+static void WriteMarkerFile(Sim::TMemEngine &mem_engine, void *state_alloc, const TUuid &file_id,
+                            const TUuid &index_id, size_t num_updates, int64_t value) {
+  TMockMem mem_layer;
+  for (size_t u = 0UL; u < num_updates; ++u) {
+    TSuprena arena;
+    char id[37];
+    snprintf(id, sizeof(id), "00000000-0000-4000-8000-%012zx", u + 1UL);
+    auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(TUuid(id), &arena, state_alloc));
+    update->SetSequenceNumber(u + 1UL);
+    const TIndexKey index_key(index_id, TKey(std::make_tuple(value, static_cast<int64_t>(u)), &arena, state_alloc));
+    update->AddEntry(index_key, TKey(value, &arena, state_alloc), TMutator::Assign);
+    mem_layer.Insert(TUpdate::CopyUpdate(update.get(), state_alloc));
+  }
+  TDataFile(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, 1UL, 20UL, 0U, Medium);
+}
+
+/* Count the places a file's bytes hold the marker. */
+static size_t CountMarkers(Sim::TMemEngine &mem_engine, const TUuid &file_id, int64_t marker) {
+  TReader reader(HERE, mem_engine.GetEngine(), file_id, 1UL);
+  std::vector<uint8_t> bytes(reader.GetFileLength());
+  EXPECT_GT(bytes.size(), 0UL);
+  TDataFile::TDataInStream<0UL> in_stream(HERE, Source::MergeDataFileOther, RealTime, &reader,
+      mem_engine.GetEngine()->GetCache<TDataFile::TDataInStream<0UL>::PhysicalCachePageSize>(), 0UL);
+  for (size_t pos = 0UL; pos < bytes.size();) {
+    const size_t n = std::min<size_t>(bytes.size() - pos, 4096UL);
+    in_stream.Read(bytes.data() + pos, n);
+    pos += n;
+  }
+  size_t hits = 0UL;
+  for (size_t i = 0UL; i + sizeof(marker) <= bytes.size(); ++i) {
+    if (memcmp(bytes.data() + i, &marker, sizeof(marker)) == 0) {
+      ++hits;
+    }
+  }
+  return hits;
+}
+
+FIXTURE(ReusedPoolBlocksStartZeroed) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    constexpr int64_t marker = 0x5f6b72616d5f5fLL;
+    const TUuid file_a("aaaaaaaa-0000-4000-8000-000000000001"), index_a("aaaaaaaa-0000-4000-8000-0000000000aa");
+    const TUuid file_b("bbbbbbbb-0000-4000-8000-000000000002"), index_b("bbbbbbbb-0000-4000-8000-0000000000bb");
+    WriteMarkerFile(mem_engine, state_alloc, file_a, index_a, 3000UL, marker);
+    WriteMarkerFile(mem_engine, state_alloc, file_b, index_b, 50UL, 1L);
+    /* A's own bytes must hold the marker, or B holding none of it proves nothing. */
+    EXPECT_GT(CountMarkers(mem_engine, file_a, marker), 0UL);
+    EXPECT_EQ(CountMarkers(mem_engine, file_b, marker), 0UL);
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();

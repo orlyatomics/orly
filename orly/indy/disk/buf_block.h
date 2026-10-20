@@ -119,15 +119,24 @@ namespace Orly {
           }
 
           void *TryAlloc() {
-            //Base::TSpinLock::TSoftLock lock(SpinLock);
-            std::lock_guard<std::mutex> lock(Lock);
-            TBlock *block = FirstBlock;
-            FirstBlock = (block ? block->NextBlock : 0);
+            TBlock *block;
+            /* pop under the lock */ {
+              //Base::TSpinLock::TSoftLock lock(SpinLock);
+              std::lock_guard<std::mutex> lock(Lock);
+              block = FirstBlock;
+              FirstBlock = (block ? block->NextBlock : 0);
+              if (block) {
+                FirstBlock = block->NextBlock;
+                ++NumBlocksUsed;
+              } else {
+                FirstBlock = nullptr;
+              }
+            }
+            /* Writers send whole blocks to disk, including any tail they leave
+               unwritten, so a reused block must not carry its previous contents
+               (or the free-list link) into the next file. */
             if (block) {
-              FirstBlock = block->NextBlock;
-              ++NumBlocksUsed;
-            } else {
-              FirstBlock = nullptr;
+              memset(block, 0, BlockSize);
             }
             return block;
           }
