@@ -18,6 +18,8 @@
 
 #include <base/util/stl.h>
 
+#include <cstdint>
+#include <limits>
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
@@ -54,6 +56,48 @@ FIXTURE(FindOrInsert) {
 
 FIXTURE(RotatedLeft) {
   EXPECT_EQ(RotatedLeft<unsigned short>(0x1234, 4), 0x2341);
+}
+
+/* The rotation as the old code computed it for every count it handled on x86, where the hardware masks the shift
+   count: a count that is a multiple of the width ORed the value with itself.  Hashes are persisted, so the
+   replacement must agree with this bit for bit. */
+template <typename TVal>
+static TVal OldRotatedLeft(TVal val, int n) {
+  const unsigned digits = std::numeric_limits<TVal>::digits;
+  n %= digits;
+  const unsigned mask = digits - 1;
+  return static_cast<TVal>((val << (n & mask)) | (val >> ((digits - n) & mask)));
+}
+
+template <typename TVal>
+static void CheckRotations(TVal val) {
+  const int digits = std::numeric_limits<TVal>::digits;
+  for (int n = 0; n <= 3 * digits + 5; ++n) {
+    EXPECT_EQ(RotatedLeft(val, n), OldRotatedLeft(val, n));
+    EXPECT_EQ(RotatedRight(val, n), OldRotatedLeft(val, digits - n % digits));
+    EXPECT_EQ(RotatedRight(RotatedLeft(val, n), n), val);
+  }
+}
+
+FIXTURE(RotationByMultipleOfWidth) {
+  /* A count that is zero or a multiple of the width must return the value unchanged. */
+  for (int n : {0, 16, 32}) {
+    EXPECT_EQ(RotatedLeft<unsigned short>(0x1234, n), 0x1234);
+    EXPECT_EQ(RotatedRight<unsigned short>(0x1234, n), 0x1234);
+  }
+  for (int n : {0, 64, 128}) {
+    EXPECT_EQ(RotatedLeft<uint64_t>(0x0123456789abcdefULL, n), 0x0123456789abcdefULL);
+    EXPECT_EQ(RotatedRight<uint64_t>(0x0123456789abcdefULL, n), 0x0123456789abcdefULL);
+  }
+  EXPECT_EQ(RotatedLeft<uint64_t>(0x0123456789abcdefULL, 5), 0x2468acf13579bde0ULL);
+  EXPECT_EQ(RotatedRight<uint64_t>(0x0123456789abcdefULL, 5), 0x78091a2b3c4d5e6fULL);
+}
+
+FIXTURE(RotationMatchesOldResults) {
+  CheckRotations<unsigned short>(0x1234);
+  CheckRotations<uint32_t>(0x89abcdefU);
+  CheckRotations<uint64_t>(0x0123456789abcdefULL);
+  CheckRotations<uint64_t>(~0ULL);
 }
 
 FIXTURE(RotatedRight) {

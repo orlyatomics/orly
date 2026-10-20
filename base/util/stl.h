@@ -103,20 +103,23 @@ namespace Util {
     }
   }
 
-  /* Returns an integer rotated to the left by n bits. */
+  /* Returns an integer rotated to the left by n bits.  The count is reduced modulo the width of the type, and a
+     count of zero returns the value unchanged: shifting by the full width is undefined, so that case must not reach
+     the second shift.  The result for every other count is unchanged, which matters because the hash combiners
+     built on this are persisted. */
   template <typename TVal>
   TVal RotatedLeft(TVal val, int n) {
-    const int digits = std::numeric_limits<TVal>::digits;
-    n %= digits;
-    return (val << n) | (val >> (digits - n));
+    constexpr unsigned digits = std::numeric_limits<TVal>::digits;
+    const unsigned k = static_cast<unsigned>(n) % digits;
+    return k ? static_cast<TVal>((val << k) | (val >> (digits - k))) : val;
   }
 
-  /* Returns an integer rotated to the right by n bits. */
+  /* Returns an integer rotated to the right by n bits.  See RotatedLeft() for the treatment of the count. */
   template <typename TVal>
   TVal RotatedRight(TVal val, int n) {
-    const int digits = std::numeric_limits<TVal>::digits;
-    n %= digits;
-    return (val >> n) | (val << (digits - n));
+    constexpr unsigned digits = std::numeric_limits<TVal>::digits;
+    const unsigned k = static_cast<unsigned>(n) % digits;
+    return k ? static_cast<TVal>((val >> k) | (val << (digits - k))) : val;
   }
 
   /* Returns a pointer to the value mapped to the given key.  If the value doesn't appear in the container, return a null pointer. */
