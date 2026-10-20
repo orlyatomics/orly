@@ -391,8 +391,9 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   Param(
       &TCmd::RetentionSeconds, "retention_seconds", Optional, "retention_seconds\0",
       "Keep the history reads at a version need for every version of the global pov that was newest within the last "
-      "N seconds (#745). 0, the default, is off. With retention_versions as well, both windows are kept. A master and "
-      "its slaves must be started with the same value; it is not checked."
+      "N seconds (#745). 0, the default, is off. At most 4000000000; a larger value is refused at startup (#1007). With "
+      "retention_versions as well, both windows are kept. A master and its slaves must be started with the same "
+      "value; it is not checked."
   );
   Param(
       &TCmd::AllowFileSync, "allow_file_sync", Optional, "allow_file_sync\0",
@@ -1186,6 +1187,11 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
       Scheduler(scheduler),
       Cmd(cmd),
       HousecleaningTimer(chrono::milliseconds(cmd.HousecleaningInterval)) {
+  /* An operator input: refuse an oversized window now rather than run on a silently capped one (#1007). */
+  if (Cmd.RetentionSeconds > Indy::MaxRetentionSeconds) {
+    throw std::runtime_error("--retention_seconds " + std::to_string(Cmd.RetentionSeconds) + " is too large: the most is " +
+                             std::to_string(Indy::MaxRetentionSeconds) + " seconds");
+  }
   /* The memory budget and the sizes it chose (#669), decided while parsing, before the log
      was open. */
   for (const auto &[level, line]: Cmd.MemoryBudgetReport) {

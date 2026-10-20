@@ -55,6 +55,16 @@ namespace Orly {
 
     }  // L1
 
+    /* The longest --retention_seconds window the server accepts (about 127 years). Far beyond any real window, and
+       small enough that a window converted to nanoseconds, or subtracted from a clock reading, cannot overflow. */
+    constexpr size_t MaxRetentionSeconds = 4'000'000'000UL;
+
+    /* A retention window in seconds as a duration, capped at MaxRetentionSeconds. The server refuses a larger flag at
+       startup; the cap is for any other caller of SetRetention. */
+    [[nodiscard]] inline std::chrono::seconds RetentionWindow(size_t seconds) noexcept {
+      return std::chrono::seconds(seconds < MaxRetentionSeconds ? seconds : MaxRetentionSeconds);
+    }
+
     /* An indy storage repo: the LSM-backed store for one point-of-view (POV).
        Derives from the L0 manager's TRepo, which supplies identity, status, and
        the copy-on-write set of data layers (a TMapping over TDataLayers). A repo

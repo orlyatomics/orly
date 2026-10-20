@@ -27,6 +27,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <map>
 #include <optional>
 #include <random>
@@ -3062,4 +3063,15 @@ FIXTURE(MergeMemQueuePrioritizesDueRootReposAndClampsIdleTimestamps) {
     fin = true;
     cond.notify_one();
   });
+}
+
+/* The retention window is capped, so that no --retention_seconds value overflows the conversion to nanoseconds (#1007). */
+FIXTURE(RetentionWindowCap) {
+  EXPECT_EQ(RetentionWindow(0UL), chrono::seconds(0));
+  EXPECT_EQ(RetentionWindow(3600UL), chrono::seconds(3600));
+  EXPECT_EQ(RetentionWindow(MaxRetentionSeconds), chrono::seconds(MaxRetentionSeconds));
+  EXPECT_EQ(RetentionWindow(MaxRetentionSeconds + 1UL), chrono::seconds(MaxRetentionSeconds));
+  EXPECT_EQ(RetentionWindow(numeric_limits<size_t>::max()), chrono::seconds(MaxRetentionSeconds));
+  /* Even the largest window fits in nanoseconds. */
+  EXPECT_TRUE(chrono::duration_cast<chrono::nanoseconds>(RetentionWindow(numeric_limits<size_t>::max())).count() > 0);
 }

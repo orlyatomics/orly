@@ -590,11 +590,13 @@ FIXTURE(SetTtlNegative) {
   bool closed;
   auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
       "new session;",
-      "set ttl " + global + " -1;",
+      "set ttl " + global + " to -1;",
+      "set ttl " + global + " to 60;",
       "echo 1;"}, closed);
   EXPECT_FALSE(closed);
-  if (EXPECT_EQ(replies.size(), 3U)) {
+  if (EXPECT_EQ(replies.size(), 4U)) {
     EXPECT_EQ(replies[1]["status"], Base::TJson("exception"));
     EXPECT_EQ(replies[2]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[3]["status"], Base::TJson("ok"));
   }
 }
