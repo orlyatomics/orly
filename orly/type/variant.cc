@@ -43,7 +43,9 @@ TVariant::TLowered TVariant::NewLowered() const {
   lowered.OptTypes.reserve(GetElems().size());
   lowered.WhichPos = 0;
   for (const auto &arm: GetElems()) {
-    TType opt_type = TOpt::Get(arm.second);
+    /* An arm of type `T?` is stored as `T??`, so a taken arm with an unknown
+       payload differs from an arm not taken (#978). */
+    TType opt_type = TOpt::GetStored(arm.second);
     rec[arm.first] = opt_type;
     lowered.OptTypes.push_back(opt_type);
     if (arm.first < which_name) {

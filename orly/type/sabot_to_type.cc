@@ -55,7 +55,8 @@ void Type::TToTypeVisitor::operator()(const Sabot::Type::TDesc &/*type*/) const 
 void Type::TToTypeVisitor::operator()(const Sabot::Type::TFree &/*type*/) const       { throw TSabotToTypeTranslationError(); }
 void Type::TToTypeVisitor::operator()(const Sabot::Type::TOpt &type) const            {
   OnUnary(type);
-  Type = Type::TOpt::Get(Type);
+  /* The inverse of TVariant::GetLowered, whose arm fields can be `T??` (#978). */
+  Type = Type::TOpt::GetStored(Type);
 }
 void Type::TToTypeVisitor::operator()(const Sabot::Type::TSet &type) const            {
   OnUnary(type);

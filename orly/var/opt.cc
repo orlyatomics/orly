@@ -28,7 +28,8 @@ size_t TOpt::GetHash() const {
 }
 
 Type::TType TOpt::GetType() const {
-  return Type::TOpt::Get(Type);
+  /* The value of an optional variant arm is itself an optional (#978). */
+  return Type::TOpt::GetStored(Type);
 }
 
 Type::TType TOpt::GetInnerType() const {

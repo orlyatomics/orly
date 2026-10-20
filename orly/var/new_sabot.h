@@ -785,7 +785,7 @@ namespace Orly {
 
       /* One arm's optional payload field of a variant record (see
          TVariantRec): set iff this is the active arm. Its type is the
-         variant's cached `TOpt::Get(payload)`, so no interning per value. */
+         variant's cached `TOpt::GetStored(payload)`, so no interning per value. */
       class TVariantArm final
           : public Sabot::State::TOpt {
         public:
@@ -843,7 +843,7 @@ namespace Orly {
         /* The active arm's payload, or null. */
         const Var::TVar *Payload;
 
-        /* TOpt::Get(this arm's payload type), owned by the variant type. */
+        /* TOpt::GetStored(this arm's payload type), owned by the variant type. */
         const Orly::Type::TType *OptType;
 
       };  // TVariantArm

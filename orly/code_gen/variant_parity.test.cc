@@ -13,6 +13,13 @@
    For each value, both paths are dumped (StateDumper and TypeDumper), alone
    and as part of a key, and must match exactly.
 
+   opt.frozen.h is the header for opt_t, a variant whose arms have optional
+   payloads (#978). An optional payload keeps the variant on the AsVar() path
+   (it has no native sabot), so the check there is that the state, the type
+   sabot of its own state, Type::For and the declared type all agree, that an
+   arm stored as `T??` tells "arm not taken" from "arm taken, payload
+   unknown", and that every state reads back as the value written.
+
    Copyright 2010-2026 Atomic Kismet Company
 
    Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +37,7 @@
 /* Concrete type headers first, as in a package (see variant_emit.test.cc). */
 #include <orly/type.h>
 
+#include <orly/code_gen/variant_parity_test/opt.frozen.h>
 #include <orly/code_gen/variant_parity_test/par.frozen.h>
 
 #include <chrono>
@@ -148,6 +156,102 @@ FIXTURE(NativeTypeMatchesDeclared) {
 FIXTURE(KeyMatchesAsVar) {
   Type::TTypeCzar type_czar;
   for (const auto &val : MakeValues()) {
+    const auto key = make_tuple(val, int64_t(-1));
+    const Var::TVar var_key = Var::TVar::Addr(vector<pair<TAddrDir, Var::TVar>>{
+        { TAddrDir::Asc, val.AsVar() }, { TAddrDir::Asc, Var::TVar(int64_t(-1)) } });
+    void *var_alloc = alloca(Sabot::State::GetMaxStateSize());
+    Sabot::State::TAny::TWrapper var_state(Var::NewSabot(var_alloc, var_key));
+    void *native_alloc = alloca(Sabot::State::GetMaxStateSize());
+    Sabot::State::TAny::TWrapper native_state(Native::State::New(key, native_alloc));
+    const auto expected = Dump(*var_state);
+    const auto actual = Dump(*native_state);
+    EXPECT_EQ(actual.first, expected.first);
+    EXPECT_EQ(actual.second, expected.second);
+  }
+}
+
+using TOptV = Rt::Variants::TVariantV5Ps1Ei1FPi1GO1Pi1a1HLPi1L;
+using TOptRec = Rt::Objects::TObjO1Pi1a;
+
+/* One value of every arm of opt_t in each of its optional states. */
+static vector<TOptV> MakeOptValues() {
+  using TOptInt = Rt::TOpt<int64_t>;
+  vector<TOptV> out;
+  out.push_back(TOptV::MkE(Rt::TOpt<string>()));
+  out.push_back(TOptV::MkE(Rt::TOpt<string>(string())));
+  out.push_back(TOptV::MkE(Rt::TOpt<string>(string("a"))));
+  out.push_back(TOptV::MkF(int64_t(1)));
+  out.push_back(TOptV::MkG(TOptInt()));
+  out.push_back(TOptV::MkG(TOptInt(int64_t(0))));
+  out.push_back(TOptV::MkG(TOptInt(int64_t(5))));
+  out.push_back(TOptV::MkH(TOptRec(TOptInt())));
+  out.push_back(TOptV::MkH(TOptRec(TOptInt(int64_t(5)))));
+  out.push_back(TOptV::MkL(vector<TOptInt>{}));
+  out.push_back(TOptV::MkL(vector<TOptInt>{ TOptInt() }));
+  out.push_back(TOptV::MkL(vector<TOptInt>{ TOptInt(int64_t(1)), TOptInt(), TOptInt(int64_t(3)) }));
+  return out;
+}
+
+/* An arm with an optional payload `T?` is stored as `T??`, an arm with a
+   plain payload as `T?`, and the stored record is the same for every value. */
+FIXTURE(OptArmStoredType) {
+  Type::TTypeCzar type_czar;
+  void *alloc = alloca(Sabot::Type::GetMaxTypeSize());
+  Sabot::Type::TAny::TWrapper type(Type::NewSabot(alloc, Type::TDt<TOptV>::GetType()));
+  ostringstream strm;
+  type->Accept(Sabot::TTypeDumper(strm));
+  /* E: str? -> str??, F: int -> int?, G: int? -> int??, H and L have the optional
+     inside the payload only. This is the type release builds stored for E and
+     G before #978 (the debug assertion was the only thing that differed). */
+  EXPECT_EQ(strm.str(),
+            "record($which: int64, E: opt(opt(str)), F: opt(int64), G: opt(opt(int64)), "
+            "H: opt(record(a: opt(int64))), L: opt(vector(opt(int64))))");
+}
+
+/* Every opt_t state dumps the same through the AsVar() path, the generated
+   factory and the declared type, and reads back as the value written. */
+FIXTURE(OptArmMatchesAsVarAndRoundTrips) {
+  Type::TTypeCzar type_czar;
+  const auto values = MakeOptValues();
+  vector<string> seen;
+  for (const auto &val : values) {
+    const Var::TVar var = val.AsVar();
+    void *var_alloc = alloca(Sabot::State::GetMaxStateSize());
+    Sabot::State::TAny::TWrapper var_state(Var::NewSabot(var_alloc, var));
+    void *native_alloc = alloca(Sabot::State::GetMaxStateSize());
+    Sabot::State::TAny::TWrapper native_state(Native::State::New(val, native_alloc));
+    const auto expected = Dump(*var_state);
+    const auto actual = Dump(*native_state);
+    EXPECT_EQ(actual.first, expected.first);
+    EXPECT_EQ(actual.second, expected.second);
+    /* The type of the state is the type the declared type lowers to. */
+    void *declared_alloc = alloca(Sabot::Type::GetMaxTypeSize());
+    Sabot::Type::TAny::TWrapper declared(Type::NewSabot(declared_alloc, Type::TDt<TOptV>::GetType()));
+    ostringstream declared_strm;
+    declared->Accept(Sabot::TTypeDumper(declared_strm));
+    EXPECT_EQ(actual.second, declared_strm.str());
+    void *for_alloc = alloca(Sabot::Type::GetMaxTypeSize());
+    Sabot::Type::TAny::TWrapper for_type(Native::Type::For<TOptV>::GetType(for_alloc));
+    ostringstream for_strm;
+    for_type->Accept(Sabot::TTypeDumper(for_strm));
+    EXPECT_EQ(actual.second, for_strm.str());
+    /* Read back. */
+    EXPECT_TRUE(Var::ToVar(*native_state) == var);
+    void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
+    Sabot::Type::TAny::TWrapper native_type(native_state->GetType(type_alloc));
+    EXPECT_TRUE(Type::ToType(*native_type) == Type::TDt<TOptV>::GetType());
+    /* No two of the values are stored alike. */
+    for (const auto &prev : seen) {
+      EXPECT_NE(prev, actual.first);
+    }
+    seen.push_back(actual.first);
+  }
+}
+
+/* The same, as part of a key. */
+FIXTURE(OptArmKeyMatchesAsVar) {
+  Type::TTypeCzar type_czar;
+  for (const auto &val : MakeOptValues()) {
     const auto key = make_tuple(val, int64_t(-1));
     const Var::TVar var_key = Var::TVar::Addr(vector<pair<TAddrDir, Var::TVar>>{
         { TAddrDir::Asc, val.AsVar() }, { TAddrDir::Asc, Var::TVar(int64_t(-1)) } });

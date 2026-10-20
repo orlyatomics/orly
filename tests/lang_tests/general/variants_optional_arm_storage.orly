@@ -1,0 +1,96 @@
+/* <orly/lang_tests/general/variants_optional_arm_storage.orly>
+
+   Issue #978: storing a variant with an optional arm. The stored record has
+   one optional field per arm, so an arm whose payload is already optional
+   (`E(str?)`) is stored as an optional of an optional. The outer optional says
+   whether the arm was taken; the inner one is the payload. The three states
+   "arm not taken" (F), "E taken with a known payload" and "E taken with an
+   unknown payload" must stay distinct through a write and a read, as must the
+   same states inside a compound payload and a list of optionals.
+
+   Copyright 2010-2026 Atomic Kismet Company
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License. */
+
+o_t is <| E(str?) | F(int) |>;
+
+read_o = (*<[n]>::(o_t)) where {
+  n = given::(int);
+};
+
+not_taken = ("not taken" as str?) where {};
+
+/* A compound payload with an optional field, and a list of optionals. */
+c_t is <| R(<{.a: int?}>) | S(int) |>;
+
+read_c = (*<[n]>::(c_t)) where {
+  n = given::(int);
+};
+
+l_t is <| L([int?]) | M(int) |>;
+
+read_l = (*<[n]>::(l_t)) where {
+  n = given::(int);
+};
+
+with {
+  <[1]> <- o_t.F(1);
+  <[2]> <- o_t.E(unknown str);
+  <[3]> <- o_t.E("a" as str?);
+  <[4]> <- o_t.E("" as str?);
+
+  <[10]> <- c_t.S(1);
+  <[11]> <- c_t.R(<{.a: unknown int}>);
+  <[12]> <- c_t.R(<{.a: 5 as int?}>);
+
+  <[20]> <- l_t.M(1);
+  <[21]> <- l_t.L(empty [int?]);
+  <[22]> <- l_t.L([unknown int]);
+  <[23]> <- l_t.L([1 as int?, unknown int, 3 as int?]);
+} test {
+  /* Each arm state reads back as itself. */
+  t1: read_o(.n: 1) == o_t.F(1);
+  t2: read_o(.n: 2) == o_t.E(unknown str);
+  t3: read_o(.n: 3) == o_t.E("a" as str?);
+  t4: read_o(.n: 4) == o_t.E("" as str?);
+
+  /* ... and they stay distinct from one another. */
+  t5: read_o(.n: 1) != read_o(.n: 2);
+  t6: read_o(.n: 2) != read_o(.n: 3);
+  t7: read_o(.n: 3) != read_o(.n: 4);
+  t8: read_o(.n: 1) != read_o(.n: 3);
+
+  /* The payload keeps its known-ness: the taken arm is not mistaken for an
+     untaken one, nor a known payload for an unknown one. */
+  t9: read_o(.n: 2) is E;
+  t10: not (read_o(.n: 1) is E);
+  t11: (read_o(.n: 2).E if read_o(.n: 2) is E else not_taken) is unknown;
+  t12: known (read_o(.n: 3).E if read_o(.n: 3) is E else not_taken) == "a";
+  t13: known (read_o(.n: 4).E if read_o(.n: 4) is E else not_taken) == "";
+  t14: known (read_o(.n: 1).E if read_o(.n: 1) is E else not_taken) == "not taken";
+
+  /* A compound payload with an optional field. */
+  t15: read_c(.n: 10) == c_t.S(1);
+  t16: read_c(.n: 11) == c_t.R(<{.a: unknown int}>);
+  t17: read_c(.n: 12) == c_t.R(<{.a: 5 as int?}>);
+  t18: read_c(.n: 11) != read_c(.n: 12);
+  t19: read_c(.n: 10) != read_c(.n: 11);
+
+  /* A list of optionals. */
+  t20: read_l(.n: 20) == l_t.M(1);
+  t21: read_l(.n: 21) == l_t.L(empty [int?]);
+  t22: read_l(.n: 22) == l_t.L([unknown int]);
+  t23: read_l(.n: 23) == l_t.L([1 as int?, unknown int, 3 as int?]);
+  t24: read_l(.n: 21) != read_l(.n: 22);
+  t25: read_l(.n: 22) != read_l(.n: 23);
+};
