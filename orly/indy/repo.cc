@@ -156,7 +156,7 @@ TSequenceNumber TRepo::ResolveTime(chrono::system_clock::time_point when) {
   lock_guard<mutex> lock(RetentionLock);
   const auto steady_now = chrono::steady_clock::now();
   /* A sample now, so that a time just before it needn't resolve to one a spacing ago. */
-  SampleNewestLocked(steady_now, newest, chrono::seconds(seconds));
+  SampleNewestLocked(steady_now, newest, window);
   const auto target = steady_now - chrono::duration_cast<chrono::steady_clock::duration>(system_now - when);
   /* The newest sample at or before the time. */
   auto it = upper_bound(NewestSamples.begin(), NewestSamples.end(), target,

@@ -1,0 +1,1 @@
+- **Fixed**: a negative `set ttl` over the WebSocket protocol is refused with an `exception` reply instead of reaching an assert that aborted a debug server (and stored a negative ttl in a release one), and `--retention_seconds` above about 9.2e9 no longer overflows when the time-resolution sampler converts it to nanoseconds; the capped window is used (#1007).

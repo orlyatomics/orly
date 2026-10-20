@@ -581,3 +581,20 @@ FIXTURE(VersionStatements) {
     EXPECT_EQ(replies[20]["status"], Base::TJson("ok"));
   }
 }
+
+/* A negative `set ttl` is a client error, not an assert that takes the server down: the session survives it. */
+FIXTURE(SetTtlNegative) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100);
+  const string global = "{00000000-0000-0000-0000-000000000001}";
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      "set ttl " + global + " -1;",
+      "echo 1;"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 3U)) {
+    EXPECT_EQ(replies[1]["status"], Base::TJson("exception"));
+    EXPECT_EQ(replies[2]["status"], Base::TJson("ok"));
+  }
+}
