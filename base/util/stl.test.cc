@@ -70,11 +70,19 @@ static TVal OldRotatedLeft(TVal val, int n) {
 }
 
 template <typename TVal>
+static TVal OldRotatedRight(TVal val, int n) {
+  const unsigned digits = std::numeric_limits<TVal>::digits;
+  n %= digits;
+  const unsigned mask = digits - 1;
+  return static_cast<TVal>((val >> (n & mask)) | (val << ((digits - n) & mask)));
+}
+
+template <typename TVal>
 static void CheckRotations(TVal val) {
   const int digits = std::numeric_limits<TVal>::digits;
   for (int n = 0; n <= 3 * digits + 5; ++n) {
     EXPECT_EQ(RotatedLeft(val, n), OldRotatedLeft(val, n));
-    EXPECT_EQ(RotatedRight(val, n), OldRotatedLeft(val, digits - n % digits));
+    EXPECT_EQ(RotatedRight(val, n), OldRotatedRight(val, n));
     EXPECT_EQ(RotatedRight(RotatedLeft(val, n), n), val);
   }
 }
