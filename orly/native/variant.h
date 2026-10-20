@@ -46,7 +46,8 @@ namespace Orly {
        Arms are numbered in tag order, which is the variant's `Which`.
        NewPayloadState returns a state for the active arm's payload, which must
        be stored in `val` (the state refers to it). The specialization holds no
-       static data, so nothing in it is shared across packages (see Variant). */
+       static data and is emitted with hidden visibility, like Variant below,
+       so nothing in it is shared across packages. */
     template <typename TVariant>
     class VariantArms;
 

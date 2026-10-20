@@ -62,7 +62,7 @@ namespace Orly {
   namespace Native {
 
     template <>
-    class VariantArms<TShape> final {
+    class [[gnu::visibility("hidden")]] VariantArms<TShape> final {
       NO_CONSTRUCTION(VariantArms);
       public:
       static size_t GetArmCount() {

@@ -1293,10 +1293,11 @@ void Orly::CodeGen::GenVariantHeader(const std::string &out_dir, const Type::TTy
       /* The variant's own native sabot (#946): the same fixed-shape record,
          built straight from the value. Converting through AsVar() interned
          the variant type and allocated a Var per value, which was most of
-         the cost of returning variant values from a read. */
+         the cost of returning variant values from a read. Hidden, like
+         Native::Variant and Record<T> (#797). */
       const string vt = "Rt::Variants::" + class_name;
       out << "template <>" << Eol
-          << "class VariantArms<" << vt << "> final {" << Eol
+          << "class [[gnu::visibility(\"hidden\")]] VariantArms<" << vt << "> final {" << Eol
           << "  NO_CONSTRUCTION(VariantArms);" << Eol
           << "  public:" << Eol
           << "  static size_t GetArmCount() {" << Eol

@@ -293,7 +293,7 @@ namespace Orly {
   namespace Native {
 
     template <>
-    class VariantArms<Rt::Variants::TVariantV2O07Deletedi7Integer> final {
+    class [[gnu::visibility("hidden")]] VariantArms<Rt::Variants::TVariantV2O07Deletedi7Integer> final {
       NO_CONSTRUCTION(VariantArms);
       public:
       static size_t GetArmCount() {
