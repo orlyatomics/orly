@@ -814,6 +814,11 @@ bool TServer::TCmd::CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) {
   if (!ReplicationToken) {
     ReplicationToken = AuthToken;
   }
+  /* Refuse an oversized window now rather than run on a silently capped one (#1007). */
+  if (RetentionSeconds > Indy::MaxRetentionSeconds) {
+    cb("--retention_seconds must be at most " + std::to_string(Indy::MaxRetentionSeconds));
+    return false;
+  }
   if (DurableAcks != "false" && DurableAcks != "true" && DurableAcks != "local" &&
       DurableAcks != "experimental" && DurableAcks != "memory") {
     cb("--durable_acks must be 'local', 'true', or 'false'");
@@ -1187,11 +1192,6 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
       Scheduler(scheduler),
       Cmd(cmd),
       HousecleaningTimer(chrono::milliseconds(cmd.HousecleaningInterval)) {
-  /* An operator input: refuse an oversized window now rather than run on a silently capped one (#1007). */
-  if (Cmd.RetentionSeconds > Indy::MaxRetentionSeconds) {
-    throw std::runtime_error("--retention_seconds " + std::to_string(Cmd.RetentionSeconds) + " is too large: the most is " +
-                             std::to_string(Indy::MaxRetentionSeconds) + " seconds");
-  }
   /* The memory budget and the sizes it chose (#669), decided while parsing, before the log
      was open. */
   for (const auto &[level, line]: Cmd.MemoryBudgetReport) {
