@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <cassert>
 #include <chrono>
 
 namespace Orly {
@@ -35,6 +36,7 @@ namespace Orly {
      maximum, which means "never expires") overflows; a `ttl` that would run past the latest representable
      deadline gives that deadline instead.  `ttl` must not be negative. */
   inline TDeadline AddTtl(const TDeadline &now, const TTtl &ttl) {
+    assert(ttl.count() >= 0);
     if (ttl >= std::chrono::duration_cast<TTtl>(TDeadline::max() - now)) {
       return TDeadline::max();
     }

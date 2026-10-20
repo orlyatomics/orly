@@ -18,6 +18,7 @@
 
 #include <orly/indy/replication.h>
 #include <alloca.h>
+#include <algorithm>
 #include <chrono>
 #include <optional>
 
@@ -169,13 +170,25 @@ void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &rep
   }
 }
 
+namespace {
+
+/* A ttl as the nanosecond duration the stream carries.  Converting the maximum ttl (which means "never
+   expires") would overflow, so a ttl past what nanoseconds can count is sent as the most they can; that
+   is still far beyond any deadline, so the receiver treats it as never expiring. */
+Sabot::TStdDuration ToWireDuration(const TTtl &ttl) {
+  constexpr TTtl max_ttl = std::chrono::duration_cast<TTtl>(Sabot::TStdDuration::max());
+  return Sabot::TStdDuration(std::min(ttl, max_ttl));
+}
+
+}  // namespace
+
 void TReplicationStreamer::PushDurable(const TDurableReplication &durable) {
   DurableBuilder.Push(durable.GetId());
   /* As a Sabot duration, like a repo's ttl.  Pushed as a bare TTtl (seconds), it did not come
      back as the ttl it was: the slave stored a garbage deadline, and its durable layer then
      dropped the record as expired at the next write or merge, whenever that deadline fell below
      now (#676 follow-up). */
-  DurableBuilder.Push(Sabot::TStdDuration(durable.GetTtl()));
+  DurableBuilder.Push(ToWireDuration(durable.GetTtl()));
   DurableBuilder.Push(durable.GetSerializedObj());
 }
 
@@ -200,7 +213,7 @@ void TReplicationStreamer::ForEachDurable(const std::function<void (const Base::
 
 void TReplicationStreamer::PushRepo(const TRepoReplication &repo) {
   RepoBuilder.Push(repo.GetId());
-  RepoBuilder.Push(Sabot::TStdDuration(repo.GetTtl()));
+  RepoBuilder.Push(ToWireDuration(repo.GetTtl()));
   RepoBuilder.Push(repo.GetIsSafe());
   RepoBuilder.Push(repo.GetOptParentRepoId());
 }

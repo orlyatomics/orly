@@ -2769,6 +2769,14 @@ FIXTURE(ResolveTimeThroughSamples) {
       /* Before the first sample, and in the future: refused. */
       { auto thrower = [&] { (void) root.GetSafe()->ResolveTime(start - chrono::hours(1)); }; EXPECT_THROW_FUNC(Orly::Server::TTimeUnavailable, thrower); }
       { auto thrower = [&] { (void) root.GetSafe()->ResolveTime(chrono::system_clock::now() + chrono::hours(1)); }; EXPECT_THROW_FUNC(Orly::Server::TTimeUnavailable, thrower); }
+      /* Far in the past: the clock's minimum (what a year-0000 time parses to) and the year 1700.  Subtracting
+         these from now overflows, which used to resolve them to the newest version. */
+      for (const auto when : { chrono::system_clock::time_point::min(),
+                               chrono::system_clock::time_point(chrono::seconds(-7'479'000'000L)),
+                               chrono::system_clock::time_point(chrono::seconds(-8'000'000'000L)) }) {
+        auto thrower = [&] { (void) root.GetSafe()->ResolveTime(when); };
+        EXPECT_THROW_FUNC(Orly::Server::TTimeUnavailable, thrower);
+      }
       /* A second sample, a spacing later, takes over. */
       this_thread::sleep_for(chrono::milliseconds(1100));
       /* The first call takes the sample, so a time just before it still resolves to the old one. */
