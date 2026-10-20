@@ -169,7 +169,7 @@ namespace Orly {
             : Val(var->GetVal()) {}
 
         /* See Sabot::State::TScalar<TVal>. */
-        virtual const bool &Get() const override {
+        virtual bool Get() const override {
           return Val;
         }
 
@@ -195,7 +195,7 @@ namespace Orly {
             : Val(var->GetVal().GetRaw()) {}
 
         /* See Sabot::State::TScalar<TVal>. */
-        virtual const Base::TUuid &Get() const override {
+        virtual Base::TUuid Get() const override {
           return Val;
         }
 
@@ -269,7 +269,7 @@ namespace Orly {
             : Val(val) {}
 
         /* See Sabot::State::TScalar<TVal>. */
-        virtual const int64_t &Get() const override {
+        virtual int64_t Get() const override {
           return Val;
         }
 
@@ -295,7 +295,7 @@ namespace Orly {
             : Val(var->GetVal()) {}
 
         /* See Sabot::State::TScalar<TVal>. */
-        virtual const double &Get() const override {
+        virtual double Get() const override {
           return Val;
         }
 
@@ -321,7 +321,7 @@ namespace Orly {
             : Val(std::chrono::duration_cast<Sabot::TStdDuration>(var->GetVal())) {}
 
         /* See Sabot::State::TScalar<TVal>. */
-        virtual const Sabot::TStdDuration &Get() const override {
+        virtual Sabot::TStdDuration Get() const override {
           return Val;
         }
 
@@ -347,7 +347,7 @@ namespace Orly {
             : Val(var->GetVal()) {}
 
         /* See Sabot::State::TScalar<TVal>. */
-        virtual const Sabot::TStdTimePoint &Get() const override {
+        virtual Sabot::TStdTimePoint Get() const override {
           return Val;
         }
 

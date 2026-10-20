@@ -32,14 +32,14 @@ size_t Orly::Sabot::GetHash(const State::TAny &state) {
 void THashVisitor::operator()(const State::TFree &/*state*/)      const { Hash = 0UL; }
 void THashVisitor::operator()(const State::TTombstone &/*state*/) const { Hash = 0UL; }
 void THashVisitor::operator()(const State::TVoid &/*state*/)      const { Hash = 0UL; }
-void THashVisitor::operator()(const State::TInt8 &state)          const { Hash = _Hash_impl::hash(&state.Get(), sizeof(int8_t)); }
-void THashVisitor::operator()(const State::TInt16 &state)         const { Hash = _Hash_impl::hash(&state.Get(), sizeof(int16_t)); }
-void THashVisitor::operator()(const State::TInt32 &state)         const { Hash = _Hash_impl::hash(&state.Get(), sizeof(int32_t)); }
-void THashVisitor::operator()(const State::TInt64 &state)         const { Hash = _Hash_impl::hash(&state.Get(), sizeof(int64_t)); }
-void THashVisitor::operator()(const State::TUInt8 &state)         const { Hash = _Hash_impl::hash(&state.Get(), sizeof(uint8_t)); }
-void THashVisitor::operator()(const State::TUInt16 &state)        const { Hash = _Hash_impl::hash(&state.Get(), sizeof(uint16_t)); }
-void THashVisitor::operator()(const State::TUInt32 &state)        const { Hash = _Hash_impl::hash(&state.Get(), sizeof(uint32_t)); }
-void THashVisitor::operator()(const State::TUInt64 &state)        const { Hash = _Hash_impl::hash(&state.Get(), sizeof(uint64_t)); }
+void THashVisitor::operator()(const State::TInt8 &state)          const { const int8_t val = state.Get(); Hash = _Hash_impl::hash(&val, sizeof(int8_t)); }
+void THashVisitor::operator()(const State::TInt16 &state)         const { const int16_t val = state.Get(); Hash = _Hash_impl::hash(&val, sizeof(int16_t)); }
+void THashVisitor::operator()(const State::TInt32 &state)         const { const int32_t val = state.Get(); Hash = _Hash_impl::hash(&val, sizeof(int32_t)); }
+void THashVisitor::operator()(const State::TInt64 &state)         const { const int64_t val = state.Get(); Hash = _Hash_impl::hash(&val, sizeof(int64_t)); }
+void THashVisitor::operator()(const State::TUInt8 &state)         const { const uint8_t val = state.Get(); Hash = _Hash_impl::hash(&val, sizeof(uint8_t)); }
+void THashVisitor::operator()(const State::TUInt16 &state)        const { const uint16_t val = state.Get(); Hash = _Hash_impl::hash(&val, sizeof(uint16_t)); }
+void THashVisitor::operator()(const State::TUInt32 &state)        const { const uint32_t val = state.Get(); Hash = _Hash_impl::hash(&val, sizeof(uint32_t)); }
+void THashVisitor::operator()(const State::TUInt64 &state)        const { const uint64_t val = state.Get(); Hash = _Hash_impl::hash(&val, sizeof(uint64_t)); }
 void THashVisitor::operator()(const State::TBool &state)          const { Hash = hash<bool>()(state.Get()); }
 void THashVisitor::operator()(const State::TChar &state)          const { Hash = hash<char>()(state.Get()); }
 void THashVisitor::operator()(const State::TFloat &state)         const { Hash = hash<float>()(state.Get()); }

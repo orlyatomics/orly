@@ -905,7 +905,7 @@ void TDataFile::Build(const TEntrySource &source,
         TSuprena &cur_arena = *csr->Suprena;
         /* push the key's arena */ {
           const TCore &key_core = csr->Key.GetCore();
-          const TCore::TOffset *offset = key_core.TryGetOffset();
+          std::optional<TCore::TOffset> offset = key_core.TryGetOffset();
           if (offset) {
             TIndexFile::EmplaceOrderedNotes(*ordered_note_index, &cur_arena, cur_index_bytes, *offset);
           }
@@ -914,7 +914,7 @@ void TDataFile::Build(const TEntrySource &source,
           const TCore &val_core = csr->Op;
           const TCore &meta_core = csr->Metadata;
           const TCore &id_core = csr->Id;
-          const TCore::TOffset *offset = val_core.TryGetOffset();
+          std::optional<TCore::TOffset> offset = val_core.TryGetOffset();
           if (offset) {
             TIndexFile::EmplaceOrderedNotes(*main_arena_note_index, &cur_arena, main_arena_max_bytes, *offset);
           }

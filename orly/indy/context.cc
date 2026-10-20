@@ -217,8 +217,8 @@ namespace {
     if (!core.IsTuple()) {
       return false;
     }
-    const Atom::TCore::TOffset *const off = core.TryGetOffset();
-    const uint32_t *const elem_count = core.TryGetElemCount();
+    const std::optional<Atom::TCore::TOffset> off = core.TryGetOffset();
+    const std::optional<uint32_t> elem_count = core.TryGetElemCount();
     if (!off || !elem_count) {
       return false;
     }

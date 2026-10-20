@@ -93,7 +93,7 @@ namespace Orly {
         public:
 
         /* See Sabot::State::TScalar. */
-        virtual const typename TScalarSabotState::TVal &Get() const override final {
+        virtual typename TScalarSabotState::TVal Get() const override final {
           return Val;
         }
 
