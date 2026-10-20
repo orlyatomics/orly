@@ -18,16 +18,61 @@
 
 #include <orly/sabot/match_prefix_type.h>
 
+#include <string>
+
 using namespace std;
 using namespace Orly;
 using namespace Orly::Sabot;
+
+namespace {
+
+  /* One record enclosing the current position on one side of the match, kept
+     so a recursive leaf there can be resolved to the variant it refers back
+     to.  Each node lives in the frame of the record visit that pushed it. */
+  struct TEnclosing {
+    const Type::TRecord *Record;
+    const TEnclosing *Next;
+  };
+
+  /* True iff this record is the stored form of a variant: it carries the
+     `$which` sentinel field, which no user record can name. */
+  bool IsVariantRecord(const Type::TRecord &record) {
+    void *pin_alloc = alloca(Sabot::Type::GetMaxTypePinSize());
+    Type::TRecord::TPin::TWrapper pin(record.Pin(pin_alloc));
+    void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
+    for (size_t elem_idx = 0; elem_idx < record.GetElemCount(); ++elem_idx) {
+      string name;
+      Type::TAny::TWrapper elem(pin->NewElem(elem_idx, name, type_alloc));
+      if (name == "$which") {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /* The variant a recursive leaf of the given de Bruijn depth refers back to
+     (0 is the nearest enclosing variant), or null if there are not that many
+     enclosing variants. */
+  const TEnclosing *FindBinder(const TEnclosing *enclosing, uint64_t depth) {
+    for (; enclosing; enclosing = enclosing->Next) {
+      if (IsVariantRecord(*enclosing->Record)) {
+        if (!depth) {
+          return enclosing;
+        }
+        --depth;
+      }
+    }
+    return nullptr;
+  }
+
+}  // namespace
 
 class TMatchPrefixTypeVisitor final
     : public TTypeDoubleVisitor {
   public:
 
-  TMatchPrefixTypeVisitor(TMatchResult &out)
-      : Result(out) {
+  TMatchPrefixTypeVisitor(TMatchResult &out, const TEnclosing *lhs_enclosing = nullptr, const TEnclosing *rhs_enclosing = nullptr)
+      : Result(out), LhsEnclosing(lhs_enclosing), RhsEnclosing(rhs_enclosing) {
   }
 
   /* Overrides. */
@@ -787,6 +832,10 @@ class TMatchPrefixTypeVisitor final
   virtual void operator()(const Type::TTuple &lhs, const Type::TRecord &rhs   ) const override;
   virtual void operator()(const Type::TTuple &lhs, const Type::TTuple &rhs    ) const override;
 
+  /* The recursive back-reference leaf (issue #115), which AcceptDouble routes
+     here instead of through the N*N matrix. */
+  virtual void OnSelfRef(const Type::TAny &lhs, const Type::TAny &rhs) const override;
+
   private:
 
   inline void OnUnary(const Type::TUnary &lhs, const Type::TUnary &rhs) const;
@@ -800,6 +849,11 @@ class TMatchPrefixTypeVisitor final
   inline void OnFree(const Type::TFree &lhs, const Type::TAny &rhs) const;
 
   TMatchResult &Result;
+
+  /* The records enclosing the current position on each side, innermost
+     first.  See OnSelfRef. */
+  const TEnclosing *LhsEnclosing;
+  const TEnclosing *RhsEnclosing;
 
 };  // TMatchPrefixTypeVisitor
 
@@ -853,12 +907,59 @@ inline void TMatchPrefixTypeVisitor::DidNotUnify() const {
   }
 }
 
+/* A recursive leaf (issue #115) in a key's type.  Two leaves at corresponding
+   positions match iff they refer back to the same binder (same de Bruijn
+   depth), as in CompareTypes.
+
+   A leaf can also meet a concrete type, because a stored key's type is
+   rebuilt from its value: a taken recursive arm comes back with the payload
+   variant spelled out, while the declared type (a `free::(T)` slot, say)
+   keeps the leaf there.  The two describe the same type, so the leaf is
+   unrolled to the variant it refers to and matching continues against that.
+   This terminates: each unrolling is paid for by structure on the other side,
+   and a concrete type is finite.
+
+   A free pattern slot unifies with whatever its element type matches; a free
+   on the key side is as unreachable here as it is in the matrix. */
+void TMatchPrefixTypeVisitor::OnSelfRef(const Type::TAny &lhs, const Type::TAny &rhs) const {
+  const bool lhs_is_ref = lhs.IsRecursiveRef();
+  const bool rhs_is_ref = rhs.IsRecursiveRef();
+  if (lhs_is_ref && rhs_is_ref) {
+    if (static_cast<const Type::TSelfRef &>(lhs).GetDepth() != static_cast<const Type::TSelfRef &>(rhs).GetDepth()) {
+      DidNotMatch();
+    }
+    return;
+  }
+  if (const auto *free = dynamic_cast<const Type::TFree *>(&lhs)) {
+    OnFree(*free, rhs);
+    return;
+  }
+  if (dynamic_cast<const Type::TFree *>(&rhs)) {
+    throw TUnreachable();
+  }
+  if (lhs_is_ref) {
+    const TEnclosing *binder = FindBinder(LhsEnclosing, static_cast<const Type::TSelfRef &>(lhs).GetDepth());
+    if (!binder) {
+      DidNotMatch();
+      return;
+    }
+    AcceptDouble(*binder->Record, rhs, TMatchPrefixTypeVisitor(Result, binder->Next, RhsEnclosing));
+  } else {
+    const TEnclosing *binder = FindBinder(RhsEnclosing, static_cast<const Type::TSelfRef &>(rhs).GetDepth());
+    if (!binder) {
+      DidNotMatch();
+      return;
+    }
+    AcceptDouble(lhs, *binder->Record, TMatchPrefixTypeVisitor(Result, LhsEnclosing, binder->Next));
+  }
+}
+
 inline void TMatchPrefixTypeVisitor::OnFree(const Type::TFree &lhs, const Type::TAny &rhs) const {
   TMatchResult cur = TMatchResult::Unifies;
   void *lhs_pin_alloc = alloca(Sabot::Type::GetMaxTypePinSize());
   Type::TUnary::TPin::TWrapper lhs_pin(lhs.Pin(lhs_pin_alloc));
   void *lhs_type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
-  AcceptDouble(*Type::TAny::TWrapper(lhs_pin->NewElem(lhs_type_alloc)), rhs, TMatchPrefixTypeVisitor(cur));
+  AcceptDouble(*Type::TAny::TWrapper(lhs_pin->NewElem(lhs_type_alloc)), rhs, TMatchPrefixTypeVisitor(cur, LhsEnclosing, RhsEnclosing));
   switch (cur) {
     case TMatchResult::NoMatch: {
       DidNotUnify();
@@ -1668,6 +1769,9 @@ void TMatchPrefixTypeVisitor::operator()(const Type::TRecord &lhs,     const Typ
     Sabot::State::TAny
       *lhs_field_name_state,
       *rhs_field_name_state;
+    /* The fields see these records as enclosing them (see OnSelfRef). */
+    const TEnclosing lhs_enclosing { &lhs, LhsEnclosing }, rhs_enclosing { &rhs, RhsEnclosing };
+    const TMatchPrefixTypeVisitor field_visitor(Result, &lhs_enclosing, &rhs_enclosing);
     void *lhs_field_name_state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
     void *rhs_field_name_state_alloc = reinterpret_cast<uint8_t *>(lhs_field_name_state_alloc) + Sabot::State::GetMaxStateSize();
     for (size_t elem_idx = 0; elem_idx < lhs_count && elem_idx < rhs_count; ++elem_idx) {
@@ -1678,7 +1782,7 @@ void TMatchPrefixTypeVisitor::operator()(const Type::TRecord &lhs,     const Typ
       rhs_field_name(rhs_field_name_state);
       Atom::TComparison str_comp = CompareStates(*lhs_field_name, *rhs_field_name, lhs_type_alloc_2, rhs_type_alloc_2);
       if (Atom::IsEq(str_comp)) {  // Names match
-        AcceptDouble(*lhs_elem, *rhs_elem, *this);
+        AcceptDouble(*lhs_elem, *rhs_elem, field_visitor);
         if (IsNoMatch(Result)) {
           return;
         }
