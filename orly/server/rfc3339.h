@@ -31,7 +31,8 @@ namespace Orly {
   namespace Server {
 
     /* The time `text` names, or nullopt if it isn't an RFC 3339 date-time. Fractional seconds finer than a
-       microsecond are truncated. */
+       microsecond are truncated. A time the system clock cannot represent (the nanosecond clock spans about 1677 to
+       2262) is clamped to the nearest time it can, rather than overflowing the conversion. */
     [[nodiscard]] inline std::optional<std::chrono::system_clock::time_point> ParseRfc3339(const std::string &text) {
       using namespace std::chrono;
       size_t pos = 0;
@@ -129,6 +130,15 @@ namespace Orly {
       }
       const auto when = sys_days(ymd) + hours(*hour) + minutes(*minute) + seconds(*second) + microseconds(micros)
                         - minutes(offset_minutes);
+      /* `when` counts microseconds; casting it to a finer clock multiplies, which overflows for a far year. */
+      constexpr auto earliest = duration_cast<microseconds>(system_clock::duration::min());
+      constexpr auto latest = duration_cast<microseconds>(system_clock::duration::max());
+      if (when.time_since_epoch() <= earliest) {
+        return system_clock::time_point::min();
+      }
+      if (when.time_since_epoch() >= latest) {
+        return system_clock::time_point::max();
+      }
       return time_point_cast<system_clock::duration>(when);
     }
 

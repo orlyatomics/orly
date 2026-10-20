@@ -31,5 +31,15 @@ namespace Orly {
   /* We characterize a deadline as a point in time on the system clock. */
   using TDeadline = std::chrono::time_point<std::chrono::system_clock>;
 
+  /* Returns the deadline `ttl` after `now`.  The clock counts nanoseconds, so converting a large `ttl` (the
+     maximum, which means "never expires") overflows; a `ttl` that would run past the latest representable
+     deadline gives that deadline instead.  `ttl` must not be negative. */
+  inline TDeadline AddTtl(const TDeadline &now, const TTtl &ttl) {
+    if (ttl >= std::chrono::duration_cast<TTtl>(TDeadline::max() - now)) {
+      return TDeadline::max();
+    }
+    return now + ttl;
+  }
+
 }  // Orly
 

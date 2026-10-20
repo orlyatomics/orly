@@ -39,6 +39,7 @@
 #include <base/io/binary_output_stream.h>
 #include <base/io/recorder_and_player.h>
 #include <orly/indy/fiber/fiber.h>
+#include <orly/time.h>
 
 namespace Orly {
 
@@ -662,7 +663,7 @@ namespace Orly {
 
           if (ttl.count() > 0) {
             /* save the object so it gets replicated if it has a non-zero ttl */ {
-              TDeadline deadline = TDeadline::clock::now() + ttl;
+              TDeadline deadline = AddTtl(TDeadline::clock::now(), ttl);
               std::string blob;
               /* extra */ {
                 auto recorder = std::make_shared<Io::TRecorder>();
@@ -766,7 +767,7 @@ namespace Orly {
       }
       bool saved = false;
       if (ttl.count() > 0) {
-        some_obj->Deadline = TDeadline::clock::now() + ttl;
+        some_obj->Deadline = AddTtl(TDeadline::clock::now(), ttl);
         try {
           std::string blob;
           /* extra */ {

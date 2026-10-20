@@ -750,6 +750,8 @@ void TDiskController::TEvent::Reset(bool back_to_pool) {
       break;
     }
   }
+  /* The callback, if any, is gone; a second reset (the destructor of a pooled event) must not destroy it again. */
+  Kind = TriggeredRead;
   if (back_to_pool) {
     EventPool->Free(this);
   }

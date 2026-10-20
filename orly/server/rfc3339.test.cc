@@ -52,3 +52,25 @@ FIXTURE(Refused) {
     EXPECT_FALSE(ParseRfc3339(text).has_value());
   }
 }
+
+/* The nanosecond system clock cannot name a time past 2262 or before 1677; those clamp instead of overflowing, so a
+   client that sends a far year gets "later than everything" rather than a wrapped time. */
+FIXTURE(OutOfClockRange) {
+  const auto latest = ParseRfc3339("2262-04-11T23:47:16Z");
+  const auto too_late = ParseRfc3339("2262-04-11T23:47:17Z");
+  const auto far_future = ParseRfc3339("9999-12-31T23:59:59Z");
+  if (EXPECT_TRUE(latest && too_late && far_future)) {
+    EXPECT_EQ(duration_cast<seconds>(latest->time_since_epoch()).count(), 9223372036LL);
+    EXPECT_TRUE(*too_late == system_clock::time_point::max());
+    EXPECT_TRUE(*far_future == system_clock::time_point::max());
+  }
+  const auto earliest = ParseRfc3339("1677-09-21T00:12:44Z");
+  const auto too_early = ParseRfc3339("1677-09-21T00:12:43Z");
+  const auto year_zero = ParseRfc3339("0000-01-01T00:00:00Z");
+  if (EXPECT_TRUE(earliest && too_early && year_zero)) {
+    EXPECT_EQ(duration_cast<seconds>(earliest->time_since_epoch()).count(), -9223372036LL);
+    EXPECT_TRUE(*too_early == system_clock::time_point::min());
+    EXPECT_TRUE(*year_zero == system_clock::time_point::min());
+  }
+  EXPECT_TRUE(*far_future > *latest);
+}

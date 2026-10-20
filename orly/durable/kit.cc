@@ -197,7 +197,7 @@ void TObj::OnPtrRelease() noexcept {
       Sem = nullptr;
       if (Ttl.count() > 0) {
         /* We have a non-zero time-to-live, so establish a deadline and save the object. */
-        Deadline = TDeadline::clock::now() + Ttl;
+        Deadline = Orly::AddTtl(TDeadline::clock::now(), Ttl);
         try {
           string blob;
           /* extra */ {
