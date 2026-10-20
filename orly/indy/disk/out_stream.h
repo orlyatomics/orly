@@ -93,9 +93,41 @@ namespace Orly {
                      std::unordered_set<size_t> &written_to_set, /* For debugging blocks that were allocated but not written to */
                      #endif
                      const std::function<size_t (Disk::Util::TVolumeManager *)> &new_block_cb = [](Disk::Util::TVolumeManager *) -> size_t {throw; return 0U;})
+              : TOutStream(code_location,
+                           util_src,
+                           vol_man,
+                           byte_offset,
+                           block_vec,
+                           block_collision_map,
+                           completion_trigger,
+                           priority,
+                           do_cache ? Util::CacheAll : Util::ClearAll,
+                           #ifndef NDEBUG
+                           written_to_set,
+                           #endif
+                           new_block_cb) {
+          }
+
+          /* As above, but with the cache instruction for each block written given outright. A
+             stream whose blocks are only ever read back through the block cache passes a
+             block-only instruction, so that its writes don't fill the page cache with pages no
+             reader will ask for, evicting ones that readers will. */
+          TOutStream(const Base::TCodeLocation &code_location /* DEBUG */,
+                     uint8_t util_src,
+                     Util::TVolumeManager *vol_man,
+                     size_t byte_offset,
+                     Indy::Util::TBlockVec &block_vec,
+                     std::unordered_map<size_t, std::shared_ptr<const TBufBlock>> &block_collision_map,
+                     TCompletionTrigger &completion_trigger,
+                     DiskPriority priority,
+                     Util::TCacheInstr cache_instr,
+                     #ifndef NDEBUG
+                     std::unordered_set<size_t> &written_to_set, /* For debugging blocks that were allocated but not written to */
+                     #endif
+                     const std::function<size_t (Disk::Util::TVolumeManager *)> &new_block_cb = [](Disk::Util::TVolumeManager *) -> size_t {throw; return 0U;})
               : TWriteGroup(Util::MaxOutBlockGroupSize),
                 VolMan(vol_man),
-                DoCache(do_cache),
+                CacheInstr(cache_instr),
                 ByteIndex(byte_offset),
                 BlockCollisionMap(block_collision_map),
                 BlockVec(block_vec),
@@ -336,7 +368,7 @@ namespace Orly {
               #ifndef NDEBUG
               WrittenToSet.insert(block_id);
               #endif
-              VolMan->WriteBlock(CodeLocation, BufKind, UtilSrc, cur_buf->GetData(), block_id, Priority, DoCache ? Disk::Util::CacheAll : Disk::Util::ClearAll, CompletionTrigger, [cur_buf, completion_trigger](TDiskResult result, const char *err_str) {
+              VolMan->WriteBlock(CodeLocation, BufKind, UtilSrc, cur_buf->GetData(), block_id, Priority, CacheInstr, CompletionTrigger, [cur_buf, completion_trigger](TDiskResult result, const char *err_str) {
                 delete cur_buf;
                 completion_trigger->Callback(result, err_str);
               });
@@ -354,7 +386,7 @@ namespace Orly {
 
           Util::TVolumeManager *VolMan;
 
-          bool DoCache;
+          Util::TCacheInstr CacheInstr;
 
           size_t ByteIndex;
 

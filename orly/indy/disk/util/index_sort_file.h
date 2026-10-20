@@ -183,7 +183,7 @@ namespace Orly {
                                                        collision_map,
                                                        CompletionTrigger,
                                                        Low,
-                                                       true
+                                                       CacheInstr
                                                        #ifndef NDEBUG
                                                        ,written_block_set
                                                        #endif
@@ -196,7 +196,7 @@ namespace Orly {
                                                       collision_map,
                                                       CompletionTrigger,
                                                       Low,
-                                                      true
+                                                      CacheInstr
                                                       #ifndef NDEBUG
                                                       ,written_block_set
                                                       #endif
@@ -225,7 +225,7 @@ namespace Orly {
                                                 iter.second->GetData(),
                                                 BlockVec[iter.first],
                                                 Low,
-                                                Disk::Util::CacheAll,
+                                                CacheInstr,
                                                 CompletionTrigger);
               }
             } /* end flush collision blocks */
@@ -303,7 +303,7 @@ namespace Orly {
                                                          collision_map,
                                                          CompletionTrigger,
                                                          Low,
-                                                         true
+                                                         CacheInstr
                                                          #ifndef NDEBUG
                                                          ,written_block_set
                                                          #endif
@@ -316,7 +316,7 @@ namespace Orly {
                                                         collision_map,
                                                         CompletionTrigger,
                                                         Low,
-                                                        true
+                                                        CacheInstr
                                                         #ifndef NDEBUG
                                                         ,written_block_set
                                                         #endif
@@ -373,7 +373,7 @@ namespace Orly {
                                                   iter.second->GetData(),
                                                   BlockVec[iter.first],
                                                   Low,
-                                                  Disk::Util::CacheAll,
+                                                  CacheInstr,
                                                   CompletionTrigger);
                 }
               } /* end flush collision blocks */

@@ -99,3 +99,66 @@ FIXTURE(ManySortFiles) {
     cond.notify_one();
   });
 }
+
+/* A sort file is only ever read back through the block cache, so writing it must not fill the
+   page cache: every page it put there was a page no reader would ask for, and getting a buffer
+   for it could evict one that a reader would. Every block a sort file writes, its streams' and
+   its collision blocks, should carry the manager's block-only instruction. */
+FIXTURE(SortFilesSkipThePageCache) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    const size_t consol_thresh = 3UL;
+    const size_t num_iter = 10000UL;
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    std::atomic<size_t> block_only_writes(0UL), page_cache_writes(0UL);
+    TBlockCache *block_cache_ptr = nullptr;
+    TMemoryDevice device(512, 512, 65536, true, true);
+    TVolume volume(TVolume::TDesc{TVolume::TDesc::Striped, device.GetDesc(), TVolume::TDesc::Fast, 1UL, 1UL, 1024UL, 8UL, 0.85},
+                   [&](TCacheInstr instr, const TOffset logical_start_offset, void *buf, size_t count) {
+                     switch (instr) {
+                       case TCacheInstr::CacheBlockOnly: {
+                         ++block_only_writes;
+                         for (size_t i = 0; i < count / TBlockCache::DataSize; ++i) {
+                           block_cache_ptr->Replace((logical_start_offset / TBlockCache::DataSize) + i, reinterpret_cast<uint8_t *>(buf) + (i * TBlockCache::DataSize));
+                         }
+                         break;
+                       }
+                       case TCacheInstr::ClearBlockOnly:
+                       case TCacheInstr::NoCache: {
+                         break;
+                       }
+                       default: {
+                         ++page_cache_writes;
+                         break;
+                       }
+                     }
+                   }, &scheduler);
+    volume.AddDevice(&device, 0);
+    TVolumeManager vol_man(&scheduler);
+    vol_man.AddNewVolume(&volume);
+    TPageCache page_cache(&vol_man, 1024, 1);
+    TBlockCache block_cache(&vol_man, 1024, 1);
+    block_cache_ptr = &block_cache;
+    TEngine engine(&vol_man, &page_cache, &block_cache, nullptr, false);
+
+    typedef TIndexManager<size_t, 1000, 100> TMyManager;
+    /* scope for the manager, whose sort files free their blocks when it goes */ {
+      TMyManager manager(HERE, 0UL, consol_thresh, TVolume::TDesc::Fast, &engine, true /* do cache */);
+      for (size_t i = 0; i < num_iter; ++i) {
+        manager.Emplace(num_iter - 1 - i);
+      }
+      size_t found = 0UL;
+      size_t matched = 0UL;
+      for (TMyManager::TCursor csr(&manager, 50); csr; ++csr) {
+        matched += (*csr == found) ? 1UL : 0UL;
+        ++found;
+      }
+      EXPECT_EQ(found, num_iter);
+      EXPECT_EQ(matched, num_iter);
+    }
+    EXPECT_GT(block_only_writes.load(), 0UL);
+    EXPECT_EQ(page_cache_writes.load(), 0UL);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
