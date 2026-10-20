@@ -283,8 +283,14 @@ FIXTURE(Typical) {
    codec (issue #115): the SelfRef tycon round-trips through TCore as a direct
    scalar carrying its de Bruijn depth.  This is the on-disk half of the
    new_sabot.test bridge round-trip. */
+/* The type czar may exist only once, whichever fixture needs it first. */
+static Type::TTypeCzar &Czar() {
+  static Type::TTypeCzar czar;
+  return czar;
+}
+
 FIXTURE(RecursiveType) {
-  static Type::TTypeCzar type_czar;
+  Czar();
   /* tree is <| Leaf(int) | Branch(<{ .l: tree, .r: tree }>) |> */
   Type::TVariantElems arms;
   arms["Leaf"] = Type::TInt::Get();
@@ -493,8 +499,8 @@ FIXTURE(NoteEqualityIgnoresUnusedBits) {
 
 /* #993: a core is packed (alignment 1) and sits at arbitrary offsets in a note, so its direct data is read by copying, never through a typed reference. The layout, the
    bytes a scalar leaves in its cell (which are what the disk stores) and the quick hash (which is persisted) must not
-   change with the way the data is read.  The expected values below were taken from the build that read through
-   references. */
+   change with the way the data is read.  The expected values below were taken from master e996a9dc, which read through
+   references, and the test passes there unmodified. */
 static_assert(sizeof(TCore) == 1 + MaxDirectSize, "A core is a tycon byte and the direct storage area.");
 
 static array<uint8_t, sizeof(TCore)> CellBytes(const TCore &core) {
@@ -562,33 +568,49 @@ FIXTURE(CellBytesAndQuickHashAreUnchanged) {
   core = Make(static_cast<uint64_t>(0x0123456789abcdefULL));
   EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(55, {0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01})));
   EXPECT_EQ(QuickHash(core), 0x8428d319057264f0UL);
-  /* The rest hash through std::hash of the value; check the cell and that the hash matches the value's own. */
+  /* The rest hash through std::hash; these literals are master's values too. */
   core = Make(static_cast<bool>(true));
   EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(56, {0x01})));
-  EXPECT_EQ(QuickHash(core), std::hash<bool>()(true));
+  EXPECT_EQ(QuickHash(core), 1UL);
   core = Make(static_cast<char>('q'));
   EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(57, {'q'})));
-  EXPECT_EQ(QuickHash(core), std::hash<char>()('q'));
+  EXPECT_EQ(QuickHash(core), 113UL);
   core = Make(static_cast<float>(1.5f));
   EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(58, {0x00, 0x00, 0xc0, 0x3f})));
-  EXPECT_EQ(QuickHash(core), std::hash<float>()(1.5f));
+  EXPECT_EQ(QuickHash(core), 6335102473512021944UL);
   core = Make(static_cast<double>(-2.25));
   EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(59, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xc0})));
-  EXPECT_EQ(QuickHash(core), std::hash<double>()(-2.25));
+  EXPECT_EQ(QuickHash(core), 12702181646673766799UL);
   const Sabot::TStdDuration duration(Sabot::TStdDuration::rep(0x0102030405060708LL));
   core = Make(duration);
   EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(60, {0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01})));
-  EXPECT_EQ(QuickHash(core), std::hash<Sabot::TStdDuration::rep>()(duration.count()));
+  EXPECT_EQ(QuickHash(core), 72623859790382856UL);
   const Sabot::TStdTimePoint time_point(duration);
   core = Make(time_point);
   EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(61, {0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01})));
-  EXPECT_EQ(QuickHash(core), std::hash<Sabot::TStdDuration::rep>()(duration.count()));
-  const Base::TUuid uuid(Base::TUuid::Random);
+  EXPECT_EQ(QuickHash(core), 72623859790382856UL);
+  const Base::TUuid uuid("01234567-89ab-cdef-0123-456789abcdef");
   core = Make(uuid);
-  auto uuid_cell = CellBytes(core);
-  EXPECT_EQ(uuid_cell[sizeof(TCore) - 1], 62);
-  EXPECT_EQ(memcmp(uuid_cell.data(), &uuid, sizeof(Base::TUuid)), 0);
-  EXPECT_EQ(QuickHash(core), std::hash<Base::TUuid>()(uuid));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(62, {0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef})));
+  EXPECT_EQ(QuickHash(core), 17279655951921914625UL);
+  /* A direct str and a direct blob keep their bytes in the cell, and the tycon says how many are used. */
+  core = Make(string("abc"));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(0x14, {'a', 'b', 'c'})));
+  EXPECT_EQ(QuickHash(core), 3663726644998027833UL);
+  const uint8_t blob_data[3] = { 101, 102, 103 };
+  core = Make(Native::TBlob(blob_data, 3));
+  EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(0x2c, {101, 102, 103})));
+  EXPECT_EQ(QuickHash(core), 9943231452169811944UL);
+  /* A SelfRef is a direct uint64 de Bruijn depth. */
+  {
+    Czar();
+    void *sabot_alloc = alloca(1000);
+    Sabot::Type::TAny::TWrapper sabot(Type::NewSabot(sabot_alloc, Type::TSelfRef::Get(0x0102030405060708ULL)));
+    static TTestArena arena;
+    core = TCore(&arena, *sabot);
+    EXPECT_EQ(Hex(CellBytes(core)), Hex(Expect(75, {0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01})));
+    EXPECT_EQ(QuickHash(core), 72623859790382856UL);
+  }
 }
 
 /* Scalars order and read back through the sabot as the values they hold, wherever in memory their cell sits. */

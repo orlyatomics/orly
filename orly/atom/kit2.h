@@ -326,8 +326,9 @@ namespace Orly {
       void CopyOut(TArena *arena, std::string &out) const;
 
       /* Interpret direct data as the given type, regardless of the tycon.
-         A core is packed, so it has alignment 1 and sits at whatever offset it has in its note, and its direct data is not aligned for any
-         type wider than a byte.  We hand back a copy rather than a reference into the core. */
+         A core is packed, so it has alignment 1 and sits at whatever offset it has in its note, and its direct data has only the alignment
+         of wherever the core happens to sit: misaligned for any type wider than a byte exactly when the core is.  We hand back a copy
+         rather than a reference into the core. */
       template <typename TVal>
       TVal ForceAs() const {
         if constexpr (std::is_same_v<TVal, TUuid>) {
@@ -371,12 +372,20 @@ namespace Orly {
       /* If the small is small enough, store it directly; otherwise, propose a null-terminated array of chars and take it as our state. */
       void InitStr(TExtensibleArena *arena, const char *start, const char *limit);
 
-      /* Set the tycon, then init the direct storage area by copy-constructing a value into it, padding with zeroes as needed. */
+      /* Set the tycon, then init the direct storage area by copying the bytes of a value into it, padding with zeroes as needed.
+         The area is packed and may be misaligned for TVal, so a typed store (a placement new of a TVal) is not allowed; copy the bytes.
+         TUuid is not trivially copyable (it has copy constructors) but holds nothing except its bytes and has alignment 1, so it
+         can be constructed in place. */
       template <typename TVal>
       void InitDirect(TTycon tycon, const TVal &val) {
         static_assert(sizeof(TVal) <= MaxDirectSize, "TVal is value too large to store directly.");
         Init(tycon);
-        new (DirectBlob) TVal(val);
+        if constexpr (std::is_trivially_copyable_v<TVal>) {
+          std::memcpy(DirectBlob, &val, sizeof(TVal));
+        } else {
+          static_assert(alignof(TVal) == 1, "A value that is not trivially copyable must have no alignment requirement to be stored directly.");
+          new (DirectBlob) TVal(val);
+        }
       }
 
       /* Propose a note of an array of cores (copy-constructed from the given state) and take it as our state.
