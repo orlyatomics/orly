@@ -5,6 +5,7 @@
 #include <orly/indy/disk/fold_data_file.h>
 
 #include <algorithm>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <functional>
@@ -260,7 +261,8 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
         output directly; nothing comes from the update pools. */
   TSuprena out_arena;
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-  std::vector<TDataFile::TEntryView> out_entries;
+  /* A deque, not a vector: no doubling slack and no copy of the whole list as it grows (#988). */
+  std::deque<TDataFile::TEntryView> out_entries;
   /* The empty metadata every folded entry carries. */
   const TCore empty_metadata = Indy::TKey(&out_arena).GetCore();
   /* #745 stage 2: the metadata and id of each update in the retention window, which its entries keep. */

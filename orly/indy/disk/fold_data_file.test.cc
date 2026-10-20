@@ -854,3 +854,103 @@ FIXTURE(RetainingFoldKeepsTheWindowWithKeyframes) {
     cond.notify_one();
   });
 }
+
+/* An FNV-1a hash of every byte of a file, and its length. */
+static uint64_t HashFileBytes(Sim::TMemEngine &mem_engine, const TUuid &file_id, size_t gen_id, size_t &length) {
+  TReader reader(HERE, mem_engine.GetEngine(), file_id, gen_id);
+  length = reader.GetFileLength();
+  TDataFile::TDataInStream<0UL> in_stream(HERE, Source::MergeDataFileOther, RealTime, &reader,
+      mem_engine.GetEngine()->GetCache<TDataFile::TDataInStream<0UL>::PhysicalCachePageSize>(), 0UL);
+  uint64_t hash = 14695981039346656037ULL;
+  uint8_t buf[4096];
+  for (size_t left = length; left;) {
+    const size_t n = std::min(left, sizeof(buf));
+    in_stream.Read(buf, n);
+    for (size_t i = 0UL; i < n; ++i) {
+      hash = (hash ^ buf[i]) * 1099511628211ULL;
+    }
+    left -= n;
+  }
+  return hash;
+}
+
+/* #988: the sorters' buffers grow as they fill instead of taking their whole size up front, and the fold keeps its
+   entries in a deque. Neither may change what is written. The source and its fold here are fully determined (fixed
+   file, index and update ids; a window from 0 keeps every update's id, so the fold mints none), and large enough
+   that each sorter's buffer grows several times. The fold's bytes must match those master wrote. The source's bytes
+   cannot be pinned the same way: the writer pads one section from a reused buffer, so a span of it carries whatever
+   an earlier fixture left there. Its length and its content (every entry and update id) are pinned instead. */
+FIXTURE(DataFileAndFoldBytesMatchMaster) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    std::mt19937 rng(988U);
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    const TUuid file_id("2b0e8d4c-7a3f-4e51-9c6d-0f1a2b3c4d5e");
+    const std::vector<TUuid> index_ids{TUuid("4f6a1c2e-0d3b-4a59-8e7f-112233445566"),
+                                       TUuid("9a8b7c6d-5e4f-4321-8fed-cba987654321")};
+    constexpr size_t num_updates = 6000UL;
+    constexpr uint32_t num_keys = 900U;
+    /* the source file */ {
+      TMockMem mem_layer;
+      for (size_t u = 0UL; u < num_updates; ++u) {
+        TSuprena arena;
+        char id[37];
+        snprintf(id, sizeof(id), "00000000-0000-4000-8000-%012zx", u + 1UL);
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(TUuid(id), &arena, state_alloc));
+        update->SetSequenceNumber(u + 1UL);
+        const size_t index = rng() % index_ids.size();
+        const int64_t key = static_cast<int64_t>(rng() % num_keys);
+        const uint32_t pick = rng() % 10U;
+        const TIndexKey index_key(index_ids[index], TKey(std::make_tuple(key), &arena, state_alloc));
+        if (pick == 0U) {
+          update->AddEntry(index_key, TKey(Native::TTombstone::Tombstone, &arena, state_alloc), TMutator::Assign);
+        } else if (pick < 4U) {
+          update->AddEntry(index_key, TKey(static_cast<int64_t>(rng() % 1000U), &arena, state_alloc), TMutator::Assign);
+        } else {
+          update->AddEntry(index_key, TKey(static_cast<int64_t>(rng() % 7U) - 3L, &arena, state_alloc), TMutator::Add);
+        }
+        mem_layer.Insert(TUpdate::CopyUpdate(update.get(), state_alloc));
+      }
+      TDataFile(mem_engine.GetEngine(), TVolume::TDesc::Fast, &mem_layer, file_id, 1UL, 20UL, 0U, Medium);
+    }
+    TFoldDataFile fold(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, 1UL, 2UL, Medium, 20UL, TSequenceNumber(0UL));
+    /* the source's content */
+    uint64_t content_hash = 14695981039346656037ULL;
+    const auto mix = [&content_hash](const void *data, size_t size) {
+      for (size_t i = 0UL; i < size; ++i) {
+        content_hash = (content_hash ^ static_cast<const uint8_t *>(data)[i]) * 1099511628211ULL;
+      }
+    };
+    const auto source = DumpFile(mem_engine, file_id, 1UL, index_ids);
+    for (const auto &e : source) {
+      const uint8_t mutator = static_cast<uint8_t>(e.Mutator), tombstone = e.IsTombstone ? 1U : 0U;
+      const int64_t value = e.IsTombstone ? 0L : e.Value;
+      mix(&e.Key, sizeof(e.Key));
+      mix(&e.SeqNum, sizeof(e.SeqNum));
+      mix(&mutator, sizeof(mutator));
+      mix(&tombstone, sizeof(tombstone));
+      mix(&value, sizeof(value));
+      mix(&e.NumHistKeys, sizeof(e.NumHistKeys));
+    }
+    const auto ids = ReadUpdateIds(mem_engine, file_id, 1UL);
+    for (const auto &[seq, id] : ids) {
+      mix(&seq, sizeof(seq));
+      mix(id.GetRaw(), 16UL);
+    }
+    size_t source_length = 0UL, fold_length = 0UL;
+    HashFileBytes(mem_engine, file_id, 1UL, source_length);
+    const uint64_t fold_hash = HashFileBytes(mem_engine, file_id, 2UL, fold_length);
+    std::cerr << "source " << source_length << " bytes, " << source.size() << " entries, " << ids.size()
+              << " updates, content hash " << std::hex << content_hash << "; fold " << std::dec << fold_length
+              << " bytes, hash " << std::hex << fold_hash << std::dec << std::endl;
+    EXPECT_EQ(ids.size(), num_updates);
+    EXPECT_EQ(source_length, 1373568UL);
+    EXPECT_EQ(content_hash, 0x8dee51a577f4a729ULL);
+    EXPECT_EQ(fold_length, 1373568UL);
+    EXPECT_EQ(fold_hash, 0xd39af752f0630c88ULL);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}

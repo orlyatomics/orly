@@ -27,6 +27,9 @@
 
 #include <cassert>
 #include <iterator>
+#include <type_traits>
+#include <algorithm>
+#include <cstdlib>
 
 #include <base/class_traits.h>
 
@@ -239,13 +242,7 @@ namespace Orly {
         };  // TMemCursor
 
         TSorter()
-            : Size(0U) {
-          Data = reinterpret_cast<TVal *>(malloc(sizeof(TVal) * MaxSize));
-          if (Data == 0) {
-            syslog(LOG_EMERG, "bad alloc in Util::Sorter [%ld]", sizeof(TVal) * MaxSize);
-            throw std::bad_alloc();
-          }
-        }
+            : Size(0U), Capacity(0U), Data(nullptr) {}
 
         virtual ~TSorter() {
           free(Data);
@@ -259,6 +256,9 @@ namespace Orly {
         template <class... Args>
         void Emplace(Args &&... args) {
           assert(Size < MaxSize);
+          if (Size == Capacity) {
+            Grow();
+          }
           new (Data + Size) TVal(std::forward<Args>(args)...);
           ++Size;
         }
@@ -287,9 +287,37 @@ namespace Orly {
           return MaxSize;
         }
 
+        /* The buffer's size when the first value arrives; it then doubles until it reaches MaxSize. */
+        static constexpr size_t InitialCapacity = 1024U;
+
+        /* The number of values the buffer holds before it next grows. */
+        size_t GetCapacity() const {
+          return Capacity;
+        }
+
         private:
 
+        /* The buffer grows as it fills, up to MaxSize, rather than taking MaxSize up front: most sorters
+           hold far fewer values (#988). */
+        void Grow() {
+          const size_t new_capacity = std::min(MaxSize, std::max<size_t>(Capacity * 2U, InitialCapacity));
+          TVal *data = reinterpret_cast<TVal *>(malloc(sizeof(TVal) * new_capacity));
+          if (!data) {
+            syslog(LOG_EMERG, "bad alloc in Util::Sorter [%ld]", sizeof(TVal) * new_capacity);
+            throw std::bad_alloc();
+          }
+          /* The old buffer is freed as is: a sorter never runs its values' destructors (Clear doesn't either). */
+          for (size_t i = 0U; i < Size; ++i) {
+            new (data + i) TVal(std::move(Data[i]));
+          }
+          free(Data);
+          Data = data;
+          Capacity = new_capacity;
+        }
+
         size_t Size;
+
+        size_t Capacity;
 
         TVal *Data;
 
