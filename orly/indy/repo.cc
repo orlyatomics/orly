@@ -2483,7 +2483,7 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
         try {
           //std::map<size_t, std::vector<TDiskLayer *>> gen_to_gen_id_map;
           /* #692: a merge allocates up to the size of its inputs while they stay live (see
-             MergeFiles), so take only a pair that fits in the room above the data floor that other
+             MergeFiles), so take only a run that fits in the room above the data floor that other
              merges haven't claimed. A pair that can't fit would write until it hit the floor, fail,
              and be retried forever, and, taken first, would keep a pair that fits from merging. */
           std::unordered_map<const TDataLayer *, size_t> file_bytes;
@@ -2516,29 +2516,43 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
                   const auto iter = file_bytes.find(layer);
                   return iter == file_bytes.end() ? 0UL : iter->second;
                 };
-                const size_t pair_bytes = bytes_of(lhs_layer) + bytes_of(rhs_layer);
-                if (pair_bytes > room) {
+                size_t run_bytes = bytes_of(lhs_layer) + bytes_of(rhs_layer);
+                if (run_bytes > room) {
                   skipped_unfit = true;
                   continue;
                 }
-                lowest_seq = std::min(lowest_seq, lhs_layer->GetLowestSeq());
-                highest_seq = std::max(highest_seq, lhs_layer->GetHighestSeq());
-                num_keys += lhs_layer->GetSize();
-                gen_layer_vec.push_back(reinterpret_cast<TDiskLayer *>(lhs_layer));
-                gen_id_vec.push_back(reinterpret_cast<TDiskLayer *>(lhs_layer)->GetGenId());
-                lhs_layer->MarkTaken();
-                lowest_seq = std::min(lowest_seq, rhs_layer->GetLowestSeq());
-                highest_seq = std::max(highest_seq, rhs_layer->GetHighestSeq());
-                num_keys += rhs_layer->GetSize();
-                gen_layer_vec.push_back(reinterpret_cast<TDiskLayer *>(rhs_layer));
-                gen_id_vec.push_back(reinterpret_cast<TDiskLayer *>(rhs_layer)->GetGenId());
-                rhs_layer->MarkTaken();
+                /* #968: take the rest of the run too, up to MaxDiskMergeInputs files, while each next
+                   file is free, fits, and is in the same or a higher gen set than the one before it.
+                   Merging only the pair rewrote a gen set's data about three times on its way to
+                   the next set (below 2M keys the sets grow 8x), and each merge took out one file,
+                   so a backlog of small files drained one file per merge. Merging the run writes
+                   it once. */
+                std::vector<TDataLayer *> run{lhs_layer, rhs_layer};
+                for (auto *entry = csr->TryGetNextMember()->TryGetNextMember(); entry && run.size() < MaxDiskMergeInputs; entry = entry->TryGetNextMember()) {
+                  TDataLayer *next_layer = entry->GetLayer();
+                  if (next_layer->GetKind() != TDataLayer::TKind::Disk
+                      || next_layer->GetMarkedTaken()
+                      || Disk::Util::SuggestGeneration(run.back()->GetSize()) > Disk::Util::SuggestGeneration(next_layer->GetSize())
+                      || run_bytes + bytes_of(next_layer) > room) {
+                    break;
+                  }
+                  run_bytes += bytes_of(next_layer);
+                  run.push_back(next_layer);
+                }
+                for (TDataLayer *layer : run) {
+                  lowest_seq = std::min(lowest_seq, layer->GetLowestSeq());
+                  highest_seq = std::max(highest_seq, layer->GetHighestSeq());
+                  num_keys += layer->GetSize();
+                  gen_layer_vec.push_back(reinterpret_cast<TDiskLayer *>(layer));
+                  gen_id_vec.push_back(reinterpret_cast<TDiskLayer *>(layer)->GetGenId());
+                  layer->MarkTaken();
+                }
                 EnqueueMergeDisk();
                 break;
               }
             }
           }  // release Merge lock
-          /* #904: from here the merge reads only the pair. */
+          /* #904: from here the merge reads only the run. */
           hold.Narrow(gen_layer_vec);
           if (gen_id_vec.empty() && skipped_unfit) {
             /* Nothing fits: write nothing, and look again after a backoff. No claim is noted for

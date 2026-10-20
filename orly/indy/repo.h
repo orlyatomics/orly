@@ -1341,7 +1341,13 @@ namespace Orly {
 
       ~TSafeRepo() override;
 
-      /* Compact adjacent same-generation disk files into one new file. At the root, the
+      /* The most files one disk merge takes in (#968). Below 2M keys, GenSizeSet grows 8x a step, so a
+         run of this many files in one set makes a file in the next, and its data is written once on
+         the way rather than once per pairwise step. */
+      static constexpr size_t MaxDiskMergeInputs = 8;
+
+      /* Compact a run of adjacent disk files, each in the same or a higher generation than the one
+         before it, into one new file. At the root, the
          merge also drops superseded versions (#592). */
       void StepMergeDisk(size_t block_slots_available) override;
 
