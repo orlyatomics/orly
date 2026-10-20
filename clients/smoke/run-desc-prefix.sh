@@ -28,7 +28,7 @@ for bin in "$ORLYI" "$ORLYC"; do
 done
 
 WORK="$(mktemp -d)"
-trap 'kill -9 $ORLYI_PID 2>/dev/null || true; rm -rf "$WORK"' EXIT
+trap 'kill -9 $ORLYI_PID 2>/dev/null || true; wait $ORLYI_PID 2>/dev/null || true; rm -rf "$WORK"' EXIT
 
 echo "[1/3] compile desc_prefix.orly and start fresh orlyi (logs -> $WORK/orlyi.log)"
 (cd "$WORK" && "$ORLYC" -o "$WORK" "$REPO_ROOT/clients/smoke/desc_prefix.orly")

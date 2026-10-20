@@ -53,7 +53,23 @@ bound() {
 # --log_info adds only LOG_INFO to the default mask (errors and worse). The
 # remote-compile warning is logged at LOG_ERR so the default mask shows it;
 # run 2 checks it with no --log_* flag at all.
+# The smokes before this one in CI use the same ports and end with kill -9, so
+# a listener can outlive its script by a moment. Wait for every port to be
+# free first, or the readiness check below sees the old process's sockets.
+wait_ports_free() {
+  local deadline=$((SECONDS + 30))
+  while [ $SECONDS -lt $deadline ]; do
+    if [ -z "$(bound $PORT)" ] && [ -z "$(bound $WS_PORT)" ] && [ -z "$(bound $REPORTING_PORT)" ] &&
+       [ -z "$(bound $SLAVE_PORT)" ]; then return; fi
+    sleep 0.1
+  done
+  echo "BIND DEFAULTS FAIL: ports $PORT, $SLAVE_PORT, $WS_PORT or $REPORTING_PORT still in use after 30 seconds"
+  ss -Htlnp 2>/dev/null | grep -E ":(${PORT}|${SLAVE_PORT}|${WS_PORT}|${REPORTING_PORT}) " || true
+  exit 1
+}
+
 start_orlyi() {
+  wait_ports_free
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
            --port_number=$PORT --slave_port_number=$SLAVE_PORT \
            --ws_port_number=$WS_PORT --reporting_port_number=$REPORTING_PORT \
