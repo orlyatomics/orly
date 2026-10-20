@@ -1,0 +1,1 @@
+- **Fixed**: Cold reopen with many safe POVs no longer writes and syncs a separate 1-entry durable file or duplicate `SystemRepo` transaction for each restored POV during WAL recovery, or logs `TTransaction::Push/Pop: discarding` at `LOG_INFO` for already-flushed updates.

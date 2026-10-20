@@ -139,7 +139,7 @@ bool TTransaction::Push(const L0::TManager::TPtr<TRepo> &repo, const shared_ptr<
     syslog(LOG_ERR, "MAJOR ERROR: missing data! ensure_or_discard =[%ld] vs. GetNextSequenceNumber =[%ld]", *ensure_or_discard, repo->GetNextSequenceNumber());
     throw std::logic_error("Let's check what we're doing here in transaction::push()");
   } else if (ensure_or_discard) {
-    syslog(LOG_INFO, "TTransaction::Push: discarding [%ld]", *ensure_or_discard);
+    syslog(LOG_DEBUG, "TTransaction::Push: discarding [%ld]", *ensure_or_discard);
   }
   return false;
 }
@@ -154,7 +154,7 @@ bool TTransaction::Pop(const L0::TManager::TPtr<TRepo> &repo, const std::optiona
       new TPopper(this, repo, TPopper::Pop);
       return true;
     } else if (ensure_or_discard) {
-      syslog(LOG_INFO, "TTransaction::Pop: discarding [%ld]", *ensure_or_discard);
+      syslog(LOG_DEBUG, "TTransaction::Pop: discarding [%ld]", *ensure_or_discard);
     }
   } else {
     switch (mutation->GetKind()) {

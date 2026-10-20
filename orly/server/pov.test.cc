@@ -71,3 +71,26 @@ FIXTURE(Typical) {
     }
   }
 }
+
+FIXTURE(RestoreBatch) {
+  const TUuid expected_session_id = TUuid::Best;
+  const TPov::TSharedParents expected_parents = { TUuid::Best, TUuid::Best };
+  for (size_t cache_size : { 0UL, 4UL }) {
+    auto manager = make_shared<TTestManager>(cache_size);
+    const TUuid id1(TUuid::Twister);
+    const TUuid id2(TUuid::Twister);
+    /* Create id1 first so Restore replaces an existing closed durable on disk/cache. */
+    manager->New<TPov>(id1, OneMinute, TUuid::Best, TPov::TAudience::Shared, TPov::TPolicy::Fast, TPov::TSharedParents{});
+    TSem sem;
+    manager->Restore<TPov>(id1, OneMinute, nullptr, expected_session_id, TPov::TAudience::Private, TPov::TPolicy::Safe, expected_parents, true);
+    manager->Restore<TPov>(id2, OneMinute, &sem, expected_session_id, TPov::TAudience::Private, TPov::TPolicy::Safe, expected_parents, true);
+    sem.Pop();
+    for (const TUuid &id : { id1, id2 }) {
+      auto pov = manager->Open<TPov>(id);
+      EXPECT_TRUE(pov->GetSessionId() == expected_session_id);
+      EXPECT_TRUE(pov->GetAudience() == TPov::TAudience::Private);
+      EXPECT_TRUE(pov->GetPolicy() == TPov::TPolicy::Safe);
+      EXPECT_EQ(pov->GetSharedParents().size(), expected_parents.size());
+    }
+  }
+}

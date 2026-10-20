@@ -73,13 +73,14 @@ TPov::TPov(Durable::TManager *manager,
            const TUuid &session_id,
            TAudience audience,
            TPolicy policy,
-           const TSharedParents &shared_parents)
+           const TSharedParents &shared_parents,
+           bool reloaded)
     : TObj(manager, id, ttl),
       SessionId(session_id),
       Audience(audience),
       Policy(policy),
       SharedParents(shared_parents),
-      Reloaded(false) {}
+      Reloaded(reloaded) {}
 
 TPov::TPov(Durable::TManager *manager, const Base::TUuid &id, Io::TBinaryInputStream &strm)
     : TObj(manager, id, strm), Reloaded(true) {

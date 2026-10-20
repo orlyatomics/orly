@@ -1592,7 +1592,12 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
       TRepoReplication *repo_replication = new TRepoReplication(repo_id, is_safe, *ttl, opt_parent_id);
       try {
         assert(ttl);
-        if (ttl->count() > 0) {
+        bool already_saved = false;
+        /* extra */ {
+          std::lock_guard<std::mutex> lock(DiscardedSavedReposMutex);
+          already_saved = SavedReposOnOpen.erase(repo_id) > 0;
+        }
+        if (ttl->count() > 0 && !already_saved) {
           /* Perform transaction on System repo to construct this repo */ {
             TSuprena arena;
             /* The same write removes the entries of repos that have gone since the last one (#671). */
@@ -1779,7 +1784,22 @@ std::vector<TUuid> TManager::AddSavedRepoRemovals(TUpdate::TOpByKey &op_by_key, 
   }
 }
 
+void TManager::NoteSavedReposOnOpen() {
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  TSuprena arena;
+  auto view = make_unique<Indy::TRepo::TView>(SystemRepo);
+  auto walker_ptr = SystemRepo->NewPresentWalker(view, TIndexKey(SystemRepoIndexId, TKey(make_tuple(SavedRepoMagicNumber, Native::TFree<Base::TUuid>()), &arena, state_alloc)), false);
+  const std::vector<TUuid> left = CollectSavedRepoIds(*walker_ptr);
+  std::lock_guard<std::mutex> lock(DiscardedSavedReposMutex);
+  SavedReposOnOpen.clear();
+  SavedReposOnOpen.insert(left.begin(), left.end());
+}
+
 void TManager::QueueSavedReposLeftByRestart() {
+  /* extra */ {
+    std::lock_guard<std::mutex> lock(DiscardedSavedReposMutex);
+    SavedReposOnOpen.clear();
+  }
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   TSuprena arena;
   auto view = make_unique<Indy::TRepo::TView>(SystemRepo);
