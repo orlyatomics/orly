@@ -308,7 +308,15 @@ namespace Orly {
       static inline std::pair<bool, Rt::TOpt<TVal>> Do(const Indy::TKey &val, const Indy::TKey &/*key*/) {
         if (!val.GetCore().IsVoid()) {
           void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-          return std::make_pair(true, Sabot::AsNative<TVal>(*Sabot::State::TAny::TWrapper(val.GetState(state_alloc))));
+          const Sabot::State::TAny::TWrapper state(val.GetState(state_alloc));
+          /* A value written as an optional (`<[k]> <- x as T?`) is stored as
+             one, so a read as `T?` takes it as it is, known or not (#979). A
+             value written as a plain `T` is wrapped. (`T` is never itself
+             optional; optionals do not nest.) */
+          if (dynamic_cast<const Sabot::State::TOpt *>(&*state)) {
+            return std::make_pair(true, Sabot::AsNative<Rt::TOpt<TVal>>(*state));
+          }
+          return std::make_pair(true, Sabot::AsNative<TVal>(*state));
         } else {
           /* we have a void */
           return std::make_pair(false, Rt::TOpt<TVal>());
