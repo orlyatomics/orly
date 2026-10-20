@@ -20,6 +20,7 @@
 
 #include <sys/syscall.h>
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 
@@ -44,22 +45,30 @@ void MallocExtension_ReleaseToSystem(size_t num_bytes) __attribute__((weak));
 
 namespace {
 
-/* How much of tcmalloc's free page heap ReleaseFreeHeap leaves mapped, so the next merge's first
-   allocations need not fault pages straight back in. */
-constexpr size_t KeepFreeHeapBytes = 256UL << 20;
+/* How much of tcmalloc's free page heap ReleaseFreeHeap leaves mapped, so the next allocations need
+   not fault pages straight back in. It is the 128 MiB the memory plan keeps for the heap
+   (MinHeapBytes in server.cc), so what stays mapped but unused is inside the plan. */
+constexpr size_t KeepFreeHeapBytes = 128UL << 20;
 
-/* Return tcmalloc's free page heap to the kernel, keeping KeepFreeHeapBytes of it (#967). A disk
-   merge allocates and frees hundreds of MiB of working memory, and tcmalloc keeps what it frees
-   mapped. On an M1 settle from a post-ingest snapshot, with no reads at all, the free page heap
-   reached 4.38 GiB beside 6.15 GiB in use 20 minutes in, and RSS climbed from 4.3 to 10.6 GB:
-   memory no other allocation in the process was asking for, counted against the budget. */
-void ReleaseFreeHeap() {
+/* Return tcmalloc's free page heap to the kernel, keeping KeepFreeHeapBytes of it, and log what
+   that returned and how long it took (#967). A disk merge allocates and frees hundreds of MiB of
+   working memory, and a walker trim can free GiBs of walkers; tcmalloc keeps what is freed mapped.
+   Settling a freshly ingested store, with no reads at all, the free page heap reached
+   4.3 GiB beside 6.0 GiB in use 20 minutes in, and RSS climbed from 4.1 to 10.1 GiB: memory no
+   other allocation in the process was asking for, counted against the budget. */
+void ReleaseFreeHeap(const char *after) {
   if (!MallocExtension_GetNumericProperty || !MallocExtension_ReleaseToSystem) {
     return;
   }
   size_t free_bytes = 0;
   if (MallocExtension_GetNumericProperty("tcmalloc.pageheap_free_bytes", &free_bytes) && free_bytes > KeepFreeHeapBytes) {
+    const auto start = steady_clock::now();
     MallocExtension_ReleaseToSystem(free_bytes - KeepFreeHeapBytes);
+    size_t left_bytes = free_bytes;
+    MallocExtension_GetNumericProperty("tcmalloc.pageheap_free_bytes", &left_bytes);
+    const auto took_us = duration_cast<microseconds>(steady_clock::now() - start).count();
+    syslog(LOG_INFO, "released %zu MiB of free heap to the kernel after %s in %lld us (#967)",
+           (free_bytes - std::min(left_bytes, free_bytes)) >> 20, after, static_cast<long long>(took_us));
   }
 }
 
@@ -386,7 +395,7 @@ void TManager::RunLayerCleaner() {
     assert(!Disk::Util::TDiskController::TEvent::LocalEventPool);
     Disk::Util::TDiskController::TEvent::LocalEventPool = new TThreadLocalGlobalPoolManager<Disk::Util::TDiskController::TEvent>::TThreadLocalPool(Disk::Util::TDiskController::TEvent::DiskEventPoolManager.get());
   }
-  auto next_walker_trim = steady_clock::now() + Disk::TLocalWalkerCache::TrimInterval;
+  auto next_walker_trim = steady_clock::now() + Disk::TLocalWalkerCache::DefaultTrimInterval;
   for (;;) {
     LayerCleanerTimer.Pop();
     if (LayerCleanerStopping) {
@@ -397,10 +406,11 @@ void TManager::RunLayerCleaner() {
     DiscardExpiredObjs();
     RemoveLayersFromQueue();
     /* #967: a runner that has stopped reading never trims its walker pool itself, so visit each one. The tour is the
-       one RemoveLayersFromQueue makes. */
+       one RemoveLayersFromQueue makes. A busy runner has trimmed itself on its own Get lately, and MaybeTrim leaves
+       it be. */
     if (Engine->IsDiskBased() && steady_clock::now() >= next_walker_trim) {
       TrimWalkerPools();
-      next_walker_trim = steady_clock::now() + Disk::TLocalWalkerCache::TrimInterval;
+      next_walker_trim = steady_clock::now() + Disk::TLocalWalkerCache::DefaultTrimInterval;
     }
   }
 }
@@ -408,16 +418,20 @@ void TManager::RunLayerCleaner() {
 void TManager::TrimWalkerPools() {
   Fiber::TRunner *const home_runner = Fiber::TRunner::LocalRunner;
   bool moved = false;
-  ForEachScheduler([&moved](Fiber::TRunner *runner) {
+  size_t num_freed = 0UL;
+  ForEachScheduler([&moved, &num_freed](Fiber::TRunner *runner) {
     Fiber::SwitchTo(runner);
     moved = true;
     if (Disk::TLocalWalkerCache *cache = Disk::TLocalWalkerCache::Cache.Get()) {
-      cache->Trim();
+      num_freed += cache->MaybeTrim();
     }
     return true;
   });
   if (moved) {
     Fiber::SwitchTo(home_runner);
+  }
+  if (num_freed) {
+    ReleaseFreeHeap("a walker trim");
   }
 }
 
@@ -653,7 +667,7 @@ void TManager::RunMergeDisk() {
     }  // release MergeDisk lock
     /* As in RunMergeMem: only the id leaves the lock (#614). */
     StepQueuedMergeDisk(repo_id);
-    ReleaseFreeHeap();
+    ReleaseFreeHeap("a disk merge");
   }
   /* De-Register ourselves for CPU time collection */ {
     lock_guard<mutex> lock(MergeThreadCPUMutex);

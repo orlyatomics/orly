@@ -459,7 +459,8 @@ FIXTURE(ClearWithWalkerOut) {
 }
 
 /* #967: a trim frees the pooled walkers no reader took since the last one, and keeps the ones readers did. Each
-   walker's Get may trim on its own once TrimInterval passes; this test runs well inside it. */
+   walker's Get trims on its own once the trim interval passes, so the test sets it to a day, however slowly it runs
+   (TSan), and trims when it means to. */
 FIXTURE(PoolIsTrimmed) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     TRAIITest required_thread_locals;
@@ -492,6 +493,7 @@ FIXTURE(PoolIsTrimmed) {
       TDataFile data_file(engine, TVolume::TDesc::Fast, &mem_layer, data_file_id, data_gen_id, 20UL, 0U, RealTime);
     }
     Disk::TLocalWalkerCache *cache = Disk::TLocalWalkerCache::Cache.Get();
+    cache->SetTrimInterval(hours(24));
     cache->Trim();
     auto new_walker = [&](const Base::TUuid &idx) {
       return std::make_unique<TPresentWalkFileWrapper>(engine, data_file_id, data_gen_id, idx, TKey(make_tuple(0L), &arena, state_alloc));
@@ -525,17 +527,45 @@ FIXTURE(PoolIsTrimmed) {
       EXPECT_TRUE(*walker);
       EXPECT_EQ(cache->GetNumPooled(), 2UL);
     }
-    /* Nothing taken since: the next trim empties it, and the pages they held go with them. */
-    cache->Trim();
+    /* The next trim keeps the one walker taken since the last, and the trim after that empties the pool. */
+    EXPECT_EQ(cache->Trim(), 2UL);
     EXPECT_EQ(cache->GetNumPooled(), 1UL);
-    cache->Trim();
+    EXPECT_EQ(cache->Trim(), 1UL);
     EXPECT_EQ(cache->GetNumPooled(), 0UL);
-    /* Clearing the file leaves nothing held. */ {
-      Disk::TLocalWalkerCache::Cache->Clear(data_file_id, data_gen_id);
+    /* MaybeTrim trims only once the interval has passed. */ {
+      {
+        auto walker_a = new_walker(int_idx);
+        auto walker_b = new_walker(other_idx);
+      }
+      EXPECT_EQ(cache->GetNumPooled(), 2UL);
+      EXPECT_EQ(cache->MaybeTrim(), 0UL);
+      EXPECT_EQ(cache->GetNumPooled(), 2UL);
+      cache->SetTrimInterval(steady_clock::duration::zero());
+      /* The first trim since they went back keeps them; the second frees them. */
+      EXPECT_EQ(cache->MaybeTrim(), 0UL);
+      EXPECT_EQ(cache->MaybeTrim(), 2UL);
       EXPECT_EQ(cache->GetNumPooled(), 0UL);
+      cache->SetTrimInterval(hours(24));
+    }
+    /* A trim takes its walkers out of every loader before it deletes any, since a delete can yield. Here the file is
+       cleared in between, as it could be on this runner while a delete waits, and its loaders go. Deleting the
+       walkers afterwards must not touch them (ASan and TSan check). */ {
+      {
+        std::vector<std::unique_ptr<TPresentWalkFileWrapper>> out;
+        for (size_t i = 0UL; i < 4UL; ++i) {
+          out.push_back(new_walker(i % 2UL ? int_idx : other_idx));
+        }
+      }
+      EXPECT_EQ(cache->Trim(), 0UL);
+      Disk::TLocalWalkerCache::TPresentWalkFile *idle = cache->TakeIdle();
+      EXPECT_EQ(cache->GetNumPooled(), 0UL);
+      cache->Clear(data_file_id, data_gen_id);
+      EXPECT_EQ(Disk::TLocalWalkerCache::DeleteWalkers(idle), 4UL);
+      /* Nothing is left held. */
       TRAIITest::TLocalReadFileCache::Cache->Clear(data_file_id, data_gen_id);
       EXPECT_EQ(CountHeldBlocks(engine, 64UL), 0U);
     }
+    cache->SetTrimInterval(Disk::TLocalWalkerCache::DefaultTrimInterval);
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();
