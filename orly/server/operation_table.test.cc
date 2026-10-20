@@ -26,6 +26,7 @@
 
 #include <orly/server/operation_error.h>
 #include <orly/type/type_czar.h>
+#include <orly/var/util.h>
 
 #include <base/test/kit.h>
 

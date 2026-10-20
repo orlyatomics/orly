@@ -253,6 +253,43 @@ so WebSocket sessions, Tetris, the merges and the reporting port are covered
 too. It fails on any un-suppressed report from `orlyi`, after a negative
 control that makes `orlyi` race on purpose and requires TSan to report it.
 
+### UndefinedBehaviorSanitizer build
+
+A `ubsan` config builds with UndefinedBehaviorSanitizer
+(`-fsanitize=undefined,float-cast-overflow`) to find signed overflow,
+misaligned or null accesses, bad shifts, out-of-range enum/bool loads and the
+like. Like the `asan` config it builds with `-U_FORTIFY_SOURCE`: the fibers
+switch stacks with `longjmp`, which glibc's fortified `longjmp` rejects. It is
+not part of CI yet. Reports are recoverable (the program keeps
+running), so collect them from the log:
+
+```sh
+tools/jhm -c ubsan --test      # builds and runs every test under UBSan
+```
+
+`jhm --test` prints the output of a *failing* test only, and UBSan reports do
+not fail a test, so to see them run the binaries yourself and send the reports
+to files:
+
+```sh
+export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=0:report_error_type=1:log_path=/tmp/ubsan/r
+mkdir -p /tmp/ubsan
+../out_orly/ubsan/orly/indy/context_fold.test
+grep -h 'runtime error:' /tmp/ubsan/r.* | sort | uniq -c | sort -rn
+```
+
+Orlyscript tests go through a UBSan `orlyc`. Keep `log_path` set here:
+`lang_test.py` does not drain a child's output pipe until the child exits, so
+the many megabytes of stack traces a plain run prints will hang it.
+
+```sh
+tools/jhm -c ubsan orly/orlyc orly/server/orlyi
+ORLYC="$PWD/../out_orly/ubsan/orly/orlyc" python3 tools/lang_test.py -d tests/lang_tests
+```
+
+On a machine with very large RAM, cap a standalone `orlyi` (cgroup limit) so
+it does not size its budget from free memory.
+
 ## Security
 
 By default Orly has **no authentication or authorization**. Any client that can reach
