@@ -145,7 +145,7 @@ namespace Base {
     }
 
     /* Move constructor. */
-    TUuid(TUuid &&that) {
+    TUuid(TUuid &&that) noexcept {
       std::swap(Data, that.Data);
     }
 
@@ -171,7 +171,7 @@ namespace Base {
     }
 
     /* Swaperator. */
-    TUuid &operator=(TUuid &&that) {
+    TUuid &operator=(TUuid &&that) noexcept {
       if (this != &that) {
         std::swap(Data, that.Data);
       }

@@ -368,12 +368,15 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
       }
     }
     /* The source is in key order already; sort anyway (newest first within a key), so the output
-       is in a memory layer's order whatever the source's. */
-    std::stable_sort(out_entries.begin() + index_begin, out_entries.end(),
-                     [](const TDataFile::TEntryView &a, const TDataFile::TEntryView &b) {
-                       const auto comp = a.Key.Compare(b.Key);
-                       return Atom::IsLt(comp) || (Atom::IsEq(comp) && a.SequenceNumber > b.SequenceNumber);
-                     });
+       is in a memory layer's order whatever the source's. Check first: stable_sort takes a scratch buffer of up to half
+       the range, which an already ordered range doesn't need. */
+    const auto entry_less = [](const TDataFile::TEntryView &a, const TDataFile::TEntryView &b) {
+      const auto comp = a.Key.Compare(b.Key);
+      return Atom::IsLt(comp) || (Atom::IsEq(comp) && a.SequenceNumber > b.SequenceNumber);
+    };
+    if (!std::is_sorted(out_entries.begin() + index_begin, out_entries.end(), entry_less)) {
+      std::stable_sort(out_entries.begin() + index_begin, out_entries.end(), entry_less);
+    }
   }
 
   // 5. Serialise the folded entries at dest_gen_id. Record the
