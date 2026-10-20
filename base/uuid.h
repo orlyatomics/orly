@@ -300,7 +300,9 @@ namespace Base {
 
     /* Hasher. */
     size_t GetHash() const {
-      return *reinterpret_cast<size_t *>(const_cast<unsigned char *>(Data));
+      size_t hash;
+      std::memcpy(&hash, Data, sizeof(hash));
+      return hash;
     }
 
     const uuid_t &GetRaw() const {

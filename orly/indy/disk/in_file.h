@@ -25,6 +25,7 @@
 #pragma once
 
 #include <cassert>
+#include <cstring>
 #include <exception>
 
 #include <syslog.h>
@@ -189,7 +190,7 @@ namespace Orly {
           //if (OffsetInPage <= (CachePageSize - sizeof(size_t))) {
             //out = *reinterpret_cast<const size_t *>(BufData + OffsetInPage);
           if (OffsetInChunk <= (DataChunkSize - sizeof(size_t))) {
-            out = *reinterpret_cast<const size_t *>(BufData + (ChunkInPage * PhysicalDataChunkSize) + OffsetInChunk);
+            std::memcpy(&out, BufData + (ChunkInPage * PhysicalDataChunkSize) + OffsetInChunk, sizeof(out));
             ByteOffset += sizeof(size_t);
             CheckBuf();
             OffsetInPage = ByteOffset % CachePageSize;
@@ -205,7 +206,7 @@ namespace Orly {
           //if (OffsetInPage <= (CachePageSize - sizeof(int64_t))) {
             //out = *reinterpret_cast<const int64_t *>(BufData + OffsetInPage);
           if (OffsetInChunk <= (DataChunkSize - sizeof(int64_t))) {
-            out = *reinterpret_cast<const int64_t *>(BufData + (ChunkInPage * PhysicalDataChunkSize) + OffsetInChunk);
+            std::memcpy(&out, BufData + (ChunkInPage * PhysicalDataChunkSize) + OffsetInChunk, sizeof(out));
             ByteOffset += sizeof(int64_t);
             CheckBuf();
             OffsetInPage = ByteOffset % CachePageSize;
@@ -237,7 +238,7 @@ namespace Orly {
           //if (OffsetInPage <= (CachePageSize - sizeof(uint16_t))) {
             //out = *reinterpret_cast<const uint16_t *>(BufData + OffsetInPage);
           if (OffsetInChunk <= (DataChunkSize - sizeof(uint16_t))) {
-            out = *reinterpret_cast<const uint16_t *>(BufData + (ChunkInPage * PhysicalDataChunkSize) + OffsetInChunk);
+            std::memcpy(&out, BufData + (ChunkInPage * PhysicalDataChunkSize) + OffsetInChunk, sizeof(out));
             ByteOffset += sizeof(uint16_t);
             CheckBuf();
             OffsetInPage = ByteOffset % CachePageSize;
@@ -253,7 +254,7 @@ namespace Orly {
           //if (OffsetInPage <= (CachePageSize - sizeof(uint32_t))) {
             //out = *reinterpret_cast<const uint32_t *>(BufData + OffsetInPage);
           if (OffsetInChunk <= (DataChunkSize - sizeof(uint32_t))) {
-            out = *reinterpret_cast<const uint32_t *>(BufData + (ChunkInPage * PhysicalDataChunkSize) + OffsetInChunk);
+            std::memcpy(&out, BufData + (ChunkInPage * PhysicalDataChunkSize) + OffsetInChunk, sizeof(out));
             ByteOffset += sizeof(uint32_t);
             CheckBuf();
             OffsetInPage = ByteOffset % CachePageSize;
