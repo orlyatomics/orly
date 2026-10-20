@@ -27,6 +27,7 @@
 #include <orly/sabot/type_dumper.h>
 #include <orly/native/all.h>
 #include <orly/type/group_ref.h>
+#include <orly/type/list.h>
 #include <orly/type/rec_group.h>
 #include <orly/type/sabot_to_type.h>
 #include <orly/type/self_ref.h>
@@ -178,6 +179,26 @@ FIXTURE(VariantLoweringIsCached) {
   EXPECT_TRUE(lowered.OptTypes[1] == Type::TOpt::Get(Type::TInt::Get()));
   EXPECT_TRUE(lowered.OptTypes[2] == Type::TOpt::Get(Type::TStr::Get()));
   EXPECT_TRUE(RoundTrip(var_type) == var_type);
+}
+
+/* An arm whose payload is already optional is stored as an optional of an
+   optional (#978), so "arm not taken" and "arm taken, payload unknown" stay
+   apart. The lowering is the same type a release build always stored, and it
+   reads back as the variant it came from. */
+FIXTURE(VariantOptionalArmLowersToNestedOpt) {
+  const Type::TType opt_str = Type::TOpt::Get(Type::TStr::Get());
+  const Type::TType var_type = Type::TVariant::Get({
+      { "E", opt_str }, { "F", Type::TInt::Get() },
+      { "L", Type::TList::Get(Type::TOpt::Get(Type::TInt::Get())) } });
+  const auto &lowered = var_type.As<Type::TVariant>()->GetLowered();
+  EXPECT_EQ(lowered.OptTypes.size(), 3U);
+  EXPECT_TRUE(lowered.OptTypes[0] == Type::TOpt::GetStored(opt_str));
+  EXPECT_TRUE(lowered.OptTypes[0].As<Type::TOpt>()->GetElem() == opt_str);
+  EXPECT_TRUE(lowered.OptTypes[1] == Type::TOpt::Get(Type::TInt::Get()));
+  EXPECT_TRUE(lowered.OptTypes[2].As<Type::TOpt>()->GetElem().Is<Type::TList>());
+  EXPECT_TRUE(RoundTrip(var_type) == var_type);
+  /* GetStored is Get for a type that is not optional. */
+  EXPECT_TRUE(Type::TOpt::GetStored(Type::TInt::Get()) == Type::TOpt::Get(Type::TInt::Get()));
 }
 
 FIXTURE(RecordElemsByIdxIsCached) {

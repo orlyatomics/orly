@@ -5,7 +5,9 @@
    directory outside the repo) and copy V15...h, V2i4LeafLX04Node.h,
    V2i1AO01B.h and O2i1ns4name.h from orly/rt/objects to par, leaf, inner
    and rec.frozen.h, keeping each file's leading comment and redirecting
-   its <orly/rt/objects/*.h> includes to the frozen copies.
+   its orly/rt/objects includes to the frozen copies. The same goes for
+   opt_t (arms with optional payloads, #978), whose V5...h and O1Pi1a.h
+   become opt.frozen.h and optrec.frozen.h.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -27,4 +29,8 @@ rec_t is <{.name: str, .n: int}>;
 par_t is <| Bool(bool) | Dict({str: rec_t}) | Empty | Ident(id) | Int(int) | Nested(inner_t) | Rec(rec_t) | Recur(leaf_t) | Set({rec_t}) | Str(str) | TD(time_diff) | TP(time_pnt) | X_u(int) | Xa(int) | xb(int) |>;
 get = (*<[k, 1]>::(par_t)) where {
   k = given::(par_t);
+};
+opt_t is <| E(str?) | F(int) | G(int?) | H(<{.a: int?}>) | L([int?]) |>;
+get_opt = (*<[k, 2]>::(opt_t)) where {
+  k = given::(opt_t);
 };

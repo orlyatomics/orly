@@ -34,6 +34,16 @@ namespace Orly {
 
       static TType Get(const TType &type);
 
+      /* An optional of a type that may itself be optional. The language has no
+         optional of an optional, so Get() asserts against one. Storage needs
+         it: a variant is stored as a record with one optional field per arm
+         (TVariant::GetLowered), so an arm whose payload is `T?` is stored as
+         `T??`. The outer optional says whether the arm was taken and the inner
+         one is the payload, which keeps "arm not taken" apart from "arm taken
+         with an unknown payload" (#978). Only the storage lowering and its
+         inverse (sabot_to_type) call this. */
+      static TType GetStored(const TType &type);
+
       private:
 
       TOpt(const TType &elem) : TUnaryType(elem) {}

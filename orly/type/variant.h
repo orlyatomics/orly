@@ -79,8 +79,8 @@ namespace Orly {
 
          that both Type::NewSabot (orly/type/new_sabot.cc) and the value
          encoder Var::SS::TVariantRec (orly/var/new_sabot.h) produce.
-         `OptTypes[i]` is `TOpt::Get(payload_i)` for the i-th arm in tag
-         order. `WhichPos` is where `$which` falls among the record's fields
+         `OptTypes[i]` is `TOpt::GetStored(payload_i)` for the i-th arm
+         in tag order (`payload_i??` when the payload is already optional). `WhichPos` is where `$which` falls among the record's fields
          in field-name order (the order a record sabot walks them); arm i is
          field `i` before that position and field `i + 1` from it on.
          `HasGroupRef` caches Type::HasGroupRef on this variant. */

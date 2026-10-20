@@ -29,6 +29,10 @@ TType TOpt::Get(const Type::TType &type) {
   return TUnaryType<TOpt>::Get(type);
 }
 
+TType TOpt::GetStored(const Type::TType &type) {
+  return TUnaryType<TOpt>::Get(type);
+}
+
 TOpt::~TOpt() {}
 
 void TOpt::Write(std::ostream &strm) const {
