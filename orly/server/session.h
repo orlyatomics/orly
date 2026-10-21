@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -192,8 +193,7 @@ namespace Orly {
           public:
 
           explicit TFastRunnerSwitch(TServer *server, size_t weight = 1UL)
-              : Balancer(server->FastRunnerBalancer.get()), Weight(std::max(weight, 1UL)) {
-            assert(server);
+              : Balancer(&*server->FastRunnerBalancer), Weight(std::max(weight, 1UL)) {
             Indy::Fiber::TRunner *local = Indy::Fiber::TRunner::LocalRunner;
             for (size_t i = 0UL; i < server->FastRunnerVec.size(); ++i) {
               if (server->FastRunnerVec[i].get() == local) {

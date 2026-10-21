@@ -16,10 +16,10 @@ REPO_ROOT="$(cd ../.. && pwd)"
 ORLY_OUT="${ORLY_OUT:-$REPO_ROOT/../out_orly/release}"
 ORLYI="${ORLYI:-$ORLY_OUT/orly/server/orlyi}"
 ORLYC="$ORLY_OUT/orly/orlyc"
-WS_PORT=${WS_PORT:-19742}
-REPORT_PORT=${REPORT_PORT:-19743}
-PORT=${PORT:-19740}
-SLAVE_PORT=${SLAVE_PORT:-19741}
+WS_PORT=${WS_PORT:-19812}
+REPORT_PORT=${REPORT_PORT:-19813}
+PORT=${PORT:-19810}
+SLAVE_PORT=${SLAVE_PORT:-19811}
 
 for bin in "$ORLYI" "$ORLYC"; do
   if [ ! -x "$bin" ]; then

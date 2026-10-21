@@ -308,8 +308,13 @@ namespace Orly {
 
       /* Tell `pacer` every `every_rows` rows this context walks, or the equivalent in sequence
          steps (#1015), until ClearReadBudget(). 0 doesn't pace. `pacer` must outlive the call. */
-      void SetReadPacer(Rt::TReadPacer *pacer, size_t every_rows) noexcept {
+      void SetReadPacer(Rt::TReadPacer *pacer, size_t every_rows) {
         InFlightBudget.SetPacer(pacer, every_rows * Rt::TReadBudget::RowWork);
+        /* Sequence steps reach the budget only through the fiber's scope, which an unbudgeted
+           call doesn't install; pacing needs it either way. */
+        if (pacer && every_rows && !InFlightScope) {
+          InFlightScope.emplace(&InFlightBudget);
+        }
       }
 
       /* The in-flight part of the budget (#729). */
