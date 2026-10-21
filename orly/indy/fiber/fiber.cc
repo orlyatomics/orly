@@ -131,9 +131,17 @@ void TRunner::Run() {
            lands in our own slot, so a steady stream of inbound frames left it
            waiting many laps (#1016). They
            go onto the ready queue before the inbound frames, so within a lap
-           the inbound frames still run first. */
-        for (size_t i = 0; i < TotalNumRunners; ++i) {
-          DrainInboundQueue(HandoffSlot(RunnerId, i).Ptr);
+           the inbound frames still run first.
+           Pushers set HandoffPending after their push, so a lap that swaps it
+           from true sees every push made before that store; a push that
+           lands after our swap sets it again for the next lap. The store is
+           unconditional on purpose: a pusher that skipped it on seeing the
+           flag already set could race our swap and leave its frame unseen
+           for as long as we stay busy. */
+        if (ParkSlots[RunnerId].HandoffPending.exchange(false, std::memory_order_acquire)) {
+          for (size_t i = 0; i < TotalNumRunners; ++i) {
+            DrainInboundQueue(HandoffSlot(RunnerId, i).Ptr);
+          }
         }
         DrainInboundQueue(InboundFrameQueue);
       }
