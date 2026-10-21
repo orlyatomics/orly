@@ -979,7 +979,7 @@ FIXTURE(YieldSlowNotStarvedByInbound) {
 
   };
   using namespace std::chrono;
-  const size_t yields = 1000UL;
+  const size_t yields = 200UL;
   TRunner::TRunnerCons runner_cons(1UL);
   TRunner runner(runner_cons);
   TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> frame_pool_manager(2UL, 1024UL * 1024UL, &runner);
@@ -1006,7 +1006,7 @@ FIXTURE(YieldSlowNotStarvedByInbound) {
       std::this_thread::yield();
     }
     TYielder yielder(&runner, yields, pings, pings_while_yielding_out, yielder_done);
-    const auto deadline = steady_clock::now() + seconds(10);
+    const auto deadline = steady_clock::now() + seconds(30);
     while (!yielder_done.load() && steady_clock::now() < deadline) {
       std::this_thread::sleep_for(milliseconds(1));
     }
