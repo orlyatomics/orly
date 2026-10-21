@@ -28,6 +28,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cstdint>
 #include <stdexcept>
 #include <syslog.h>
 
@@ -46,6 +47,44 @@ namespace Orly {
     namespace Disk {
 
       namespace Util {
+
+        /* Hint to the core that the caller is in a spin-wait loop. On x86 `pause` stops the speculative
+           loads of the spin from flooding the pipeline and yields the core to the sibling hyperthread; on
+           aarch64 `yield` serves the same purpose. A no-op elsewhere. */
+        inline void SpinPause() {
+          #if defined(__x86_64__) || defined(__i386__)
+          __builtin_ia32_pause();
+          #elif defined(__aarch64__)
+          __asm__ __volatile__("yield" ::: "memory");
+          #endif
+        }
+
+        /* Backoff for a spin on a slot lock. The lock is held for a handful of instructions, so we pause
+           for a short, doubling burst. If the holder has been descheduled the lock can stay held for a whole
+           time slice, so after enough rounds we give up our own slice instead of burning it. */
+        class TSpinWait {
+          public:
+
+          void operator()() {
+            for (uint32_t i = 0; i < Pauses; ++i) {
+              SpinPause();
+            }
+            if (Pauses < MaxPauses) {
+              Pauses *= 2;
+            } else if (++Rounds >= YieldAfterRounds) {
+              Rounds = 0;
+              sched_yield();
+            }
+          }
+
+          private:
+
+          static constexpr uint32_t MaxPauses = 64;
+          static constexpr uint32_t YieldAfterRounds = 64;
+          uint32_t Pauses = 1;
+          uint32_t Rounds = 0;
+
+        };  // TSpinWait
 
         /* Thrown when every page buffer is referenced, so none can be reclaimed. A read that needs a
            page has to fail; a write-through insert can skip the page instead (see TDiskEngine). */
@@ -229,7 +268,11 @@ namespace Orly {
             private:
 
             mutable std::atomic<size_t> PageId;
-            size_t RefCount;
+            /* Written under the slot lock (PageId == LockedSlot), except that a holder of an existing pin may
+               add or drop one extra reference without the lock (see Retain / Release). That is why it is
+               atomic. The 0 <-> 1 transitions, which move the slot in and out of the LRU, are always made
+               under the lock. */
+            std::atomic<size_t> RefCount;
             /* BufAddr represents the offset of the page from the start of the cache's in a multiple of the page size:
                eg. offset 4 would be the 4th page into the cache's data buffer, or start + (4 * pagesize)
                - the highest order bit represents whether data has finished loading
@@ -315,9 +358,11 @@ namespace Orly {
             __builtin_prefetch(&slot, 0, 3);
             __builtin_prefetch(reinterpret_cast<uint8_t *>(&slot) + sizeof(TSlot), 0, 3);
             std::atomic<size_t> *const cur_slot = &(slot.PageId);
+            TSpinWait spin_wait;
             for (;;) {
               size_t val = std::atomic_load(cur_slot);
               if (val == LockedSlot) {
+                spin_wait();
                 continue;
               } else if (val == EmptySlot) {
                 /* TRY transition from EmptySlot -> LockedSlot */
@@ -456,6 +501,31 @@ namespace Orly {
             }
           }
 
+          /* Takes one more reference on a page the caller already holds a reference to, given the
+             main and data slots that `Get` returned for it. This needs no slot lock: while the caller's
+             reference is held the count is at least 1, so the slot is out of the LRU and cannot be
+             reclaimed or moved, and the 0 <-> 1 transitions that need the lock cannot happen. Returns
+             `main_slot`, so it can stand in for `Get` where the caller has the slots in hand. Drop the
+             reference with `Release(main_slot, data_slot, page_id)`. */
+          inline TSlot *Retain(TSlot *main_slot, TSlot *data_slot) {
+            assert(data_slot->RefCount.load(std::memory_order_relaxed) > 0UL);
+            data_slot->RefCount.fetch_add(1UL, std::memory_order_relaxed);
+            return main_slot;
+          }
+
+          /* As `Release(main_slot, page_id)`, for a caller that also has the data slot. If some other
+             reference is still held, drop ours without taking the slot lock. Only the drop to zero, which
+             puts the slot back in the LRU, needs the lock. */
+          inline void Release(TSlot *main_slot, TSlot *data_slot, size_t page_id) {
+            size_t count = data_slot->RefCount.load(std::memory_order_relaxed);
+            while (count > 1UL) {
+              if (data_slot->RefCount.compare_exchange_weak(count, count - 1UL, std::memory_order_release, std::memory_order_relaxed)) {
+                return;
+              }
+            }
+            Release(main_slot, page_id);
+          }
+
           /* Decrements the reference count on the given page_id for this slot. */
           inline void Release(TSlot *slot_ptr, size_t page_id) {
             assert(&SlotArray[page_id % NumSlots] == slot_ptr);
@@ -464,10 +534,12 @@ namespace Orly {
             TSlot &slot = *slot_ptr;
             std::atomic<size_t> *const cur_slot = &(slot.PageId);
             /* lock the slot */
+            TSpinWait spin_wait;
             for (;;) {
               size_t val = std::atomic_load(cur_slot);
               assert(val != EmptySlot);
               if (val == LockedSlot) {
+                spin_wait();
                 continue;
               } else {
                 /* TRY transition from val -> LockedSlot */
@@ -534,9 +606,11 @@ namespace Orly {
             __builtin_prefetch(&slot, 0, 3);
             __builtin_prefetch(reinterpret_cast<uint8_t *>(&slot) + sizeof(TSlot), 0, 3);
             std::atomic<size_t> *const cur_slot = &(slot.PageId);
+            TSpinWait spin_wait;
             for (;;) {
               size_t val = std::atomic_load(cur_slot);
               if (val == LockedSlot) {
+                spin_wait();
                 continue;
               } else if (val == EmptySlot) {
                 /* It's already empty, perfect, we're done! */

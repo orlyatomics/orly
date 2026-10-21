@@ -985,9 +985,9 @@ namespace Orly {
       /*** Inline ***/
 
       template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, size_t LocalCacheSize, bool ScanAheadAllowed>
-      inline void TDiskArena<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, LocalCacheSize, ScanAheadAllowed>::ReleaseNote(const Atom::TCore::TNote *note, Atom::TCore::TOffset offset, void *data1, void */*data2*/, void *data3) {
+      inline void TDiskArena<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, LocalCacheSize, ScanAheadAllowed>::ReleaseNote(const Atom::TCore::TNote *note, Atom::TCore::TOffset offset, void *data1, void *data2, void *data3) {
         if (data1) { /* This data fit in the block, release the block. */
-          Cache->Release(reinterpret_cast<typename Util::TCache<PhysicalCachePageSize>::TSlot *>(data1), reinterpret_cast<size_t>(data3));
+          Cache->Release(reinterpret_cast<typename Util::TCache<PhysicalCachePageSize>::TSlot *>(data1), reinterpret_cast<typename Util::TCache<PhysicalCachePageSize>::TSlot *>(data2), reinterpret_cast<size_t>(data3));
           //File->GetService()->ReleaseBuf(reinterpret_cast<TPageCache::TObj *>(data));
         } else { /* the data did not fit in the block, free the buffer we allocated. */
           assert(offset / DataChunkSize != (offset + note->GetRawSize() + sizeof(Atom::TCore::TNote)) / DataChunkSize);
@@ -1014,8 +1014,10 @@ namespace Orly {
         /* try to just point at the memory in the cache block if the note is contiguous. */
         if (note_offset / DataChunkSize == (note_offset + note_size) / DataChunkSize) {
           data1 = nullptr;
-          typename Util::TCache<PhysicalCachePageSize>::TSlot *data_slot;
-          typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Get(loaded_page_id, data_slot);
+          /* The stream holds a reference on the page it just went to, so take ours from it. That avoids the
+             slot lock, and the LRU churn when the stream is the only holder. */
+          typename Util::TCache<PhysicalCachePageSize>::TSlot *const data_slot = Stream.GetLoadedDataSlot();
+          typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Retain(Stream.GetLoadedMainSlot(), data_slot);
           try {
             data1 = main_slot;
             data2 = data_slot;
@@ -1023,7 +1025,7 @@ namespace Orly {
             data_slot->SyncGetData(HERE, Priority, Cache, BufKind, Source::DiskArena, loaded_page_id, SyncTrigger);
             SyncTrigger.Wait();
           } catch (...) {
-            Cache->Release(main_slot, loaded_page_id);
+            Cache->Release(main_slot, data_slot, loaded_page_id);
             data1 = nullptr;
             throw;
           }
@@ -1073,8 +1075,9 @@ namespace Orly {
         if (note_offset / DataChunkSize == (note_offset + note_size) / DataChunkSize) {
           try {
             const size_t loaded_page_id = Stream.GetLoadedPageId();
-            typename Util::TCache<PhysicalCachePageSize>::TSlot *data_slot;
-            typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Get(loaded_page_id, data_slot);
+            /* As above: take the reference from the stream's. */
+            typename Util::TCache<PhysicalCachePageSize>::TSlot *const data_slot = Stream.GetLoadedDataSlot();
+            typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Retain(Stream.GetLoadedMainSlot(), data_slot);
             data1 = main_slot;
             data2 = data_slot;
             data3 = reinterpret_cast<void *>(loaded_page_id);
