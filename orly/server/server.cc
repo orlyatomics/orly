@@ -486,6 +486,14 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "is refused with a read_too_large error, so a loop over no rows still ends. Default: one "
       "per byte of read_budget_mb. 0 means no limit."
   );
+  Param(
+      &TCmd::ReadYieldRows, "read_yield_rows", Optional, "read_yield_rows\0",
+      "How many rows a method call walks between looks at whether another statement is "
+      "waiting on its fast runner (issue #1015). If one is, the call yields, so a point read "
+      "doesn't wait behind a whole scan; the call also counts toward its runner's load as it "
+      "walks, so new work steers around it. Sequence elements count as 1/64 of a row. "
+      "0 turns both off. Default: 16."
+  );
 
   /******** Object Pools ********/
 
@@ -673,6 +681,7 @@ TServer::TCmd::TCmd()
       ReadBudgetMB(0UL),
       ReadBudgetRows(0UL),
       ReadBudgetSteps(0UL),
+      ReadYieldRows(16UL),
       DurableAcks("local"),
       WalMB(256),
       OperationRetentionCount(4096),

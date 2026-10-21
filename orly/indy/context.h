@@ -298,10 +298,18 @@ namespace Orly {
          goes, so call it on the fiber that will run the call. */
       void SetReadBudget(size_t max_rows, size_t max_arena_bytes, const Atom::TSuprena *arena, size_t max_steps);
 
-      /* Lift the budget, so the context can be used past it (to resolve a write's effects). */
+      /* Lift the budget, so the context can be used past it (to resolve a write's effects).
+         Stops pacing too. */
       void ClearReadBudget() noexcept {
         MaxRows = MaxArenaBytes = Unlimited;
         InFlightScope.reset();
+        InFlightBudget.SetPacer(nullptr, 0UL);
+      }
+
+      /* Tell `pacer` every `every_rows` rows this context walks, or the equivalent in sequence
+         steps (#1015), until ClearReadBudget(). 0 doesn't pace. `pacer` must outlive the call. */
+      void SetReadPacer(Rt::TReadPacer *pacer, size_t every_rows) noexcept {
+        InFlightBudget.SetPacer(pacer, every_rows * Rt::TReadBudget::RowWork);
       }
 
       /* The in-flight part of the budget (#729). */
@@ -320,6 +328,7 @@ namespace Orly {
         if (RowsWalked > MaxRows || (MaxArenaBytes != Unlimited && BudgetArena->GetByteSize() > MaxArenaBytes)) [[unlikely]] {
           OnOverBudget();
         }
+        InFlightBudget.Tick(Rt::TReadBudget::RowWork);
       }
 
       /* Throws TReadTooLarge if the arena has outgrown the budget. For the end of a read, whose

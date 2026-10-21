@@ -179,6 +179,22 @@ FIXTURE(ChargeInPlace) {
   EXPECT_EQ(balancer.GetLoad(index), 1UL);
 }
 
+FIXTURE(LeaseGrows) {
+  TRunnerBalancer balancer(2UL);
+  TLease scan = balancer.Acquire();
+  const size_t index = scan.GetIndex();
+  /* A read that turns out long weighs more as it goes (#1015)... */
+  scan.Add(10UL);
+  EXPECT_EQ(balancer.GetLoad(index), 11UL);
+  for (size_t i = 0UL; i < 5UL; ++i) {
+    EXPECT_NE(balancer.Acquire().GetIndex(), index);
+  }
+  /* ...and gives all of it back at once. */
+  scan.Release();
+  EXPECT_EQ(balancer.GetLoad(index), 0UL);
+  EXPECT_EQ(balancer.Acquire().GetIndex(), index);
+}
+
 FIXTURE(Sizes) {
   EXPECT_THROW(std::invalid_argument, [] { TRunnerBalancer balancer(0UL); (void)balancer; });
   TRunnerBalancer one(1UL);

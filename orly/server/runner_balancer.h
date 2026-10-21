@@ -17,8 +17,9 @@
    Counting statements alone still lets a few reads in behind a long one: with many sessions,
    every runner has a statement or two in flight, so the one holding a single long batch often
    looks no busier than the rest. A lease therefore has a weight, the work it stands for in units
-   of one small statement; a batch weighs as many as its calls (Charge(), once it knows), and the
-   balancer steers around it until the other runners have that much queued too.
+   of one small statement; a batch weighs as many as its calls (Charge(), once it knows), a read
+   gains weight as it walks rows (TLease::Add(), #1015), and the balancer steers around it until
+   the other runners have that much queued too.
 
    The loads are a hint, not an invariant: two statements assigned at the same moment may both
    pick the same runner. That costs no more than round-robin did, so the counters need no
@@ -93,6 +94,14 @@ namespace Orly {
         [[nodiscard]] size_t GetIndex() const noexcept {
           assert(Balancer);
           return Index;
+        }
+
+        /* Add to the lease's weight, for a statement that turns out bigger than it looked: a
+           read charges its runner as it walks rows (#1015). */
+        void Add(size_t weight) noexcept {
+          assert(Balancer);
+          Balancer->Slots[Index].Load.fetch_add(weight, std::memory_order_relaxed);
+          Weight += weight;
         }
 
         /* Take the statement off its runner's load, once; leaves the lease empty. */

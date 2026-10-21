@@ -1,0 +1,6 @@
+package #1;
+/* Scan-yield smoke (#1015): rows in one prefix, a scan over all of them, and a point read. */
+put = ((true) effecting { new <['r', n]> <- n; }) where { n = given::(int); };
+get = (*<['r', n]>::(int?)) where { n = given::(int); };
+/* Walks every row. */
+count_all = (keys (int) @ <['r', free::(int)]>) reduce start 0 + 1;
