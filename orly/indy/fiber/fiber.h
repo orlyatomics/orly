@@ -628,6 +628,10 @@ namespace Orly {
            protocol. */
         bool HasInboundFrames() const;
 
+        /* Move every frame pushed onto 'head' (InboundFrameQueue or one of
+           our handoff slots) onto ReadyToRunQueue. */
+        void DrainInboundQueue(std::atomic<TFrame *> &head);
+
         /* Block until a frame is handed to us or ShutDown() is called (or a
            safety-net timeout passes). */
         void Park();

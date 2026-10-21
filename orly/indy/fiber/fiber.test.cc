@@ -877,3 +877,160 @@ FIXTURE(ShutDownWakesParkedRunner) {
   std::cout << "slowest stop of a parked runner: " << worst_ms << " ms" << std::endl;
   EXPECT_LT(worst_ms, 60.0);
 }
+
+/* A frame that YieldSlow()s lands in its own runner's handoff slot. The
+   runner used to drain its handoff slots only on laps that found
+   InboundFrameQueue empty, so a steady stream of inbound frames starved the
+   yielded frame (#1016). Here a pinger fiber keeps the inbound queue busy on
+   every lap: before it waits, a plain thread pushes it back onto the
+   runner's inbound queue. A second fiber YieldSlow()s in a loop and must
+   finish in about one lap per yield. Before the fix it made no progress
+   until the pinger stopped. */
+FIXTURE(YieldSlowNotStarvedByInbound) {
+  class TPinger
+      : public TRunnable {
+    NO_COPY(TPinger);
+    public:
+
+    TPinger(TRunner *runner, std::atomic<bool> &armed, std::atomic<bool> &stop,
+            std::atomic<size_t> &pings, std::atomic<bool> &done)
+        : Armed(armed), Stop(stop), Pings(pings), Done(done) {
+      Frame = TFrame::LocalFramePool->Alloc();
+      try {
+        Frame->Latch(runner, this, static_cast<TRunnable::TFunc>(&TPinger::Run));
+      } catch (...) {
+        TFrame::LocalFramePool->Free(Frame);
+        throw;
+      }
+    }
+
+    ~TPinger() {
+      TFrame::LocalFramePool->Free(Frame);
+    }
+
+    TFrame *GetFrame() const {
+      return Frame;
+    }
+
+    void Run() {
+      while (!Stop.load()) {
+        /* Have the pusher put us back on the inbound queue, and wait until
+           it has, so the next lap is sure to find it non-empty. */
+        Armed.store(true);
+        while (Armed.load()) {
+          std::this_thread::yield();
+        }
+        ++Pings;
+        Wait();
+      }
+      Done.store(true);
+    }
+
+    private:
+
+    TFrame *Frame;
+
+    std::atomic<bool> &Armed, &Stop;
+
+    std::atomic<size_t> &Pings;
+
+    std::atomic<bool> &Done;
+
+  };
+  class TYielder
+      : public TRunnable {
+    NO_COPY(TYielder);
+    public:
+
+    TYielder(TRunner *runner, size_t yields, std::atomic<size_t> &pings,
+             std::atomic<size_t> &pings_while_yielding, std::atomic<bool> &done)
+        : Yields(yields), Pings(pings), PingsWhileYielding(pings_while_yielding), Done(done) {
+      Frame = TFrame::LocalFramePool->Alloc();
+      try {
+        Frame->Latch(runner, this, static_cast<TRunnable::TFunc>(&TYielder::Run));
+      } catch (...) {
+        TFrame::LocalFramePool->Free(Frame);
+        throw;
+      }
+    }
+
+    ~TYielder() {
+      TFrame::LocalFramePool->Free(Frame);
+    }
+
+    void Run() {
+      const size_t start = Pings.load();
+      for (size_t i = 0; i < Yields; ++i) {
+        YieldSlow();
+      }
+      PingsWhileYielding.store(Pings.load() - start);
+      Done.store(true);
+    }
+
+    private:
+
+    TFrame *Frame;
+
+    const size_t Yields;
+
+    std::atomic<size_t> &Pings, &PingsWhileYielding;
+
+    std::atomic<bool> &Done;
+
+  };
+  using namespace std::chrono;
+  const size_t yields = 200UL;
+  TRunner::TRunnerCons runner_cons(1UL);
+  TRunner runner(runner_cons);
+  TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> frame_pool_manager(2UL, 1024UL * 1024UL, &runner);
+  TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool(&frame_pool_manager);
+  bool yielder_finished_in_time = false;
+  size_t pings_while_yielding = 0UL;
+  try {
+    std::atomic<bool> armed(false), stop_pinger(false), stop_pusher(false), pinger_done(false), yielder_done(false);
+    std::atomic<size_t> pings(0UL), pings_while_yielding_out(0UL);
+    thread runner_thread([&] { runner.Run(); });
+    TPinger pinger(&runner, armed, stop_pinger, pings, pinger_done);
+    /* A plain thread, so its pushes go onto the runner's InboundFrameQueue. */
+    thread pusher([&] {
+      while (!stop_pusher.load()) {
+        if (armed.load()) {
+          runner.ScheduleFrame(pinger.GetFrame());
+          armed.store(false);
+        } else {
+          std::this_thread::yield();
+        }
+      }
+    });
+    while (pings.load() < 100UL) {
+      std::this_thread::yield();
+    }
+    TYielder yielder(&runner, yields, pings, pings_while_yielding_out, yielder_done);
+    const auto deadline = steady_clock::now() + seconds(30);
+    while (!yielder_done.load() && steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(milliseconds(1));
+    }
+    yielder_finished_in_time = yielder_done.load();
+    /* Stop the pinger; a starved yielder then drains and finishes too. */
+    stop_pinger.store(true);
+    while (!pinger_done.load() || !yielder_done.load()) {
+      std::this_thread::sleep_for(milliseconds(1));
+    }
+    stop_pusher.store(true);
+    pusher.join();
+    runner.ShutDown();
+    runner_thread.join();
+    pings_while_yielding = pings_while_yielding_out.load();
+  } catch (...) {
+    delete TFrame::LocalFramePool;
+    TFrame::LocalFramePool = nullptr;
+    throw;
+  }
+  delete TFrame::LocalFramePool;
+  TFrame::LocalFramePool = nullptr;
+  std::cout << "inbound frames run per slow yield: " << static_cast<double>(pings_while_yielding) / yields << std::endl;
+  if (EXPECT_TRUE(yielder_finished_in_time)) {
+    /* One lap per yield, give or take the laps at either end. */
+    EXPECT_LE(pings_while_yielding, 2UL * yields);
+  }
+}

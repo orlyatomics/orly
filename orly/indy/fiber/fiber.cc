@@ -112,8 +112,6 @@ void TRunner::Run() {
      fiber. We borrow it -- it must never be created or destroyed here. */
   MainFiber.tsan_fiber = TSanFiber::Current();
   #endif
-  TFrame *rt_queue = nullptr; /* we use this to push come back right away jobs to the front... */
-  TFrame *next_frame = nullptr; /* we use this to loop through a queue... */
   try {
     /* Idle laps (each one polls every queue we can be handed frames on)
        before we park. The spin keeps a busy server's handoffs free of
@@ -123,76 +121,21 @@ void TRunner::Run() {
     for (; likely(KeepRunning.load());) {
       assert(!ReadyToRunQueue);
       /* check for inbound frames */ {
-        if (InboundFrameQueue.load(std::memory_order_acquire)) {
-          assert(rt_queue == nullptr);
-          /* Drain the whole Treiber stack in one shot. Acquire pairs with the
-             pushers' release CAS so the frames' InboundQueueNextFrame links we
-             walk below are visible. */
-          TFrame *cur_tail = InboundFrameQueue.exchange(nullptr, std::memory_order_acquire);
-          for (TFrame *frame = cur_tail; frame; frame = next_frame) {
-            assert(frame->InboundQueueNextFrame != frame);
-            next_frame = frame->InboundQueueNextFrame;
-            if (!frame->ComeBackRightAway) {
-              frame->InboundQueueNextFrame = ReadyToRunQueue;
-              ReadyToRunQueue = frame;
-              //frame->QueueMembership.Insert(&MyFrameQueue, InvCon::Rev);
-            } else {
-              frame->InboundQueueNextFrame = rt_queue;
-              rt_queue = frame;
-            }
-            //printf("TRunner [%p] push frame [%p]\n", this, frame);
-          }
-          /* here we have to choose between putting the most recent or least recent "high priority" (come_back_soon) fiber first. We currently
-             implement the more recent one (as opposed to fair one) because it's most likely to still have data in the cache... */
-          for (TFrame *frame = rt_queue; frame; frame = next_frame) {
-            //frame->QueueMembership.Insert(&MyFrameQueue, InvCon::Rev);
-            next_frame = frame->InboundQueueNextFrame;
-            frame->InboundQueueNextFrame = ReadyToRunQueue;
-            ReadyToRunQueue = frame;
-          }
-          rt_queue = nullptr;
-        } else {
-          /* Drain the handoff slots our peers push for us. The slots live in
-             the TRunnerCons-owned matrix, deliberately NOT on the peer
-             runners: a peer can be destroyed while we are mid-poll (a
-             manager's member runner dying during teardown), so we must never
-             dereference a peer TRunner here (#463). */
-          for (size_t i = 0; i < TotalNumRunners; ++i) {
-            std::atomic<TFrame *> &cur_inbound_queue = HandoffSlot(RunnerId, i).Ptr;
-            if (cur_inbound_queue.load(std::memory_order_acquire)) {
-              assert(rt_queue == nullptr);
-              /* Drain the whole Treiber stack; acquire pairs with the
-                 pushers' release CAS (see InboundFrameQueue above). */
-              TFrame *cur_tail = cur_inbound_queue.exchange(nullptr, std::memory_order_acquire);
-              for (TFrame *frame = cur_tail; frame; frame = next_frame) {
-                assert(frame->InboundQueueNextFrame != frame);
-                next_frame = frame->InboundQueueNextFrame;
-                if (!frame->ComeBackRightAway) {
-                  frame->InboundQueueNextFrame = ReadyToRunQueue;
-                  ReadyToRunQueue = frame;
-                  //frame->QueueMembership.Insert(&MyFrameQueue, InvCon::Rev);
-                  //__builtin_prefetch(frame->MyFiber.jmp, 0, 2);
-                } else {
-                  frame->InboundQueueNextFrame = rt_queue;
-                  rt_queue = frame;
-                }
-                //printf("TRunner [%p] push frame [%p]\n", this, frame);
-              }
-              /* here we have to choose between putting the most recent or least recent "high priority" (come_back_soon) fiber first. We currently
-                 implement the more recent one (as opposed to fair one) because it's most likely to still have data in the cache... */
-              for (TFrame *frame = rt_queue; frame; frame = next_frame) {
-                next_frame = frame->InboundQueueNextFrame;
-                frame->InboundQueueNextFrame = ReadyToRunQueue;
-                ReadyToRunQueue = frame;
-                //frame->QueueMembership.Insert(&MyFrameQueue, InvCon::Rev);
-                #ifdef FAST_SWITCH
-                __builtin_prefetch(frame->MyFiber.jmp, 0, 2);
-                #endif
-              }
-              rt_queue = nullptr;
-            }
-          }
+        /* Drain the handoff slots our peers push for us. The slots live in
+           the TRunnerCons-owned matrix, deliberately NOT on the peer
+           runners: a peer can be destroyed while we are mid-poll (a
+           manager's member runner dying during teardown), so we must never
+           dereference a peer TRunner here (#463).
+           We drain them on every lap. We used to drain them only on laps
+           that found InboundFrameQueue empty, but a frame that YieldSlow()s
+           lands in our own slot, so a steady stream of inbound frames left it
+           waiting many laps (#1016). They
+           go onto the ready queue before the inbound frames, so within a lap
+           the inbound frames still run first. */
+        for (size_t i = 0; i < TotalNumRunners; ++i) {
+          DrainInboundQueue(HandoffSlot(RunnerId, i).Ptr);
         }
+        DrainInboundQueue(InboundFrameQueue);
       }
       if (ReadyToRunQueue) {
         laps_without_work = 0UL;
@@ -247,6 +190,38 @@ void TRunner::Run() {
 }
 
 #pragma GCC diagnostic pop
+
+void TRunner::DrainInboundQueue(std::atomic<TFrame *> &head) {
+  if (!head.load(std::memory_order_acquire)) {
+    return;
+  }
+  /* Drain the whole Treiber stack in one shot. Acquire pairs with the
+     pushers' release CAS so the frames' InboundQueueNextFrame links we walk
+     below are visible. */
+  TFrame *rt_queue = nullptr; /* we use this to push come back right away jobs to the front... */
+  TFrame *next_frame = nullptr;
+  for (TFrame *frame = head.exchange(nullptr, std::memory_order_acquire); frame; frame = next_frame) {
+    assert(frame->InboundQueueNextFrame != frame);
+    next_frame = frame->InboundQueueNextFrame;
+    if (!frame->ComeBackRightAway) {
+      frame->InboundQueueNextFrame = ReadyToRunQueue;
+      ReadyToRunQueue = frame;
+    } else {
+      frame->InboundQueueNextFrame = rt_queue;
+      rt_queue = frame;
+    }
+  }
+  /* here we have to choose between putting the most recent or least recent "high priority" (come_back_soon) fiber first. We currently
+     implement the more recent one (as opposed to fair one) because it's most likely to still have data in the cache... */
+  for (TFrame *frame = rt_queue; frame; frame = next_frame) {
+    next_frame = frame->InboundQueueNextFrame;
+    frame->InboundQueueNextFrame = ReadyToRunQueue;
+    ReadyToRunQueue = frame;
+    #ifdef FAST_SWITCH
+    __builtin_prefetch(frame->MyFiber.jmp, 0, 2);
+    #endif
+  }
+}
 
 bool TRunner::HasInboundFrames() const {
   if (InboundFrameQueue.load(std::memory_order_seq_cst)) {
