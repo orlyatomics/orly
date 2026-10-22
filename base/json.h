@@ -19,9 +19,11 @@
 #pragma once
 
 #include <cassert>
+#include <bit>
 #include <cctype>
 #include <charconv>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iomanip>
@@ -90,17 +92,41 @@ namespace Base {
       strm.write(out.data(), static_cast<std::streamsize>(out.size()));
     }
 
+    /* Returns the first byte in [begin, end) that AppendString must escape (a control character, a
+       quote or a backslash), or 'end' if there is none.  On little-endian targets this tests eight
+       bytes at a time; the lowest flagged byte of a word is always a true hit (the carries of the
+       subtraction only ever flag bytes above a real one), so it is located exactly. */
+    static const char *FindEscape(const char *begin, const char *end) {
+      const char *it = begin;
+      if constexpr (std::endian::native == std::endian::little) {
+        constexpr uint64_t ones = 0x0101010101010101ULL, highs = 0x8080808080808080ULL;
+        for (; end - it >= 8; it += 8) {
+          uint64_t w;
+          std::memcpy(&w, it, 8);
+          const uint64_t q = w ^ (ones * '"'), b = w ^ (ones * '\\');
+          const uint64_t hit = (((w - ones * 0x20) & ~w) | ((q - ones) & ~q) | ((b - ones) & ~b)) & highs;
+          if (hit) {
+            return it + (std::countr_zero(hit) >> 3);
+          }
+        }
+      }
+      for (; it != end; ++it) {
+        const auto c = static_cast<unsigned char>(*it);
+        if (c < 0x20 || c == '"' || c == '\\') {
+          break;
+        }
+      }
+      return it;
+    }
+
     /* Appends 'text' as a JSON string, exactly as WriteString writes it.  Runs of characters that
        need no escape are appended whole, not a character at a time. */
     static void AppendString(std::string &out, std::string_view text) {
       out.push_back('"');
       const char *run = text.data();
       const char *const end = text.data() + text.size();
-      for (const char *it = run; it != end; ++it) {
+      for (const char *it = FindEscape(run, end); it != end; it = FindEscape(it + 1, end)) {
         const auto c = static_cast<unsigned char>(*it);
-        if (c >= 0x20 && c != '"' && c != '\\') {
-          continue;
-        }
         out.append(run, it);
         run = it + 1;
         switch (c) {

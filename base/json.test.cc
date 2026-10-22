@@ -240,3 +240,75 @@ FIXTURE(AppendToMatchesWrite) {
     EXPECT_EQ(ViaAppend(json), AsStr(json));
   }
 }
+
+/* A byte-at-a-time reference for AppendString. */
+static std::string ReferenceQuote(const std::string &text) {
+  std::string out = "\"";
+  for (char ch: text) {
+    const auto c = static_cast<unsigned char>(ch);
+    switch (c) {
+      case '\\': out += "\\\\"; break;
+      case '"':  out += "\\\""; break;
+      case '\b': out += "\\b"; break;
+      case '\f': out += "\\f"; break;
+      case '\n': out += "\\n"; break;
+      case '\r': out += "\\r"; break;
+      case '\t': out += "\\t"; break;
+      default: {
+        if (c < 0x20) {
+          constexpr const char *hex = "0123456789abcdef";
+          out += "\\u00";
+          out += hex[c >> 4];
+          out += hex[c & 0xF];
+        } else {
+          out += ch;
+        }
+      }
+    }
+  }
+  out += '"';
+  return out;
+}
+
+static std::string Quote(const std::string &text) {
+  std::string out;
+  Base::TJson::AppendString(out, text);
+  return out;
+}
+
+FIXTURE(AppendStringEscaping) {
+  EXPECT_EQ(Quote(""), "\"\"");
+  EXPECT_EQ(Quote("plain"), "\"plain\"");
+  EXPECT_EQ(Quote("a\"b\\c"), "\"a\\\"b\\\\c\"");
+  EXPECT_EQ(Quote("\b\f\n\r\t"), "\"\\b\\f\\n\\r\\t\"");
+  EXPECT_EQ(Quote(std::string("\x01\x1f", 2)), "\"\\u0001\\u001f\"");
+  EXPECT_EQ(Quote(std::string("a\0b", 3)), "\"a\\u0000b\"");
+  /* Multi-byte UTF-8 and invalid UTF-8 pass through untouched, as does DEL. */
+  EXPECT_EQ(Quote("h\xc3\xa9llo \xe2\x82\xac \xf0\x9f\x98\x80"), "\"h\xc3\xa9llo \xe2\x82\xac \xf0\x9f\x98\x80\"");
+  EXPECT_EQ(Quote("\xff\xfe\x80\xc0\x7f"), "\"\xff\xfe\x80\xc0\x7f\"");
+  /* Appends rather than replaces. */
+  std::string out = "x";
+  Base::TJson::AppendString(out, "y");
+  EXPECT_EQ(out, "x\"y\"");
+  /* Every byte value, at every offset and with every tail length, against the reference; this
+     covers the word-at-a-time scan's boundaries. */
+  for (int byte = 0; byte < 256; ++byte) {
+    for (size_t len = 0; len <= 20; ++len) {
+      for (size_t pos = 0; pos < len; ++pos) {
+        std::string text(len, 'a');
+        text[pos] = static_cast<char>(byte);
+        EXPECT_EQ(Quote(text), ReferenceQuote(text));
+        text[len - 1] = static_cast<char>(byte);
+        EXPECT_EQ(Quote(text), ReferenceQuote(text));
+      }
+    }
+  }
+  /* Bytes next to the specials, and all-special words. */
+  std::string mix;
+  for (int byte = 0; byte < 256; ++byte) {
+    mix.push_back(static_cast<char>(byte));
+  }
+  EXPECT_EQ(Quote(mix), ReferenceQuote(mix));
+  EXPECT_EQ(Quote(std::string(33, '"')), ReferenceQuote(std::string(33, '"')));
+  EXPECT_EQ(Quote(std::string(33, '\xa0')), ReferenceQuote(std::string(33, '\xa0')));
+}
