@@ -1075,8 +1075,7 @@ std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNum
   size_t size_before;
   /* Reserve under DataLock: pick the sequence number and the layer, but publish nothing.  NextUpdate,
      HighestSeqNum and LowestSeqNum are untouched, so no reader can see the update yet, and nobody else
-     can take this number (every other writer of NextUpdate is on a repo with no concurrent appenders:
-     the importer and the seeding of a fresh repo). */ {
+     can take this number (every other writer of NextUpdate takes InsertLock too). */ {
     std::lock_guard<std::mutex> lock(DataLock);
     new_seq = NextUpdate;
     update->SetSequenceNumber(*new_seq);
