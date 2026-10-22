@@ -469,9 +469,18 @@ void TManager::JoinLayerCleaner() {
   }
 }
 
+long TManager::MsSinceShuttingDown() const {
+  const auto since = ShuttingDownSince.load();
+  if (!since) {
+    return 0L;
+  }
+  return static_cast<long>(duration_cast<milliseconds>(steady_clock::now() - steady_clock::time_point(steady_clock::duration(since))).count());
+}
+
 void TManager::StopMergeRunners() {
   /* Not on a fiber runner: see the header (#744). */
   assert(!Fiber::TRunner::LocalRunner);
+  ShuttingDownSince = steady_clock::now().time_since_epoch().count();
   ShuttingDown = true;
   /* Wake and reap the merge loops one at a time: the sems are binary
      (TSingleSem), so a blind Push(n) would collapse into one wake.  A loop
@@ -479,14 +488,21 @@ void TManager::StopMergeRunners() {
      without consuming the push; the leftover flag then wakes the next
      waiter, so each iteration always reaps exactly one exit.  Loops whose
      fiber never started never counted themselves and are not waited for. */
-  for (size_t n = MergeMemLoopsStarted; n > 0; --n) {
+  const size_t mem_loops = MergeMemLoopsStarted, disk_loops = MergeDiskLoopsStarted;
+  for (size_t n = mem_loops; n > 0; --n) {
     MergeMemSem.Push();
     MergeMemExited.Pop();
   }
-  for (size_t n = MergeDiskLoopsStarted; n > 0; --n) {
+  const long mem_ms = MsSinceShuttingDown();
+  /* Each exit is logged as it is reaped: a stop that waits here waits on the slowest disk merge (#1025). */
+  for (size_t n = disk_loops; n > 0; --n) {
     MergeDiskSem.Push();
     MergeDiskExited.Pop();
+    syslog(LOG_INFO, "TManager::StopMergeRunners: disk merge loop %zu of %zu exited %ldms after the stop flag (#1025)",
+           disk_loops - n + 1, disk_loops, MsSinceShuttingDown());
   }
+  syslog(LOG_INFO, "TManager::StopMergeRunners: %zu mem merge loop(s) exited in %ldms, %zu disk merge loop(s) in %ldms more (#1025)",
+         mem_loops, mem_ms, disk_loops, MsSinceShuttingDown() - mem_ms);
 }
 
 void TManager::FlushMemMerges() {
@@ -706,6 +722,9 @@ void TManager::RunMergeDisk() {
     }  // release MergeDisk lock
     /* As in RunMergeMem: only the id leaves the lock (#614). */
     StepQueuedMergeDisk(repo_id);
+    if (ShuttingDown) {
+      syslog(LOG_INFO, "TManager::RunMergeDisk: a disk merge step returned %ldms after the stop flag (#1025)", MsSinceShuttingDown());
+    }
     ReleaseFreeHeap("a disk merge");
   }
   /* De-Register ourselves for CPU time collection */ {

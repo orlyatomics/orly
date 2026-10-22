@@ -26,6 +26,7 @@
 #include <optional>
 
 #include <atomic>
+#include <chrono>
 #include <stdexcept>
 
 #include <base/class_traits.h>
@@ -51,6 +52,9 @@ namespace Orly {
       class TMergeCancelled : public std::runtime_error {
         public:
         TMergeCancelled() : std::runtime_error("merge cancelled by shutdown") {}
+
+        /* When the merge saw the flag, so a catcher can tell the wait for a checkpoint from the unwind (#1025). */
+        const std::chrono::steady_clock::time_point ThrownAt = std::chrono::steady_clock::now();
       };
 
       class TMergeDataFile {

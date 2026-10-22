@@ -64,6 +64,15 @@ class TReader
 
 /* Counts the updates and entries a memory merge copies out of 'layers' (#607): every update
    past 'bound', or every update when 'all', with its entries. */
+/* A stop cancelled a disk merge: say how long the merge took to see the flag, and how long the unwind took,
+   which frees its output and, after a fold, removes the intermediate file (#1025). */
+static void LogMergeCancelled(const char *where, const Disk::TMergeCancelled &ex, const L0::TManager &manager) {
+  const long unwind_ms = static_cast<long>(chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - ex.ThrownAt).count());
+  const long total_ms = manager.MsSinceShuttingDown();
+  syslog(LOG_INFO, "%s: disk merge cancelled %ldms after the stop flag; the unwind took %ldms of that (#1025)",
+         where, total_ms, unwind_ms);
+}
+
 static void CountCopy(const std::vector<TMemoryLayer *> &layers, TSequenceNumber bound, bool all,
                       size_t &updates, size_t &entries) {
   for (const TMemoryLayer *layer : layers) {
@@ -2360,8 +2369,9 @@ void TSafeRepo::StepTail(size_t block_slots_available) {
             }
             new_merge_disk = disk_slot->Make(Manager, this, gen_id, num_keys, lowest_seq, highest_seq);
           }
-        } catch (const Disk::TMergeCancelled &) {
+        } catch (const Disk::TMergeCancelled &ex) {
           /* #927: shutdown stopped the tail merge. The output is freed and the input layer is untouched. */
+          LogMergeCancelled("StepTail", ex, *Manager);
           hand_back();
           return;
         } catch (const Disk::Util::TDiskFull &ex) {
@@ -2618,9 +2628,10 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
           /* #590 */
           hand_back("disk space", ex.what());
           return;
-        } catch (const Disk::TMergeCancelled &) {
+        } catch (const Disk::TMergeCancelled &ex) {
           /* #927: shutdown stopped the merge. The output is freed and the inputs are untouched; the next
              start queues the merge again (#918). */
+          LogMergeCancelled("StepMergeDisk", ex, *Manager);
           /* acquire Merge lock */ {
             std::lock_guard<std::mutex> lock(MergeLock);
             for (TDiskLayer *layer : gen_layer_vec) {

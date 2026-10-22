@@ -768,6 +768,10 @@ namespace Orly {
           return ShuttingDown;
         }
 
+        /* Milliseconds since StopMergeRunners raised the flag above, or 0 before it did. For the stop's
+           timing lines (#1025). */
+        long MsSinceShuttingDown() const;
+
         /* Visit each runner and free the walkers it pooled that no reader has needed lately (#967). */
         void TrimWalkerPools();
 
@@ -1031,6 +1035,9 @@ namespace Orly {
         void RemoveLayersFromQueue();
 
         std::atomic<bool> ShuttingDown;
+
+        /* When StopMergeRunners raised ShuttingDown, as steady_clock ticks; 0 before (#1025). */
+        std::atomic<std::chrono::steady_clock::rep> ShuttingDownSince{0};
 
         bool AllowTailing;
 
