@@ -82,6 +82,12 @@ namespace Orly {
           return NumNonAssignEntries;
         }
 
+        /* The most entries with Mutator != Assign that any one key has in the output (#988): an upper bound on the
+           run a read of that key walks in this file, if it stays unfolded. */
+        inline size_t GetMaxKeyNonAssignEntries() const {
+          return MaxKeyNonAssignEntries;
+        }
+
         inline TSequenceNumber GetLowestSequence() const {
           return LowestSeq;
         }
@@ -103,6 +109,7 @@ namespace Orly {
 
         size_t NumKeys;
         size_t NumNonAssignEntries = 0UL;
+        size_t MaxKeyNonAssignEntries = 0UL;
         TSequenceNumber LowestSeq;
         TSequenceNumber HighestSeq;
         size_t FileLength = 0UL;

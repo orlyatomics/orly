@@ -157,8 +157,12 @@ memory budget: 1024 MiB, from the cgroup limit in /sys/fs/cgroup/memory.max (fre
 memory plan: 732 MiB of the 1024 MiB budget; 356 MiB fixed (process baseline 32, append log 4, mem_sim_mb 256, mem_sim_slow_mb 64), 128 MiB kept for the heap, the rest scaled by 0.131836
 ```
 
-Peak RSS during a heavy read load can still exceed the budget, by up to
-about 2× ([#988](https://github.com/orlyatomics/orly/issues/988)).
+A disk merge folds its merged file's `+=` runs in memory, which takes about
+three times the file's size, so a merged file larger than a sixteenth of the
+budget is kept unfolded (`--max_fold_input_mb`, 0 for no limit), unless a
+key in it has a `+=` run of more than 64 entries. With that
+cap, a heavy read load at a 6 GiB budget peaked at 5.7 to 5.9 GiB RSS
+([#988](https://github.com/orlyatomics/orly/issues/988)).
 
 The smallest limit the image runs in is **768 MiB** (`--memory=768m`). Below
 747 MiB, `orlyi` refuses to start and says how much it needs. The floor is the

@@ -96,6 +96,37 @@ namespace Orly {
         ReadPrepFrameBudget.store(frames, std::memory_order_relaxed);
       }
 
+      /* The largest merged file a disk merge folds, in bytes (#988). A fold holds its whole output in memory until it
+         is written, several times the file's size on disk, so one large fold could take the process well past its
+         memory budget. A merge past this keeps its output unfolded, as when a fold runs out of memory (#627). orlyi
+         derives it from --memory_budget_mb; unlimited by default. */
+      static void SetMaxFoldInputBytes(size_t bytes) {
+        MaxFoldInputBytes.store(bytes, std::memory_order_relaxed);
+      }
+
+      static size_t GetMaxFoldInputBytes() {
+        return MaxFoldInputBytes.load(std::memory_order_relaxed);
+      }
+
+      /* A merged file past GetMaxFoldInputBytes() still folds if any key in it has more than this many entries that
+         are not Assigns, so the cap never lets a key's run grow without bound (#988). */
+      static constexpr size_t MaxUnfoldedRun = 64UL;
+
+      /* How many merges have kept their output unfolded because it passed GetMaxFoldInputBytes(). */
+      static size_t GetNumFoldsTooLarge() {
+        return NumFoldsTooLarge.load(std::memory_order_relaxed);
+      }
+
+      /* How many merges past GetMaxFoldInputBytes() have folded anyway, for a run longer than MaxUnfoldedRun. */
+      static size_t GetNumFoldsForLongRuns() {
+        return NumFoldsForLongRuns.load(std::memory_order_relaxed);
+      }
+
+      /* The longest run of a key that such a merge has kept unfolded; never more than MaxUnfoldedRun. */
+      static size_t GetLongestRunKeptUnfolded() {
+        return LongestRunKeptUnfolded.load(std::memory_order_relaxed);
+      }
+
       /* An immutable, consistent read snapshot of the repo: the pinned disk
          layer set (Mapping), the pinned live memtable (CurrentMemoryLayer), the
          [lower, upper] sequence-number window, and NextId -- all captured
@@ -915,6 +946,9 @@ namespace Orly {
       static std::atomic<size_t> ReadPrepFrameBudget;
       static std::atomic<size_t> ReadPrepFramesInUse;
 
+      /* See SetMaxFoldInputBytes(). */
+      static std::atomic<size_t> MaxFoldInputBytes;
+
       /* A repo's concrete present-walker: builds one sub-walker per data layer
          (each disk layer + the memtable) and k-way-merges them through MinHeap,
          yielding the newest entry per key in key order. (Same-key entries are
@@ -1229,6 +1263,12 @@ namespace Orly {
       /* High-water mark of updates already promoted to the parent; entries at or
          below it may be dropped on the next mem/disk merge. */
       TSequenceNumber ReleasedUpTo;
+
+      /* See GetNumFoldsTooLarge(), GetNumFoldsForLongRuns() and GetLongestRunKeptUnfolded(); TSafeRepo::MergeFiles counts
+         here. */
+      static std::atomic<size_t> NumFoldsTooLarge;
+      static std::atomic<size_t> LongestRunKeptUnfolded;
+      static std::atomic<size_t> NumFoldsForLongRuns;
 
       /* Raise the durable sequence number (see GetDurableSequenceNumber) to at least this. */
       void NoteDurable(TSequenceNumber seq_num) {
