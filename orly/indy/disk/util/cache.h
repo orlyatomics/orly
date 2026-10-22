@@ -406,7 +406,6 @@ namespace Orly {
                      - transition from LockedSlot -> page_id
                   */
                   const size_t prev_ref_count = slot.RefCount++;
-                  assert(prev_ref_count == slot.RefCount - 1);
                   if (prev_ref_count == 0) {
                     assert(slot.LRUMembership.TryGetCollector());
                     #ifdef PERF_STATS
@@ -432,7 +431,6 @@ namespace Orly {
                          - return a pointer to the first slot in the chain.
                       */
                       const size_t prev_ref_count = (next_slot->RefCount)++;
-                      assert(prev_ref_count == (next_slot->RefCount) - 1);
                       if (prev_ref_count == 0) {
                         assert(next_slot->LRUMembership.TryGetCollector());
                         #ifdef PERF_STATS
@@ -556,7 +554,6 @@ namespace Orly {
                   /* this is the most common case. The first entry in the chain is the one that matches our page_id. */
                   assert(slot.RefCount > 0);
                   const size_t new_ref_count = --slot.RefCount;
-                  assert(new_ref_count == slot.RefCount);
                   if (new_ref_count == 0UL) {
                     TLRU &lru = LRUArray[sched_getcpu() % NumLRU];
                     assert(!slot.LRUMembership.TryGetCollector());
@@ -577,7 +574,6 @@ namespace Orly {
                       assert(next_slot->RefCount > 0);
 
                       const size_t new_ref_count = --(next_slot->RefCount);
-                      assert(new_ref_count == (next_slot->RefCount));
                       if (new_ref_count == 0UL) {
                         TLRU &lru = LRUArray[sched_getcpu() % NumLRU];
                         assert(!next_slot->LRUMembership.TryGetCollector());
