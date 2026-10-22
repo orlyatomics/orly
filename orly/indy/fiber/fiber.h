@@ -495,6 +495,14 @@ namespace Orly {
            slots, so a pusher never touches a runner that may be dying. */
         struct alignas(64) TParkSlot {
           Base::TParker Parker;
+
+          /* Set by every runner that pushes onto one of this runner's handoff
+             slots, after the push; the owner swaps it back to false once a
+             lap and walks its row of slots only when it was set. Without it a
+             busy runner reads TotalNumRunners lines its peers write on every
+             lap (#1017). It shares the line with Parker because the pusher
+             touches Parker in Wake() right after setting it. */
+          std::atomic<bool> HandoffPending{false};
         };
 
         class TRunnerCons {
@@ -1312,6 +1320,7 @@ namespace Orly {
              TRunnerCons universe. */
           assert(LocalRunner->HandoffMatrix == HandoffMatrix);
           PushFrameOntoQueue(HandoffSlot(RunnerId, LocalRunner->RunnerId).Ptr, frame);
+          ParkSlots[RunnerId].HandoffPending.store(true, std::memory_order_release);
         } else {
           PushFrameOntoQueue(InboundFrameQueue, frame);
         }
@@ -1324,6 +1333,7 @@ namespace Orly {
         assert(frame);
         assert(other_runner->HandoffMatrix == HandoffMatrix);
         PushFrameOntoQueue(HandoffSlot(other_runner->RunnerId, RunnerId).Ptr, frame);
+        ParkSlots[other_runner->RunnerId].HandoffPending.store(true, std::memory_order_release);
         ParkSlots[other_runner->RunnerId].Parker.Wake();
       }
 

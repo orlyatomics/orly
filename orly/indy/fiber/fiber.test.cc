@@ -1034,3 +1034,169 @@ FIXTURE(YieldSlowNotStarvedByInbound) {
     EXPECT_LE(pings_while_yielding, 2UL * yields);
   }
 }
+
+/* A runner walks its handoff slots only on laps that find its HandoffPending
+   flag set, and every push into a slot sets it. If a push ever failed to set
+   the flag, or a lap cleared it without walking, a runner whose inbound queue
+   never empties would never park, and so never look at the slot again. Here
+   a pinger keeps runner 2's inbound queue busy on every lap, as in
+   YieldSlowNotStarvedByInbound, while a fiber on runner 1 hops to runner 2
+   and back. Each hop onto runner 2 lands in its handoff slot from runner 1.
+   A stranded hop would wait until the pinger stops, so the hops must finish
+   while runner 2 is still busy, in a handful of its laps each. */
+FIXTURE(HopOntoBusyRunnerNotStarved) {
+  class TPinger
+      : public TRunnable {
+    NO_COPY(TPinger);
+    public:
+
+    TPinger(TRunner *runner, std::atomic<bool> &armed, std::atomic<bool> &stop,
+            std::atomic<size_t> &pings, std::atomic<bool> &done)
+        : Armed(armed), Stop(stop), Pings(pings), Done(done) {
+      Frame = TFrame::LocalFramePool->Alloc();
+      try {
+        Frame->Latch(runner, this, static_cast<TRunnable::TFunc>(&TPinger::Run));
+      } catch (...) {
+        TFrame::LocalFramePool->Free(Frame);
+        throw;
+      }
+    }
+
+    ~TPinger() {
+      TFrame::LocalFramePool->Free(Frame);
+    }
+
+    TFrame *GetFrame() const {
+      return Frame;
+    }
+
+    void Run() {
+      while (!Stop.load()) {
+        Armed.store(true);
+        while (Armed.load()) {
+          std::this_thread::yield();
+        }
+        ++Pings;
+        Wait();
+      }
+      Done.store(true);
+    }
+
+    private:
+
+    TFrame *Frame;
+
+    std::atomic<bool> &Armed, &Stop;
+
+    std::atomic<size_t> &Pings;
+
+    std::atomic<bool> &Done;
+
+  };
+  class THopper
+      : public TRunnable {
+    NO_COPY(THopper);
+    public:
+
+    THopper(TRunner *home, TRunner *away, size_t hops, std::atomic<size_t> &pings,
+            std::atomic<size_t> &pings_while_hopping, std::atomic<bool> &done)
+        : Home(home), Away(away), Hops(hops), Pings(pings), PingsWhileHopping(pings_while_hopping), Done(done) {
+      Frame = TFrame::LocalFramePool->Alloc();
+      try {
+        Frame->Latch(home, this, static_cast<TRunnable::TFunc>(&THopper::Run));
+      } catch (...) {
+        TFrame::LocalFramePool->Free(Frame);
+        throw;
+      }
+    }
+
+    ~THopper() {
+      TFrame::LocalFramePool->Free(Frame);
+    }
+
+    void Run() {
+      const size_t start = Pings.load();
+      for (size_t i = 0; i < Hops; ++i) {
+        SwitchTo(Away);
+        SwitchTo(Home);
+      }
+      PingsWhileHopping.store(Pings.load() - start);
+      Done.store(true);
+    }
+
+    private:
+
+    TFrame *Frame;
+
+    TRunner *Home, *Away;
+
+    const size_t Hops;
+
+    std::atomic<size_t> &Pings, &PingsWhileHopping;
+
+    std::atomic<bool> &Done;
+
+  };
+  using namespace std::chrono;
+  const size_t hops = 200UL;
+  TRunner::TRunnerCons runner_cons(2UL);
+  TRunner runner_1(runner_cons);
+  TRunner runner_2(runner_cons);
+  TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> frame_pool_manager(2UL, 1024UL * 1024UL, &runner_1);
+  TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool(&frame_pool_manager);
+  bool hopper_finished_in_time = false;
+  size_t pings_while_hopping = 0UL;
+  try {
+    std::atomic<bool> armed(false), stop_pinger(false), stop_pusher(false), pinger_done(false), hopper_done(false);
+    std::atomic<size_t> pings(0UL), pings_while_hopping_out(0UL);
+    thread t1([&] { runner_1.Run(); });
+    thread t2([&] { runner_2.Run(); });
+    TPinger pinger(&runner_2, armed, stop_pinger, pings, pinger_done);
+    /* A plain thread, so its pushes go onto runner 2's InboundFrameQueue. */
+    thread pusher([&] {
+      while (!stop_pusher.load()) {
+        if (armed.load()) {
+          runner_2.ScheduleFrame(pinger.GetFrame());
+          armed.store(false);
+        } else {
+          std::this_thread::yield();
+        }
+      }
+    });
+    while (pings.load() < 100UL) {
+      std::this_thread::yield();
+    }
+    THopper hopper(&runner_1, &runner_2, hops, pings, pings_while_hopping_out, hopper_done);
+    const auto deadline = steady_clock::now() + seconds(30);
+    while (!hopper_done.load() && steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(milliseconds(1));
+    }
+    hopper_finished_in_time = hopper_done.load();
+    /* Stop the pinger; runner 2 can then park, and a stranded hop is found. */
+    stop_pinger.store(true);
+    while (!pinger_done.load() || !hopper_done.load()) {
+      std::this_thread::sleep_for(milliseconds(1));
+    }
+    stop_pusher.store(true);
+    pusher.join();
+    runner_1.ShutDown();
+    runner_2.ShutDown();
+    t1.join();
+    t2.join();
+    pings_while_hopping = pings_while_hopping_out.load();
+  } catch (...) {
+    delete TFrame::LocalFramePool;
+    TFrame::LocalFramePool = nullptr;
+    throw;
+  }
+  delete TFrame::LocalFramePool;
+  TFrame::LocalFramePool = nullptr;
+  std::cout << "inbound frames run per hop onto a busy runner: " << static_cast<double>(pings_while_hopping) / hops << std::endl;
+  if (EXPECT_TRUE(hopper_finished_in_time)) {
+    /* Runner 2 keeps lapping while the hopper is away on runner 1, so a
+       round trip spans a few of its laps (about 2 under TSan, 4 in a debug
+       build on CI). A stranded hop would instead span every lap until the
+       30 s deadline, so this bound is loose but still catches one. */
+    EXPECT_LE(pings_while_hopping, 50UL * hops);
+  }
+}
