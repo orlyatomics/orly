@@ -492,7 +492,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "before it yields to another statement that is ready to run there (issue #1015), so a "
       "point read waits about this long behind a long scan, not for the whole scan. A call that "
       "waits for disk starts a new slice when it resumes; a call shorter than this never yields. "
-      "0 never yields. Default: 500."
+      "0 never yields. Default: 1000."
   );
   Param(
       &TCmd::ReadYieldRows, "read_yield_rows", Optional, "read_yield_rows\0",
@@ -689,7 +689,7 @@ TServer::TCmd::TCmd()
       ReadBudgetRows(0UL),
       ReadBudgetSteps(0UL),
       ReadYieldRows(8UL),
-      ReadYieldUs(500UL),
+      ReadYieldUs(1000UL),
       DurableAcks("local"),
       WalMB(256),
       OperationRetentionCount(4096),
