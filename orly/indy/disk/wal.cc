@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <iostream>
@@ -55,13 +56,48 @@ struct TCrc32cTable {
 
 static constexpr TCrc32cTable Crc32cLookupTable{};
 
-uint32_t ComputeCrc32c(const void *data, size_t length, uint32_t initial) {
+uint32_t ComputeCrc32cPortable(const void *data, size_t length, uint32_t initial) {
   const uint8_t *p = static_cast<const uint8_t *>(data);
   uint32_t crc = ~initial;
   for (size_t i = 0; i < length; ++i) {
     crc = (crc >> 8) ^ Crc32cLookupTable.Entries[(crc ^ p[i]) & 0xFF];
   }
   return ~crc;
+}
+
+#if defined(__x86_64__)
+/* SSE 4.2's crc32 instruction is this same CRC (Castagnoli, reflected), eight bytes at a time. */
+__attribute__((target("sse4.2")))
+static uint32_t ComputeCrc32cSse42(const void *data, size_t length, uint32_t initial) {
+  const uint8_t *p = static_cast<const uint8_t *>(data);
+  uint64_t crc = ~initial;
+  for (; length >= sizeof(uint64_t); p += sizeof(uint64_t), length -= sizeof(uint64_t)) {
+    uint64_t word;
+    memcpy(&word, p, sizeof(word));
+    crc = __builtin_ia32_crc32di(crc, word);
+  }
+  uint32_t crc32 = static_cast<uint32_t>(crc);
+  for (; length; ++p, --length) {
+    crc32 = __builtin_ia32_crc32qi(crc32, *p);
+  }
+  return ~crc32;
+}
+
+/* Other architectures use the portable loop.  This is false until it is initialised, so a checksum taken
+   during another file's static initialisation is still right, only slower. */
+static const bool HasSse42 = [] {
+  __builtin_cpu_init();
+  return __builtin_cpu_supports("sse4.2") != 0;
+}();
+#endif
+
+uint32_t ComputeCrc32c(const void *data, size_t length, uint32_t initial) {
+#if defined(__x86_64__)
+  if (HasSse42) {
+    return ComputeCrc32cSse42(data, length, initial);
+  }
+#endif
+  return ComputeCrc32cPortable(data, length, initial);
 }
 
 uint64_t ComputeChecksum64(const void *data, size_t length, uint64_t seed) {
