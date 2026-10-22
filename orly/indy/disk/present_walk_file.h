@@ -410,19 +410,35 @@ namespace Orly {
              it: a count ranks only a pattern of defined members followed by free ones, whose matches are one run of the index. */
           size_t GetEndRank(size_t rank) const {
             if (EndRank == NoRank) {
-              size_t lo = rank + 1UL, hi = GetNumRanks();
-              while (lo < hi) {
-                const size_t mid = lo + ((hi - lo) / 2UL);
-                if (Place(GetKeyAt(mid)) == TPlace::Past) {
-                  hi = mid;
-                } else {
-                  lo = mid + 1UL;
-                }
-              }
-              EndRank = lo;
+              EndRank = FindEndRank(rank + 1UL);
             }
             assert(EndRank > rank);
             return EndRank;
+          }
+
+          /* The first rank at or after `lo` whose key is past the walk's range, or GetNumRanks(), where every key before `lo`
+             is in the range. It gallops out from `lo` and then halves, so it reads about twice the log of the distance to the
+             end of the range, not one key per row (#1018). Past keys are a suffix of the file only because a pattern's free
+             members trail its bound ones (see Place()). */
+          size_t FindEndRank(size_t lo) const {
+            size_t hi = GetNumRanks();
+            for (size_t step = 1UL; lo < hi; step *= 2UL) {
+              const size_t probe = std::min(lo + step - 1UL, hi - 1UL);
+              if (Place(GetKeyAt(probe)) == TPlace::Past) {
+                hi = probe;
+                break;
+              }
+              lo = probe + 1UL;
+            }
+            while (lo < hi) {
+              const size_t mid = lo + ((hi - lo) / 2UL);
+              if (Place(GetKeyAt(mid)) == TPlace::Past) {
+                hi = mid;
+              } else {
+                lo = mid + 1UL;
+              }
+            }
+            return lo;
           }
 
           /* The first rank in [lo, hi) whose key does not order before `bound`, or hi. */
@@ -487,6 +503,21 @@ namespace Orly {
             HistCursor.reset();
             for (;Stream.GetOffset() < IndexFile->GetByteOffsetOfHistoryIndex();) {
               assert(Valid);
+              /* A Range walk finds where its range ends in this file once, by rank, rather than ordering every row's key
+                 against To (#1018). */
+              if (SearchKind == Range) {
+                const size_t offset = Stream.GetOffset() - IndexFile->GetByteOffsetOfKeyIndex();
+                assert(offset % TData::KeyEntrySize == 0UL);
+                const size_t rank = offset / TData::KeyEntrySize;
+                if (EndRank == NoRank) {
+                  EndRank = FindEndRank(rank);
+                }
+                if (rank >= EndRank) {
+                  Cached = true;
+                  Valid = false;
+                  return;
+                }
+              }
               Stream.Read(&Item.SequenceNumber, sizeof(TSequenceNumber) + sizeof(Atom::TCore) * 2);
               /* Read NumHistKeys + OffsetOfHistKeys (2 size_t) -- needed to
                  replay this key's history below -- then read TMutator + skip
@@ -499,7 +530,8 @@ namespace Orly {
               Stream.Read(&Item.Mutator, sizeof(TMutator));
               Stream.Skip(sizeof(uint64_t) - sizeof(TMutator));
               Cached = true;
-              switch (Place(Item.Key)) {
+              assert(SearchKind != Range || Place(Item.Key) == TPlace::In);
+              switch (SearchKind == Range ? TPlace::In : Place(Item.Key)) {
                 case TPlace::In: {
                   if (At && Item.SequenceNumber > *At) {
                     /* Reading at a version (#745): the current entry is too new, so step back through the key's

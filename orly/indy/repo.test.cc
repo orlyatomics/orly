@@ -24,6 +24,7 @@
 
 #include <orly/indy/repo.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -43,6 +44,7 @@
 #include <orly/indy/disk/sim/mem_engine.h>
 #include <orly/indy/fiber/fiber_test_runner.h>
 #include <orly/indy/transaction_base.h>
+#include <orly/sabot/to_native.h>
 #include <orly/server/read_too_large.h>
 #include <orly/server/version_unavailable.h>
 
@@ -742,6 +744,174 @@ FIXTURE(RangeCountsByRankMatchTheWalk) {
         auto count_after_release = [&]() { (void) context.CountKeys(group(1L)); };
         EXPECT_THROW_FUNC(logic_error, count_after_release);
       }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #1018: a range walk over several disk files and the memtable yields each key once per entry, keys ascending and a key's entries
+   newest first, with each key's newest entry the last one written to it; and a context's walk over it yields the keys alive in
+   the range, with their values. The keys lead with elements every layer shares (a group, and a string, long in odd groups so it
+   is stored apart from the key), which is what the merge's comparisons have to look past. */
+FIXTURE(RangeWalkMergesLayersInKeyOrder) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    TSuprena arena;
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler);
+      const Base::TUuid index_id(TUuid::Twister);
+      auto repo = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
+      auto *stepped = dynamic_cast<TSteppedSafeRepo *>(repo.Get());
+      constexpr int64_t Groups = 3L, Keys = 300L;
+      const auto label = [](int64_t g) { return g % 2L ? string(40, 'q') : string("vi"); };
+      const auto key = [&](TSuprena &key_arena, int64_t g, int64_t n) {
+        return TIndexKey(index_id, TKey(make_tuple(g, label(g), n), &key_arena, state));
+      };
+      const auto group = [&](TSuprena &key_arena, int64_t g) {
+        return TIndexKey(index_id, TKey(make_tuple(g, label(g), Orly::Native::TFree<int64_t>()), &key_arena, state));
+      };
+      enum class TOp { Assign, Tombstone, Add };
+      /* The ops on each key, oldest first. */
+      std::map<pair<int64_t, int64_t>, vector<pair<TOp, int64_t>>> model;
+      std::mt19937_64 rng(1018);
+      const auto commit = [&](size_t count) {
+        std::map<pair<int64_t, int64_t>, pair<TOp, int64_t>> ops;
+        std::uniform_int_distribution<int64_t> pick_g(0L, Groups - 1L), pick_n(0L, Keys - 1L), pick_val(-1000L, 1000L);
+        std::uniform_int_distribution<int> kind(0, 9);
+        while (ops.size() < count) {
+          const int k = kind(rng);
+          ops[{pick_g(rng), pick_n(rng)}] = {k < 6 ? TOp::Assign : k < 8 ? TOp::Tombstone : TOp::Add, pick_val(rng)};
+        }
+        TSuprena update_arena;
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&update_arena), TKey(Base::TUuid(TUuid::Twister), &update_arena, state));
+        for (const auto &[gn, op] : ops) {
+          const TIndexKey index_key = key(update_arena, gn.first, gn.second);
+          switch (op.first) {
+            case TOp::Assign: update->AddEntry(index_key, TKey(op.second, &update_arena, state)); break;
+            case TOp::Tombstone: update->AddEntry(index_key, TKey(Orly::Native::TTombstone::Tombstone, &update_arena, state)); break;
+            case TOp::Add: update->AddEntry(index_key, TKey(op.second, &update_arena, state), TMutator::Add); break;
+          }
+          model[gn].push_back(op);
+        }
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      };
+      for (int round = 0; round < 6; ++round) {
+        commit(round == 0 ? 600UL : 150UL);
+        stepped->StepMergeMem();
+        if (round == 2) {
+          stepped->StepMergeDisk(256UL);
+        }
+      }
+      commit(150UL);
+      /* The value a context reads for a key, if the key is alive. */
+      const auto alive = [](const vector<pair<TOp, int64_t>> &ops) -> std::optional<int64_t> {
+        std::optional<int64_t> val;
+        for (const auto &[op, n] : ops) {
+          switch (op) {
+            case TOp::Assign: val = n; break;
+            case TOp::Tombstone: val.reset(); break;
+            case TOp::Add: val = val.value_or(0L) + n; break;
+          }
+        }
+        return val;
+      };
+      std::uniform_int_distribution<int64_t> pick_g(0L, Groups - 1L), pick_n(-3L, Keys + 3L);
+      std::uniform_int_distribution<int> shape(0, 3);
+      size_t num_rows = 0UL, num_keys = 0UL;
+      for (int i = 0; i < 200; ++i) {
+        TSuprena query_arena;
+        int64_t from_g = pick_g(rng), to_g = pick_g(rng), from_n = pick_n(rng), to_n = pick_n(rng);
+        if (make_pair(from_g, from_n) > make_pair(to_g, to_n)) {
+          std::swap(from_g, to_g);
+          std::swap(from_n, to_n);
+        }
+        /* Up to a key, or through the whole of a group. */
+        const bool to_group = shape(rng) == 0;
+        const TIndexKey from = key(query_arena, from_g, from_n);
+        const TIndexKey to = to_group ? group(query_arena, to_g) : key(query_arena, to_g, to_n);
+        const auto in_range = [&](const pair<int64_t, int64_t> &gn) {
+          return gn >= make_pair(from_g, from_n) && (to_group ? gn.first <= to_g : gn <= make_pair(to_g, to_n));
+        };
+        vector<pair<int64_t, int64_t>> expected_keys, expected_alive;
+        for (const auto &[gn, ops] : model) {
+          if (in_range(gn)) {
+            expected_keys.push_back(gn);
+            if (alive(ops)) {
+              expected_alive.push_back(gn);
+            }
+          }
+        }
+        /* The repo's walk. */ {
+          auto view = make_unique<Orly::Indy::TRepo::TView>(stepped);
+          auto walker_ptr = stepped->NewPresentWalker(view, from, to);
+          vector<pair<int64_t, int64_t>> walked;
+          std::optional<TSequenceNumber> last_seq;
+          for (TPresentWalker &walker = *walker_ptr; walker; ++walker) {
+            const TPresentWalker::TItem &item = *walker;
+            ++num_rows;
+            const auto [g, s, n] = Sabot::AsNative<tuple<int64_t, string, int64_t>>(*Sabot::State::TAny::TWrapper(item.Key.NewState(item.KeyArena, state)));
+            EXPECT_EQ(s, label(g));
+            if (!walked.empty() && walked.back() == make_pair(g, n)) {
+              /* An older entry of the same key. */
+              EXPECT_TRUE(last_seq && item.SequenceNumber < *last_seq);
+              last_seq = item.SequenceNumber;
+              continue;
+            }
+            EXPECT_TRUE(walked.empty() || walked.back() < make_pair(g, n));
+            walked.emplace_back(g, n);
+            last_seq = item.SequenceNumber;
+            /* A key's newest entry is the last op written to it. */
+            const auto found = model.find({g, n});
+            if (!EXPECT_TRUE(found != model.end())) {
+              continue;
+            }
+            /* A disk merge may fold a `+=` onto what it adds to, so only an assignment or a delete is checked as written. */
+            const auto &[op, val] = found->second.back();
+            if (op == TOp::Assign) {
+              EXPECT_TRUE(item.Mutator == TMutator::Assign);
+              EXPECT_TRUE(TKey(item.Op, item.OpArena) == TKey(val, &query_arena, state));
+            } else if (op == TOp::Tombstone) {
+              EXPECT_TRUE(item.Op.IsTombstone());
+            }
+          }
+          /* Every key the walk yields is in the range, in order, and so is every key whose last op was not a delete; a merge
+             may have dropped a deleted one. */
+          EXPECT_TRUE(std::includes(expected_keys.begin(), expected_keys.end(), walked.begin(), walked.end()));
+          for (const auto &gn : expected_keys) {
+            if (model[gn].back().first != TOp::Tombstone) {
+              EXPECT_TRUE(std::binary_search(walked.begin(), walked.end(), gn));
+            }
+          }
+        }
+        /* A context's walk. */ {
+          TSuprena ctx_arena;
+          TContext context(repo, &ctx_arena);
+          vector<pair<int64_t, int64_t>> walked;
+          for (TContext::TKeyCursor csr(&context, from, to); csr; ++csr) {
+            const auto [g, s, n] = Sabot::AsNative<tuple<int64_t, string, int64_t>>(*Sabot::State::TAny::TWrapper(csr->GetCore().NewState(csr->GetArena(), state)));
+            walked.emplace_back(g, n);
+            num_keys += 1UL;
+            const auto val = alive(model[{g, n}]);
+            if (EXPECT_TRUE(val.has_value())) {
+              EXPECT_TRUE(TKey(csr.GetVal().Op, csr.GetVal().OpArena) == TKey(*val, &query_arena, state));
+            }
+          }
+          EXPECT_TRUE(walked == expected_alive);
+        }
+      }
+      /* The ranges reached into every layer. */
+      EXPECT_GT(num_rows, 20000UL);
+      EXPECT_GT(num_keys, 10000UL);
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

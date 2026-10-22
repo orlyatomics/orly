@@ -20,10 +20,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <random>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -33,6 +36,7 @@
 #include <orly/native/point.h>
 #include <orly/sabot/compare_types.h>
 #include <orly/sabot/get_hash.h>
+#include <orly/sabot/order_types.h>
 #include <orly/sabot/state_dumper.h>
 #include <orly/sabot/type_dumper.h>
 #include <orly/type/new_sabot.h>
@@ -653,4 +657,93 @@ FIXTURE(ScalarOrder) {
   TCore::TOrderedArenaCompare compare(&arena);
   EXPECT_TRUE(compare(rhs, lhs));
   EXPECT_FALSE(compare(lhs, rhs));
+}
+
+/* #1018: two tuples ordered by their copied-out elements order as they do element by element in place, and as their states do,
+   whether they live in one arena or two, hold short (direct) or long strings, NaNs, nested tuples, or differ in length. */
+FIXTURE(QuickOrderElemsMatchesOrderingInPlace) {
+  using TWide = tuple<string, Base::TUuid, int64_t, double, tuple<int64_t, string>>;
+  using TNarrow = tuple<string, Base::TUuid, int64_t>;
+  TTestArena lhs_arena, rhs_arena;
+  std::mt19937_64 rng(1018);
+  const vector<string> strs = {"vi", "vj", "", string(30, 'x'), string(30, 'x') + "y"};
+  const vector<Base::TUuid> uuids = {Base::TUuid("01234567-89ab-cdef-0123-456789abcdef"), Base::TUuid("11234567-89ab-cdef-0123-456789abcdef")};
+  const vector<int64_t> ints = {-7, 0, 3, std::numeric_limits<int64_t>::max()};
+  const vector<double> dbls = {-1.5, 0.0, 2.25, std::numeric_limits<double>::quiet_NaN()};
+  const auto pick = [&rng](const auto &vec) { return vec[rng() % vec.size()]; };
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);
+  void *other_alloc = reinterpret_cast<uint8_t *>(state_alloc) + Sabot::State::GetMaxStateSize();
+  /* A random tuple: wide or narrow, and whether it holds a NaN. */
+  const auto make = [&](TTestArena &arena, bool wide, bool &nan) {
+    if (wide) {
+      const TWide val(pick(strs), pick(uuids), pick(ints), pick(dbls), make_tuple(pick(ints), pick(strs)));
+      nan = std::isnan(get<3>(val));
+      return TCore(val, &arena, state_alloc);
+    }
+    nan = false;
+    return TCore(TNarrow(pick(strs), pick(uuids), pick(ints)), &arena, state_alloc);
+  };
+  size_t num_eq = 0UL;
+  for (int i = 0; i < 5000; ++i) {
+    /* A third of the time rhs is made from the same values as lhs, so many pairs agree all the way along. */
+    const bool same = rng() % 3 == 0;
+    const bool lhs_wide = rng() % 4 != 0, rhs_wide = same ? lhs_wide : rng() % 4 != 0;
+    TTestArena &other = rng() % 4 ? rhs_arena : lhs_arena;
+    bool lhs_nan, rhs_nan;
+    const std::mt19937_64 before = rng;
+    const TCore lhs = make(lhs_arena, lhs_wide, lhs_nan);
+    if (same) {
+      rng = before;
+    }
+    const TCore rhs = make(other, rhs_wide, rhs_nan);
+    array<TCore, 8> lhs_elems, rhs_elems;
+    size_t lhs_count = 0UL, rhs_count = 0UL;
+    EXPECT_TRUE(lhs.TryCopyTupleElems(&lhs_arena, lhs_elems.data(), lhs_elems.size(), lhs_count));
+    EXPECT_TRUE(rhs.TryCopyTupleElems(&other, rhs_elems.data(), rhs_elems.size(), rhs_count));
+    EXPECT_EQ(lhs_count, lhs_wide ? 5UL : 3UL);
+    EXPECT_EQ(rhs_count, rhs_wide ? 5UL : 3UL);
+    Atom::TComparison quick = Atom::TComparison::Ne;
+    const bool has_quick = TCore::TryQuickOrderElems(&lhs_arena, lhs_elems.data(), lhs_count, &other, rhs_elems.data(), rhs_count, quick);
+    /* Element by element, with no shortcut. */
+    Atom::TComparison expected = Atom::TComparison::Ne;
+    bool has_expected = true, decided = false;
+    for (size_t e = 0; e < std::min(lhs_count, rhs_count); ++e) {
+      if (!lhs_elems[e].TryQuickOrderComparison(&lhs_arena, rhs_elems[e], &other, expected)) {
+        has_expected = false;
+        break;
+      }
+      if (Atom::IsLt(expected) || Atom::IsGt(expected)) {
+        decided = true;
+        break;
+      }
+    }
+    if (has_expected && !decided) {
+      expected = Atom::CompareOrdered(lhs_count, rhs_count);
+    }
+    EXPECT_EQ(has_quick, has_expected);
+    if (has_quick && has_expected) {
+      EXPECT_TRUE(quick == expected);
+    }
+    /* The whole tuples, in place. */
+    Atom::TComparison whole = Atom::TComparison::Ne;
+    if (EXPECT_TRUE(lhs.TryQuickOrderComparison(&lhs_arena, rhs, &other, whole))) {
+      EXPECT_TRUE(!has_quick || whole == quick);
+    }
+    /* And their states, where a NaN does not muddy the order and the types agree. */
+    if (has_quick && !lhs_nan && !rhs_nan && lhs_wide == rhs_wide) {
+      const Atom::TComparison by_state = Sabot::OrderStates(*Sabot::State::TAny::TWrapper(lhs.NewState(&lhs_arena, state_alloc)),
+                                                            *Sabot::State::TAny::TWrapper(rhs.NewState(&other, other_alloc)));
+      EXPECT_TRUE(by_state == quick);
+      num_eq += Atom::IsEq(quick) ? 1UL : 0UL;
+    }
+  }
+  /* Enough pairs were equal to exercise the shortcut all the way along. */
+  EXPECT_GT(num_eq, 500UL);
+  /* Only a tuple that fits is copied. */
+  array<TCore, 8> elems;
+  size_t count = 99UL;
+  bool nan;
+  EXPECT_FALSE(Make<int64_t>(5).TryCopyTupleElems(&lhs_arena, elems.data(), elems.size(), count));
+  EXPECT_FALSE(make(lhs_arena, true, nan).TryCopyTupleElems(&lhs_arena, elems.data(), 4UL, count));
+  EXPECT_EQ(count, 99UL);
 }
