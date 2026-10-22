@@ -6,7 +6,7 @@
 #   1. Compile clients/smoke/scan_yield.orly with orlyc, start a fresh mem-sim orlyi.
 #   2. Run scan_yield.mjs.
 #   3. Check orlyi is still alive; kill it on exit.
-# Environment: ROWS, TRIALS and MIN_SCAN_MS go to scan_yield.mjs (see there); EXTRA_ARGS adds
+# Environment: ROWS, MAX_ROWS, TRIALS and MIN_SCAN_MS go to scan_yield.mjs (see there); EXTRA_ARGS adds
 # orlyi flags, e.g. --read_yield_rows=0 for the negative control.
 
 set -e
