@@ -83,6 +83,22 @@ TReplicationStreamer::TReplicationStreamer() {}
 
 TReplicationStreamer::~TReplicationStreamer() {}
 
+size_t TReplicationStreamer::GetWriteSize() const {
+  return IndexIdBuilder.GetWriteSize() + RepoBuilder.GetWriteSize() + DurableBuilder.GetWriteSize() + TransactionBuilder.GetWriteSize();
+}
+
+bool TReplicationStreamer::UpdateSequenceNumbers(const L1::TTransaction::TReplica &replica) {
+  if (NumTransactions != 1UL || SeqNumCores.size() != replica.GetMutationList().size()) {
+    return false;
+  }
+  auto idx = SeqNumCores.begin();
+  for (const auto &mutation : replica.GetMutationList()) {
+    TransactionBuilder.Replace(*idx, mutation.GetSequenceNumber().value_or(EmptyRepoSequenceNumber));
+    ++idx;
+  }
+  return true;
+}
+
 void TReplicationStreamer::Write(Io::TBinaryOutputStream &strm) const {
   IndexIdBuilder.Write(strm);
   RepoBuilder.Write(strm);
@@ -110,6 +126,7 @@ void TReplicationStreamer::PushIndexId(const TIndexIdReplication &index_id) {
 
 void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &replica, bool unapplied) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  ++NumTransactions;
   TransactionBuilder.Push(replica.GetMutationList().size()); /* number of mutations in this transaction. */
   for (const auto &mutation : replica.GetMutationList()) {
     /* A push or a pop always has a sequence number.  A status change (pause, unpause, fail) carries
@@ -129,6 +146,7 @@ void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &rep
         const auto &cur_update = mutation.GetUpdate();
         TransactionBuilder.Push(static_cast<uint32_t>(Push)); /* kind of operation */
         TransactionBuilder.Push(mutation.GetRepoId()); /* repo id */
+        SeqNumCores.push_back(TransactionBuilder.GetCores().size());
         TransactionBuilder.Push(mutation_seq_num); /* sequence number */
         TransactionBuilder.PushState(cur_update.GetMetadata().NewState(cur_update.GetSuprena().get(), state_alloc)); /* meta-data */
         TransactionBuilder.PushState(cur_update.GetId().NewState(cur_update.GetSuprena().get(), state_alloc)); /* id */
@@ -145,24 +163,28 @@ void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &rep
         //std::cout << "\t\tPop[" << mutation.GetRepoId() << "]\t[" << mutation_seq_num << "]" << std::endl;
         TransactionBuilder.Push(static_cast<uint32_t>(Pop)); /* kind of operation */
         TransactionBuilder.Push(mutation.GetRepoId()); /* repo id */
+        SeqNumCores.push_back(TransactionBuilder.GetCores().size());
         TransactionBuilder.Push(mutation_seq_num); /* sequence number */
         break;
       }
       case L1::TTransaction::TReplica::TMutation::Failer : {
         TransactionBuilder.Push(static_cast<uint32_t>(Fail)); /* kind of operation */
         TransactionBuilder.Push(mutation.GetRepoId()); /* repo id */
+        SeqNumCores.push_back(TransactionBuilder.GetCores().size());
         TransactionBuilder.Push(mutation_seq_num); /* sequence number */
         break;
       }
       case L1::TTransaction::TReplica::TMutation::Pauser : {
         TransactionBuilder.Push(static_cast<uint32_t>(Pause)); /* kind of operation */
         TransactionBuilder.Push(mutation.GetRepoId()); /* repo id */
+        SeqNumCores.push_back(TransactionBuilder.GetCores().size());
         TransactionBuilder.Push(mutation_seq_num); /* sequence number */
         break;
       }
       case L1::TTransaction::TReplica::TMutation::UnPauser : {
         TransactionBuilder.Push(static_cast<uint32_t>(UnPause)); /* kind of operation */
         TransactionBuilder.Push(mutation.GetRepoId()); /* repo id */
+        SeqNumCores.push_back(TransactionBuilder.GetCores().size());
         TransactionBuilder.Push(mutation_seq_num); /* sequence number */
         break;
       }

@@ -520,6 +520,10 @@ namespace Orly {
            appends it into or gives back. */
         Disk::TWalReservation WalReservation;
 
+        /* The transaction's WAL record as Prepare built it to size the room, without the sequence
+           numbers its pushes take as they land; ~TTransaction fills those in and writes it. */
+        std::unique_ptr<TReplicationStreamer> WalStreamer;
+
         Disk::TWal::TRoom WalRoom = Disk::TWal::TRoom::All;
 
         /* Set by WaitForWalRoom; empty means Prepare refuses at once when there is no room. */

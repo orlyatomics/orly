@@ -341,6 +341,16 @@ namespace Orly {
          number takes the same room whatever its value, so the size is the size it will have. */
       void PushTransaction(const L1::TTransaction::TReplica &replica, bool unapplied = false);
 
+      /* After PushTransaction() of this replica, unapplied: give its mutations the sequence numbers
+         they have now, so the stream writes as if PushTransaction() had been called only now.
+         Only the sequence numbers may have changed since.  Returns false, changing nothing, if the
+         replica isn't the one pushed (it has a different number of mutations), or if more than one
+         transaction was pushed. */
+      bool UpdateSequenceNumbers(const L1::TTransaction::TReplica &replica);
+
+      /* The number of bytes Write() writes. */
+      size_t GetWriteSize() const;
+
       void PushDurable(const TDurableReplication &durable_replica);
 
       void PushRepo(const TRepoReplication &repo_replica);
@@ -383,6 +393,13 @@ namespace Orly {
       Atom::TCoreVectorBuilder DurableBuilder;
 
       Atom::TCoreVectorBuilder TransactionBuilder;
+
+      /* For UpdateSequenceNumbers(): where in TransactionBuilder each mutation PushTransaction()
+         pushed has its sequence number, in the replica's order. */
+      std::vector<size_t> SeqNumCores;
+
+      /* The number of PushTransaction() calls. */
+      size_t NumTransactions = 0UL;
 
       std::unique_ptr<Atom::TCoreVector> IndexIdVector;
 

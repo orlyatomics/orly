@@ -97,15 +97,15 @@ TCoreVectorBuilder::TDirtyArena::~TDirtyArena() {
   }
 }
 
-bool TCoreVectorBuilder::TDirtyArena::ForEachNote(const function<bool (const TNote *)> &cb) const {
-  for (const auto &item: NotesByDepth) {
-    for (const TNote *note: item.second) {
-      if (!cb(note)) {
-        return false;
+size_t TCoreVectorBuilder::GetWriteSize() const {
+  size_t size = sizeof(uint32_t);
+  Arena->ForEachNote(
+      [&size](const TNote *note) {
+        size += GetPaddedSize(sizeof(TNote) + note->GetRawSize());
+        return true;
       }
-    }
-  }
-  return true;
+  );
+  return size + sizeof(uint32_t) + Cores.size() * sizeof(TCore);
 }
 
 TCoreVectorBuilder::TOffset TCoreVectorBuilder::TDirtyArena::Propose(TNote *proposed_note) {
