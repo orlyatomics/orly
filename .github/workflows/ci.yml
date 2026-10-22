@@ -765,7 +765,8 @@ jobs:
 
       # #1015: with one fast runner, a point read issued a quarter of the way into a long scan
       # must answer before the scan does. A fiber doesn't give way while it computes, so this
-      # holds only because the scan yields every --read_yield_rows rows to a waiting statement.
+      # holds only because the scan yields to a ready statement once it has run for
+      # --read_yield_us.
       - name: A point read doesn't wait behind a long scan
         if: matrix.group == 'durability'
         run: bash clients/smoke/run-scan-yield.sh

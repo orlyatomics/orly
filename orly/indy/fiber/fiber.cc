@@ -161,6 +161,7 @@ void TRunner::Run() {
           FreeFrame = nullptr;
           FreeFramePool = nullptr;
           //printf("[%p]\tSwitch to Frame\n", this);
+          ++SwitchCount;
           switch_to_fiber(*sched_fib, MainFiber);
           //printf("[%p]\tDone Frame\n", this);
           if (FreeFrame) {

@@ -3,7 +3,7 @@
  * Loads ROWS rows, times a scan over all of them alone, then TRIALS times starts that scan on one
  * WebSocket session and, a quarter of the way into it, a point read on another. The point read
  * must answer before the scan does every time: a fiber doesn't give way while it computes, so
- * unless the scan yields (--read_yield_rows), the point read waits for the whole scan behind it
+ * unless the scan yields (--read_yield_us), the point read waits for the whole scan behind it
  * on the only fast runner. Prints the timings, and METRIC lines for tools/maint/ab_bench.py. */
 
 import { connect } from "../ts/dist/index.js";

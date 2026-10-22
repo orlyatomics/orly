@@ -19,9 +19,12 @@
 #include <orly/indy/fiber/fiber.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <iostream>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -1199,4 +1202,99 @@ FIXTURE(HopOntoBusyRunnerNotStarved) {
        30 s deadline, so this bound is loose but still catches one. */
     EXPECT_LE(pings_while_hopping, 50UL * hops);
   }
+}
+
+/* A frame running on a runner can tell whether another frame is ready there, and whether it was
+   switched out since it last looked, from the runner's switch count (#1015). A long read paces
+   itself by both: it yields only to a frame that is ready, and its slice restarts whenever it was
+   switched out. */
+FIXTURE(SwitchCountAndOtherReadyFrame) {
+  /* Latched onto the runner; runs once and records what it saw. */
+  class TFiber
+      : public TRunnable {
+    NO_COPY(TFiber);
+    public:
+
+    TFiber(TRunner *runner, std::function<void ()> body)
+        : Body(std::move(body)) {
+      Frame = TFrame::LocalFramePool->Alloc();
+      try {
+        Frame->Latch(runner, this, static_cast<TRunnable::TFunc>(&TFiber::Run));
+      } catch (...) {
+        TFrame::LocalFramePool->Free(Frame);
+        throw;
+      }
+    }
+
+    ~TFiber() {
+      TFrame::LocalFramePool->Free(Frame);
+    }
+
+    void Run() {
+      Body();
+      Done.store(true);
+    }
+
+    std::atomic<bool> Done{false};
+
+    private:
+
+    TFrame *Frame;
+
+    std::function<void ()> Body;
+
+  };
+  TRunner::TRunnerCons runner_cons(1UL);
+  TRunner runner(runner_cons);
+  TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> frame_pool_manager(2UL, 1024UL * 1024UL, &runner);
+  TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool(&frame_pool_manager);
+  bool alone = false, moved_on_yield = false, sees_inbound = false, moved_on_slow_yield = false, alone_again = false;
+  try {
+    std::atomic<bool> want_other(false), other_latched(false);
+    thread runner_thread([&] { runner.Run(); });
+    unique_ptr<TFiber> other;
+    TFiber probe(&runner, [&] {
+      TRunner *const local = TRunner::LocalRunner;
+      alone = !local->HasOtherReadyFrame();
+      const uint64_t before_yield = local->GetSwitchCount();
+      Yield();
+      const uint64_t after_yield = local->GetSwitchCount();
+      moved_on_yield = after_yield != before_yield;
+      /* A frame handed to the runner from a plain thread lands on its inbound queue. */
+      want_other.store(true);
+      while (!other_latched.load()) {
+        std::this_thread::yield();
+      }
+      sees_inbound = local->HasOtherReadyFrame();
+      YieldSlow();
+      moved_on_slow_yield = local->GetSwitchCount() != after_yield;
+      /* The other frame ran while we were out. */
+      alone_again = !local->HasOtherReadyFrame();
+    });
+    while (!want_other.load()) {
+      std::this_thread::yield();
+    }
+    other = make_unique<TFiber>(&runner, [] {});
+    other_latched.store(true);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while ((!probe.Done.load() || !other->Done.load()) && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const bool finished = probe.Done.load() && other->Done.load();
+    runner.ShutDown();
+    runner_thread.join();
+    EXPECT_TRUE(finished);
+    other.reset();
+  } catch (...) {
+    delete TFrame::LocalFramePool;
+    TFrame::LocalFramePool = nullptr;
+    throw;
+  }
+  delete TFrame::LocalFramePool;
+  TFrame::LocalFramePool = nullptr;
+  EXPECT_TRUE(alone);
+  EXPECT_TRUE(moved_on_yield);
+  EXPECT_TRUE(sees_inbound);
+  EXPECT_TRUE(moved_on_slow_yield);
+  EXPECT_TRUE(alone_again);
 }
