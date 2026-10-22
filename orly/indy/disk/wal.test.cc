@@ -47,6 +47,24 @@ FIXTURE(Crc32cStandardVector) {
   const char *test_str = "123456789";
   const uint32_t crc = ComputeCrc32c(test_str, 9);
   EXPECT_EQ(crc, 0xE3069283U);
+  EXPECT_EQ(ComputeCrc32cPortable(test_str, 9), 0xE3069283U);
+}
+
+FIXTURE(Crc32cMatchesPortable) {
+  /* Every length and alignment around the eight-byte steps, and chained through a seed. */
+  std::vector<uint8_t> buf(300);
+  uint32_t x = 12345U;
+  for (auto &b : buf) {
+    x = x * 1103515245U + 12345U;
+    b = static_cast<uint8_t>(x >> 16);
+  }
+  for (size_t start = 0; start < 9; ++start) {
+    for (size_t length = 0; start + length <= buf.size(); ++length) {
+      const uint32_t want = ComputeCrc32cPortable(buf.data() + start, length);
+      EXPECT_EQ(ComputeCrc32c(buf.data() + start, length), want);
+      EXPECT_EQ(ComputeCrc32c(buf.data() + start, length, 0xDEADBEEFU), ComputeCrc32cPortable(buf.data() + start, length, 0xDEADBEEFU));
+    }
+  }
 }
 
 FIXTURE(BasicAppendWaitAndScan) {

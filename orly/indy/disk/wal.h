@@ -98,6 +98,10 @@ namespace Orly {
       /* CRC32C (Castagnoli) checksum helper */
       uint32_t ComputeCrc32c(const void *data, size_t length, uint32_t initial = 0U);
 
+      /* The same, a byte at a time by table, whatever the processor.  ComputeCrc32c() uses the
+         processor's crc32 instruction where it has one. */
+      uint32_t ComputeCrc32cPortable(const void *data, size_t length, uint32_t initial = 0U);
+
       /* 64-bit checksum helper based on Base::Murmur */
       uint64_t ComputeChecksum64(const void *data, size_t length, uint64_t seed = 0UL);
 
