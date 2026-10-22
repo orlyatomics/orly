@@ -22,6 +22,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <unordered_set>
@@ -467,6 +468,14 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "stop timeout (docker stop --time) at least this much. Default 300."
   );
   Param(
+      &TCmd::MaxFoldInputMB, "max_fold_input_mb", Optional, "max_fold_input_mb\0",
+      "The largest merged file, in MiB, that a disk merge folds (issue #988). A fold holds its whole output in "
+      "memory, about three times the file's size, so a larger merge keeps its output unfolded: still correct, "
+      "but a read of a key walks its unfolded run. A larger merge still folds if a key in it has a run of more "
+      "than 64 entries that are not assignments, so no run grows past that. Default: a sixteenth of the memory "
+      "budget (--memory_budget_mb). 0 means no limit."
+  );
+  Param(
       &TCmd::ReadBudgetMB, "read_budget_mb", Optional, "read_budget_mb\0",
       "The per-read memory budget (issue #694): a method call that builds more than this many "
       "MiB of results is refused with a read_too_large error. Default: a sixteenth of the "
@@ -690,6 +699,7 @@ TServer::TCmd::TCmd()
       ReadBudgetSteps(0UL),
       ReadYieldRows(8UL),
       ReadYieldUs(1000UL),
+      MaxFoldInputMB(0UL),
       DurableAcks("local"),
       WalMB(256),
       OperationRetentionCount(4096),
@@ -1026,6 +1036,22 @@ bool TServer::TCmd::ResolveMemoryDefaults(const Base::TCmd::TMeta::TMessageConsu
             << (read_mb_given || WasGiven("read_budget_rows") || WasGiven("read_budget_steps") ? "" : ", from the memory budget");
   MemoryBudgetReport.emplace_back(LOG_INFO, read_line.str());
 
+  /* The fold cap (#988). A fold holds the whole merged file in memory while it builds its output, about three
+     times the file's size on disk, so a large one alone could take more than the plan leaves for merges, sessions
+     and compiles. A sixteenth of the budget, as for a read, keeps one fold to about a fifth of the budget. */
+  if (!WasGiven("max_fold_input_mb")) {
+    MaxFoldInputMB = ToMiB(budget_bytes) / 16UL;
+  }
+  std::ostringstream fold_line;
+  fold_line << "fold cap: ";
+  if (MaxFoldInputMB) {
+    fold_line << "merged files over " << MaxFoldInputMB << " MiB are kept unfolded"
+              << (WasGiven("max_fold_input_mb") ? "" : ", from the memory budget");
+  } else {
+    fold_line << "none";
+  }
+  MemoryBudgetReport.emplace_back(LOG_INFO, fold_line.str());
+
   /* The minimum working set. The merge reserve, a share of the Update and Update Entry pools
      kept for merges (#607/#629), must hold one memory merge's copy of a backlog of
      MinMergeCopyWrites writes: that many updates, and twice that many entries, because #629
@@ -1228,6 +1254,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
      else, so reads over many disk layers can't take every frame a statement needs to start
      (#762). */
   Indy::TRepo::SetReadPrepFrameBudget(Cmd.NumFiberFrames / 2UL);
+  Indy::TRepo::SetMaxFoldInputBytes(Cmd.MaxFoldInputMB ? Cmd.MaxFoldInputMB * 1024UL * 1024UL : std::numeric_limits<size_t>::max());
   Disk::Util::TDiskController::TEvent::InitializeDiskEventPoolManager(Cmd.NumDiskEvents);
   using TLocalReadFileCache = Orly::Indy::Disk::TLocalReadFileCache<Orly::Indy::Disk::Util::LogicalPageSize,
     Orly::Indy::Disk::Util::LogicalBlockSize,

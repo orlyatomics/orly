@@ -1178,6 +1178,90 @@ FIXTURE(RootMergeFoldsChainOntoBaseOutsideMerge) {
   });
 }
 
+/* #988: a merged file past the fold cap stays unfolded, and its `+=` chain still reads in full. */
+FIXTURE(DiskMergePastTheFoldCapStaysUnfolded) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    const int64_t counter = -1L;
+    const size_t old_cap = TRepo::GetMaxFoldInputBytes();
+    for (bool capped : {false, true}) {
+      TRepo::SetMaxFoldInputBytes(capped ? 1UL : std::numeric_limits<size_t>::max());
+      const size_t too_large = TRepo::GetNumFoldsTooLarge();
+      {
+        TRootRepoFixture root(true);
+        root.Commit({{counter, 10L, TMutator::Assign}});
+        for (int64_t key = 0L; key < 100L; ++key) {
+          root.Commit({{key, key, TMutator::Assign}});
+        }
+        root.Flush();
+        for (int64_t file = 0L; file < 2L; ++file) {
+          root.Commit({{counter, 1L, TMutator::Add}});
+          root.Commit({{counter, 1L, TMutator::Add}});
+          root.Flush();
+        }
+        root.MergeDisk(4UL);
+        EXPECT_EQ(root.Read(counter), root.Int(14L));
+        root.Commit({{counter, 1L, TMutator::Add}});
+        root.Flush();
+        root.MergeDisk(4UL);
+        EXPECT_EQ(root.Read(counter), root.Int(15L));
+        for (int64_t key = 0L; key < 100L; ++key) {
+          EXPECT_EQ(root.Read(key), root.Int(key));
+        }
+      }
+      EXPECT_EQ(TRepo::GetNumFoldsTooLarge() > too_large, capped);
+    }
+    TRepo::SetMaxFoldInputBytes(old_cap);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* #988: the fold cap must not let a `+=` run grow without bound. Every merge here is past the cap, and each one takes
+   in the last one's output, so without the run bound the counter's run would only grow, to 300 entries. Once it passes
+   MaxUnfoldedRun the merge folds anyway, and the run starts again from one. */
+FIXTURE(DiskMergePastTheFoldCapBoundsARun) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    const int64_t counter = -1L;
+    const size_t old_cap = TRepo::GetMaxFoldInputBytes();
+    TRepo::SetMaxFoldInputBytes(1UL);
+    const size_t too_large = TRepo::GetNumFoldsTooLarge(), long_runs = TRepo::GetNumFoldsForLongRuns();
+    {
+      TRootRepoFixture root(false);
+      root.Commit({{counter, 0L, TMutator::Assign}});
+      for (int64_t key = 0L; key < 100L; ++key) {
+        root.Commit({{key, key, TMutator::Assign}});
+      }
+      root.Flush();
+      int64_t expected = 0L;
+      for (int64_t round = 0L; round < 30L; ++round) {
+        for (int64_t i = 0L; i < 10L; ++i) {
+          root.Commit({{counter, 1L, TMutator::Add}});
+          ++expected;
+        }
+        root.Flush();
+        root.MergeDisk(4UL);
+        EXPECT_EQ(root.Read(counter), root.Int(expected));
+      }
+      for (int64_t key = 0L; key < 100L; ++key) {
+        EXPECT_EQ(root.Read(key), root.Int(key));
+      }
+    }
+    EXPECT_GT(TRepo::GetNumFoldsTooLarge(), too_large);
+    EXPECT_GT(TRepo::GetNumFoldsForLongRuns(), long_runs);
+    EXPECT_LE(TRepo::GetLongestRunKeptUnfolded(), TRepo::MaxUnfoldedRun);
+    cerr << "fold cap: " << (TRepo::GetNumFoldsTooLarge() - too_large) << " kept unfolded, "
+         << (TRepo::GetNumFoldsForLongRuns() - long_runs) << " folded for a long run, longest kept "
+         << TRepo::GetLongestRunKeptUnfolded() << endl;
+    TRepo::SetMaxFoldInputBytes(old_cap);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 /* #666: read a `+=` chain straight out of an unfolded disk merge. A merge copies the notes of
    its inputs' arenas into one ordered arena, and readers compare that arena's cores by offset.
    In release builds the inputs' notes carried garbage in their unused header bits, the merge

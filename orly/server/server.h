@@ -405,6 +405,11 @@ namespace Orly {
            ready on its fast runner (#1015); 0 means never. */
         size_t ReadYieldUs;
 
+        /* The largest merged file, in MiB, a disk merge folds (#988); a larger one is kept unfolded. A fold holds its
+           whole output in memory. ResolveMemoryDefaults() derives it from the memory budget unless the command line
+           gives it; 0 means no limit. */
+        size_t MaxFoldInputMB;
+
         /* Durable acknowledgments via write-ahead log (#755). "local" / "true" (default), "false". */
         std::string DurableAcks = "local";
 

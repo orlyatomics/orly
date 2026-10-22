@@ -1411,6 +1411,10 @@ void TRepo::EndDiskFullStreak(std::atomic<size_t> &streak, const char *merge_kin
 std::function<void (TRepo *)> TRepo::OnMergeMemSealedForTest;
 
 atomic<size_t> TRepo::ReadPrepFrameBudget{numeric_limits<size_t>::max()};
+atomic<size_t> TRepo::MaxFoldInputBytes{numeric_limits<size_t>::max()};
+atomic<size_t> TRepo::NumFoldsTooLarge{0UL};
+atomic<size_t> TRepo::LongestRunKeptUnfolded{0UL};
+atomic<size_t> TRepo::NumFoldsForLongRuns{0UL};
 
 atomic<size_t> TRepo::ReadPrepFramesInUse{0UL};
 
@@ -2946,6 +2950,21 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     AddMergeBytes(merge_data_file.GetFileLength());
     return intermediate_gen_id;
   };
+  /* #988: a merged file past the fold cap stays unfolded, unless a key in it has a run too long to leave: a merge that
+     takes the file in is larger still, so the run would only grow, and every read of the key would walk it. */
+  if (merge_data_file.GetFileLength() > GetMaxFoldInputBytes()) {
+    const size_t longest_run = merge_data_file.GetMaxKeyNonAssignEntries();
+    if (longest_run <= MaxUnfoldedRun) {
+      NumFoldsTooLarge.fetch_add(1UL, std::memory_order_relaxed);
+      size_t seen = LongestRunKeptUnfolded.load(std::memory_order_relaxed);
+      while (seen < longest_run && !LongestRunKeptUnfolded.compare_exchange_weak(seen, longest_run, std::memory_order_relaxed)) {}
+      return keep_unfolded("too large");
+    }
+    const size_t long_runs = NumFoldsForLongRuns.fetch_add(1UL, std::memory_order_relaxed) + 1UL;
+    if ((long_runs & (long_runs - 1UL)) == 0UL) {
+      syslog(LOG_INFO, "MergeFiles: folding %ld keys past the fold cap for a run of %ld (%ld times so far)", merge_data_file.GetNumKeys(), longest_run, long_runs);
+    }
+  }
   size_t final_gen_id = GetNextGenId();
   size_t fold_file_length = 0UL;
   try {

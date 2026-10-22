@@ -969,6 +969,7 @@ class TMergeDataFileImpl {
         for (const auto &idx : index_map) {
           NumKeys += idx.second->NumCurKeys;
           NumNonAssignEntries += idx.second->NumNonAssignEntries;
+          MaxKeyNonAssignEntries = std::max(MaxKeyNonAssignEntries, idx.second->MaxKeyNonAssignEntries);
         }
       }
       completion_trigger.Wait();
@@ -2198,6 +2199,11 @@ class TMergeDataFileImpl {
     return NumNonAssignEntries;
   }
 
+  /* The most non-Assign entries any one key has, in any index (#988). */
+  inline size_t GetMaxKeyNonAssignEntries() const {
+    return MaxKeyNonAssignEntries;
+  }
+
   inline TSequenceNumber GetLowestSequence() const {
     return LowestSeq;
   }
@@ -2486,7 +2492,11 @@ class TMergeDataFileImpl {
 
     void PushCurKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val, TMutator mutator) {
       ++NumCurKeys;
-      if (mutator != TMutator::Assign) ++NumNonAssignEntries;
+      CurKeyNonAssignEntries = 0UL;
+      if (mutator != TMutator::Assign) {
+        ++NumNonAssignEntries;
+        NoteKeyNonAssignEntry();
+      }
       TDataOutStream &stream = *KeyStream;
       if (!FirstKey) {
         stream << NumCurHistoryElem << ByteOffsetOfCurHistory;
@@ -2540,9 +2550,17 @@ class TMergeDataFileImpl {
       UpdateCollector->Emplace(seq_num, CurKeyOffset, true, IndexId);
     }
 
+    /* Count a non-Assign entry against the current key (#988). */
+    void NoteKeyNonAssignEntry() {
+      MaxKeyNonAssignEntries = std::max(MaxKeyNonAssignEntries, ++CurKeyNonAssignEntries);
+    }
+
     void PushHistKey(TSequenceNumber seq_num, const Atom::TCore &key, const Atom::TCore &val, TMutator mutator) {
       ++NumHistKeys;
-      if (mutator != TMutator::Assign) ++NumNonAssignEntries;
+      if (mutator != TMutator::Assign) {
+        ++NumNonAssignEntries;
+        NoteKeyNonAssignEntry();
+      }
       HistKeyVec.emplace_back(seq_num, key, val, mutator);
       UpdateCollector->Emplace(seq_num, ByteOffsetOfCurHistory + NumCurHistoryElem * TData::KeyHistorySize, false, IndexId);
       ++NumCurHistoryElem;
@@ -2835,6 +2853,9 @@ class TMergeDataFileImpl {
        TSafeRepo::MergeFiles to skip the TFoldDataFile pass on files
        that have nothing to fold (#64). */
     size_t NumNonAssignEntries = 0UL;
+    /* The most non-Assign entries any one key has in this index, and the current key's count so far (#988). */
+    size_t MaxKeyNonAssignEntries = 0UL;
+    size_t CurKeyNonAssignEntries = 0UL;
     size_t EndOfHistoryStream;
     std::vector<THistKey> HistKeyVec;
     size_t NumCurHistoryElem;
@@ -2940,6 +2961,7 @@ class TMergeDataFileImpl {
 
   size_t NumKeys;
   size_t NumNonAssignEntries = 0UL;
+  size_t MaxKeyNonAssignEntries = 0UL;
   TSequenceNumber LowestSeq;
   TSequenceNumber HighestSeq;
 
@@ -2982,6 +3004,7 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
       TMergeDataFileImpl<true, true> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, retain_from, cancel);
       NumKeys = merge_file.GetNumKeys();
       NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
+      MaxKeyNonAssignEntries = merge_file.GetMaxKeyNonAssignEntries();
       LowestSeq = merge_file.GetLowestSequence();
       HighestSeq = merge_file.GetHighestSequence();
       FileLength = merge_file.GetFileLength();
@@ -2989,6 +3012,7 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
       TMergeDataFileImpl<true, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, retain_from, cancel);
       NumKeys = merge_file.GetNumKeys();
       NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
+      MaxKeyNonAssignEntries = merge_file.GetMaxKeyNonAssignEntries();
       LowestSeq = merge_file.GetLowestSequence();
       HighestSeq = merge_file.GetHighestSequence();
       FileLength = merge_file.GetFileLength();
@@ -2997,6 +3021,7 @@ TMergeDataFile::TMergeDataFile(Util::TEngine *engine,
     TMergeDataFileImpl<false, false> merge_file(engine, storage_speed, file_uuid, gen_vec, file_uid, gen_id, release_up_to, priority, max_block_cache_read_slots_allowed, temp_file_consol_thresh, std::nullopt, cancel);
     NumKeys = merge_file.GetNumKeys();
     NumNonAssignEntries = merge_file.GetNumNonAssignEntries();
+    MaxKeyNonAssignEntries = merge_file.GetMaxKeyNonAssignEntries();
     LowestSeq = merge_file.GetLowestSequence();
     HighestSeq = merge_file.GetHighestSequence();
     FileLength = merge_file.GetFileLength();
