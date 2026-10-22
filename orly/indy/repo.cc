@@ -1067,21 +1067,43 @@ void TRepo::JoinTetris() {
 
 std::optional<TSequenceNumber> TRepo::AppendUpdate(TUpdate *update, TSequenceNumber &next_update, const Base::TUuid &promoted_from) noexcept {
   std::optional<TSequenceNumber> new_seq;
+  /* One appender at a time, and no seal of CurMemoryLayer (StepMergeMem) between the reservation and
+     the publish.  Taken before DataLock; see InsertLock. */
+  std::lock_guard<std::mutex> insert_lock(InsertLock);
+  TMemoryLayer *layer;
+  bool was_empty;
+  size_t size_before;
+  /* Reserve under DataLock: pick the sequence number and the layer, but publish nothing.  NextUpdate,
+     HighestSeqNum and LowestSeqNum are untouched, so no reader can see the update yet, and nobody else
+     can take this number (every other writer of NextUpdate is on a repo with no concurrent appenders:
+     the importer and the seeding of a fresh repo). */ {
+    std::lock_guard<std::mutex> lock(DataLock);
+    new_seq = NextUpdate;
+    update->SetSequenceNumber(*new_seq);
+    assert(CurMemoryLayer);
+    layer = CurMemoryLayer;
+    was_empty = layer->IsEmpty();
+    size_before = layer->GetSize();
+  }
+  /* Link the entries outside DataLock: this is the O(entries) part.  Readers walk the entry index
+     without a lock and drop entries newer than their snapshot's HighestSeqNum, and this update's
+     number is above every snapshot's until the publish below. */
+  layer->LinkEntries(update);
   /* acquire Data lock */ {
     std::lock_guard<std::mutex> lock(DataLock);
+    if (NextUpdate != *new_seq || CurMemoryLayer != layer) {
+      /* Nothing else may move the numbering or seal the layer while InsertLock is held. */
+      syslog(LOG_EMERG, "AppendUpdate: reserved %lu but the repo is at %lu, or its memory layer changed; aborting",
+             static_cast<unsigned long>(*new_seq), static_cast<unsigned long>(NextUpdate));
+      abort();
+    }
+    layer->PublishUpdate(update);
     HighestSeqNum = NextUpdate;
     ++NextUpdate;
     next_update = NextUpdate;
     if (!LowestSeqNum) {
       LowestSeqNum = *HighestSeqNum;
     }
-    new_seq = HighestSeqNum;
-
-    update->SetSequenceNumber(*new_seq);
-    assert(CurMemoryLayer);
-    bool was_empty = CurMemoryLayer->IsEmpty();
-    const size_t size_before = CurMemoryLayer->GetSize();
-    CurMemoryLayer->Insert(update);
     /* #857: count the update's logical bytes (key plus value bytes). */
     AddLogicalBytes(update->ComputeLogicalBytes());
     /* #628: count the update's entries for the writer backpressure. Only a child's backlog is
@@ -1415,6 +1437,9 @@ void TRepo::StepMergeMem() {
   try {
     /*** If the current memory layer is not empty, add it to the mapping layer and create a new current memory layer ***/
     /* acquire DataLayer lock */ {
+      /* An append links its entries into CurMemoryLayer outside DataLock, so wait out any in flight
+         before sealing it (InsertLock first: it is above DataLock in the lock order). */
+      std::lock_guard<std::mutex> insert_lock(InsertLock);
       std::lock_guard<std::mutex> lock(DataLock);
       assert(CurMemoryLayer);
       if (!CurMemoryLayer->IsEmpty()) {

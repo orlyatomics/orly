@@ -802,6 +802,17 @@ namespace Orly {
          join/part). Non-recursive; lock order is DataLock -> MappingLock. */
       std::mutex DataLock;
 
+      /* Serializes appenders against each other and against the seal in StepMergeMem, so that an
+         append can link its entries into CurMemoryLayer outside DataLock (readers take DataLock to
+         snapshot, and an Insert of a big update held it for ~13 ms).  Lock order: InsertLock ->
+         DataLock -> MappingLock.  Nothing holding DataLock may take InsertLock.
+
+         Invariant AppendUpdate relies on (see its comment): a reader sees an update only if its
+         sequence number is within [LowestSeqNum, HighestSeqNum] of its snapshot, and AppendUpdate
+         advances HighestSeqNum (and NextUpdate) only after the entries are linked, in sequence
+         order, because it holds InsertLock from the reservation to the publish. */
+      std::mutex InsertLock;
+
       /* After a mem merge, drop this repo from the manager's dirty set if no
          memtable still holds data; otherwise re-enqueue another mem merge. */
       void CheckRemoveDirty();
@@ -1551,6 +1562,7 @@ namespace Orly {
     }
 
     inline void TRepo::SetNextSequenceNumber(TSequenceNumber next_id) noexcept {
+      std::lock_guard<std::mutex> insert_lock(InsertLock);
       NextUpdate = next_id;
     }
 
@@ -1559,6 +1571,7 @@ namespace Orly {
     }
 
     inline void TRepo::ReleaseUnusedSequenceNumbers(TSequenceNumber next_id) {
+      std::lock_guard<std::mutex> insert_lock(InsertLock);
       std::lock_guard<std::mutex> lock(DataLock);
       assert(next_id > 0);
       assert(next_id <= NextUpdate);
@@ -1569,6 +1582,7 @@ namespace Orly {
 
     inline TSequenceNumber TRepo::UseSequenceNumbers(size_t num) {
       assert(num);
+      std::lock_guard<std::mutex> insert_lock(InsertLock);
       std::lock_guard<std::mutex> lock(DataLock);
       TSequenceNumber starting = NextUpdate;
       NextUpdate += num;
