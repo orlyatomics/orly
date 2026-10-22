@@ -181,7 +181,7 @@ namespace Orly {
           if (MaxLocalCacheSize > 0) {
             /* do-little: LocalBufCache releases cache state correctly */
           } else if (MainSlot) {
-            Cache->Release(MainSlot, LoadedPageId);
+            Cache->Release(MainSlot, DataSlot, LoadedPageId);
           }
         }
 
@@ -351,12 +351,12 @@ namespace Orly {
           return LoadedPageId;
         }
 
-        Util::TPageCache::TSlot *GetLoadedMainSlot() const {
+        typename Util::TCache<PhysicalCachePageSize>::TSlot *GetLoadedMainSlot() const {
           assert(MainSlot);
           return MainSlot;
         }
 
-        Util::TPageCache::TSlot *GetLoadedDataSlot() const {
+        typename Util::TCache<PhysicalCachePageSize>::TSlot *GetLoadedDataSlot() const {
           assert(DataSlot);
           return DataSlot;
         }
@@ -385,7 +385,7 @@ namespace Orly {
           ByteOffset = -1;
           BufData = nullptr;
           if (MainSlot) {
-            Cache->Release(MainSlot, LoadedPageId);
+            Cache->Release(MainSlot, DataSlot, LoadedPageId);
             MainSlot = nullptr;
             DataSlot = nullptr;
           }
@@ -455,7 +455,7 @@ namespace Orly {
              the old page while LoadedPageId names the new one, and the next FetchBuf or ~TStream
              calls Cache->Release(old_slot, new_page_id). */
           if (MaxLocalCacheSize == 0 && MainSlot) {
-            Cache->Release(MainSlot, LoadedPageId);
+            Cache->Release(MainSlot, DataSlot, LoadedPageId);
           }
           MainSlot = nullptr;
           DataSlot = nullptr;

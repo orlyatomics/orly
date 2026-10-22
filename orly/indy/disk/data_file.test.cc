@@ -19,6 +19,7 @@
 #include <orly/indy/disk/data_file.h>
 
 #include <functional>
+#include <limits>
 #include <vector>
 
 #include <valgrind/callgrind.h>
@@ -461,6 +462,101 @@ FIXTURE(StraddlingNoteOutOfCachePages) {
           arena.ReleaseNote(note, target_offset, d1, d2, d3);
         }
       }
+    }
+    GracefullShutdown();
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+/* A note pin is taken from the page the arena's stream holds, with no slot lock. Move the stream to another page
+   while the note is held (the stream's own release of the first page is then the fast one, count 2 -> 1), then
+   release the note (the locked 1 -> 0). Neither page may be left referenced. */
+FIXTURE(NotePinOutlivesStreamMove) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    const TScheduler::TPolicy scheduler_policy(4, 10, milliseconds(10));
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 256, 1);
+    Disk::Util::TEngine *engine = mem_engine.GetEngine();
+    using TCachePage = Disk::Util::TCache<TReader::PhysicalCachePageSize>;
+    TCachePage *cache = engine->GetCache<TReader::PhysicalCachePageSize>();
+
+    Base::TUuid file_id(TUuid::Best);
+    const size_t data_gen_id = 1;
+    TSequenceNumber seq_num = 0U;
+    TUuid idx(TUuid::Twister);
+    /* Small notes, so most sit inside one chunk and can be pinned in place, and enough of them to span several pages. */ {
+      TMockMem mem_layer;
+      for (int64_t i = 0; i < 3000; ++i) {
+        TSuprena suprena;
+        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+        Insert(mem_layer, ++seq_num, idx, TKey(to_string(i) + string(200, 'v'), &suprena, state_alloc), i);
+      }
+      TDataFile data_file(engine, TVolume::TDesc::Fast, &mem_layer, file_id, data_gen_id, 20UL, 0U, Medium);
+    }
+
+    TReader reader(HERE, engine, file_id, data_gen_id);
+    std::vector<size_t> offsets;
+    /* The scan's stream goes out of scope before the check below. */ {
+      TReader::TArena scan(&reader, cache, RealTime);
+      for (TReader::TArena::TCursor csr(&scan, 0, scan.GetNumBytesOfArena()); csr; ++csr) {
+        offsets.push_back(csr.GetOffset());
+      }
+    }
+    /* References held on a page other than the probe's own. Something outside the arena (the reader) may keep a
+       steady one, so compare against a run that has already finished instead of expecting zero. */
+    auto held = [cache](size_t page_id) { return cache->CountReferences(page_id); };
+    size_t page_a = 0UL, page_b = 0UL;
+    /* One arena: pin note A, move its stream to another page while A is held, then release A. `baseline_a` is
+       the steady count on A's page from an earlier run, or SIZE_MAX if there is none yet. */
+    auto run = [&](size_t baseline_a) {
+      bool moved = false;
+      TReader::TArena arena(&reader, cache, RealTime);
+      void *a1 = nullptr, *a2 = nullptr, *a3 = nullptr;
+      const TCore::TNote *note_a = nullptr;
+      size_t offset_a = 0UL;
+      for (size_t i = 0; i < offsets.size() && !note_a; ++i) {
+        const TCore::TNote *note = arena.TryAcquireNote(offsets[i], a1, a2, a3);
+        if (note && a1 == nullptr) {
+          /* Copied out rather than pinned; try the next. */
+          arena.ReleaseNote(note, offsets[i], a1, a2, a3);
+        } else if (note) {
+          note_a = note;
+          offset_a = offsets[i];
+        }
+      }
+      if (EXPECT_TRUE(note_a != nullptr)) {
+        page_a = reinterpret_cast<size_t>(a3);
+        /* Move the stream to a note on another page, holding note A throughout. */
+        for (size_t i = 0; i < offsets.size() && !moved; ++i) {
+          void *b1 = nullptr, *b2 = nullptr, *b3 = nullptr;
+          const TCore::TNote *note_b = arena.TryAcquireNote(offsets[i], b1, b2, b3);
+          if (note_b) {
+            if (b1 != nullptr && reinterpret_cast<size_t>(b3) != page_a) {
+              page_b = reinterpret_cast<size_t>(b3);
+              moved = true;
+            }
+            arena.ReleaseNote(note_b, offsets[i], b1, b2, b3);
+          }
+        }
+        EXPECT_TRUE(moved);
+        /* The note still pins A's page after the stream has left it. */
+        if (baseline_a != std::numeric_limits<size_t>::max()) {
+          EXPECT_TRUE(held(page_a) > baseline_a);
+        }
+        arena.ReleaseNote(note_a, offset_a, a1, a2, a3);
+      }
+      return moved;
+    };
+    if (EXPECT_TRUE(run(std::numeric_limits<size_t>::max()))) {
+      const size_t steady_a = held(page_a);
+      const size_t steady_b = held(page_b);
+      EXPECT_TRUE(run(steady_a));
+      EXPECT_EQ(held(page_a), steady_a);
+      EXPECT_EQ(held(page_b), steady_b);
     }
     GracefullShutdown();
     std::lock_guard<std::mutex> lock(mut);
