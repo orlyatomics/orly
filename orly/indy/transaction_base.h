@@ -131,6 +131,11 @@ namespace Orly {
            on the commit path. See orly/indy/transaction_base.cc. */
         static std::function<void ()> OnCommitBetweenPushAndPopForTest;
 
+        /* Test-only instrumentation hook, invoked in ~TTransaction with the WAL record it is about
+           to append: true if it is the one Prepare built, with its sequence numbers filled in;
+           false if it had to build a new one.  Defaults to empty; never set in production. */
+        static std::function<void (const TReplicationStreamer &, bool)> OnWalRecordForTest;
+
         class TTransactionCompletion {
           NO_COPY(TTransactionCompletion);
           public:
@@ -519,6 +524,10 @@ namespace Orly {
         /* The WAL room Prepare reserved for this transaction's record (#891), which ~TTransaction
            appends it into or gives back. */
         Disk::TWalReservation WalReservation;
+
+        /* The transaction's WAL record as Prepare built it to size the room, without the sequence
+           numbers its pushes take as they land; ~TTransaction fills those in and writes it. */
+        std::unique_ptr<TReplicationStreamer> WalStreamer;
 
         Disk::TWal::TRoom WalRoom = Disk::TWal::TRoom::All;
 

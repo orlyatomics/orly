@@ -36,6 +36,7 @@
 #include <orly/indy/disk/sim/mem_engine.h>
 #include <orly/indy/disk/wal.h>
 #include <orly/indy/fiber/fiber_test_runner.h>
+#include <orly/indy/replication.h>
 #include <orly/indy/repo.h>
 #include <orly/indy/wal_retention.h>
 #include <orly/server/tetris_manager.h>
@@ -1887,6 +1888,61 @@ FIXTURE(Issue963PausedRoomCap) {
       EXPECT_EQ(retention->GetPausedFootprintBytes(), 2UL * one);
       EXPECT_EQ(wal.GetPromotionDebtBytes(), 3UL * one);
     }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* A committed transaction on a safe repo appends the WAL record Prepare built, with its sequence
+   numbers filled in, rather than building another; and so does one prepared twice, with the record
+   of its second Prepare. */
+FIXTURE(WalRecordBuiltOnceInPrepare) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    Disk::Sim::TFaultPlan plan;
+    Disk::Sim::TFaultDevice device(&plan, Issue963DeviceSectors);
+    Disk::TWal wal(&device, MakeIssue963WalConfig());
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    manager->SetWal(&wal);
+    std::vector<std::pair<bool, size_t>> records;
+    L1::TTransaction::OnWalRecordForTest = [&records](const TReplicationStreamer &streamer, bool prepared) {
+      records.emplace_back(prepared, streamer.GetWriteSize());
+    };
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      auto repo = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+      PushOne(manager.get(), repo, idx_id, 1);
+      if (EXPECT_EQ(records.size(), 1UL)) {
+        EXPECT_TRUE(records[0].first);
+      }
+      /* Several keys in one update, prepared twice. */
+      /* extra */ {
+        TUpdate::TOpByKey op_by_key;
+        for (int64_t key = 10; key < 74; ++key) {
+          op_by_key.emplace(TIndexKey(idx_id, TKey(make_tuple(key), &arena, state_alloc)), TKey(key * 10L, &arena, state_alloc));
+        }
+        auto transaction = manager->NewTransaction();
+        transaction->Push(repo, TUpdate::NewUpdate(op_by_key, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc)));
+        transaction->Prepare();
+        transaction->Prepare();
+        transaction->CommitAction();
+      }
+      if (EXPECT_EQ(records.size(), 2UL)) {
+        EXPECT_TRUE(records[1].first);
+        EXPECT_GT(records[1].second, records[0].second);
+      }
+      EXPECT_EQ(repo->GetNextSequenceNumber(), 3UL);
+    }
+    L1::TTransaction::OnWalRecordForTest = nullptr;
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();

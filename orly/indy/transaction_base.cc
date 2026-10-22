@@ -90,6 +90,7 @@ static size_t CountPromotionsAhead(const Orly::Indy::L0::TManager::TRepo *repo) 
 
 /* Test-only; empty in production. See header. */
 std::function<void ()> TTransaction::OnCommitBetweenPushAndPopForTest;
+std::function<void (const Orly::Indy::TReplicationStreamer &, bool)> TTransaction::OnWalRecordForTest;
 
 /* Whether a replicated status change (pause, unpause, fail) lines up with our copy of the repo.
    follow_or_discard is the master's lowest unpromoted sequence number when the change committed;
@@ -494,20 +495,14 @@ void TTransaction::Prepare() {
      record the WAL took but couldn't write before its checkpointed head would hold up the flush
      of every root it pushed into, and with it the checkpoint that would make the room.  Sized by
      serialising it as ~TTransaction will; only the sequence numbers are missing, and they take
-     the same room whatever they are. */
+     the same room whatever they are.  It is kept for ~TTransaction, which fills them in. */
   WalReservation.Release();
+  WalStreamer.reset();
   Disk::TWal *wal = TouchesSafeRepo ? Manager->GetWal() : nullptr;
   if (wal) {
-    TReplicationStreamer streamer;
-    streamer.PushTransaction(Replica, true);
-    auto recorder = std::make_shared<Io::TRecorder>();
-    /* serialize */ {
-      Io::TBinaryOutputOnlyStream strm(recorder);
-      streamer.Write(strm);
-      strm.Flush();
-    }
-    std::string wire;
-    recorder->CopyOut(wire);
+    auto streamer = std::make_unique<TReplicationStreamer>();
+    streamer->PushTransaction(Replica, true);
+    const size_t wire_size = streamer->GetWriteSize();
     /* A promotion may spend the room kept for it, and its pushes owe room for the promotions still
        ahead of them (#959).  A paused repo's updates owe the room for their copy too, and an
        unpause gives it back (#963).  A transaction that would refuse at once if the ring were
@@ -532,11 +527,12 @@ void TTransaction::Prepare() {
       for (const auto &status : SafeStatuses) {
         statuses.push_back(TWalRetention::TStatusChange{status.first->GetRepoId(), status.second, status.first->GetSequenceNumber()});
       }
-      auto plan = retention->PlanRoom(pushes, pops, statuses, wire.size(), !WalGiveUp);
+      auto plan = retention->PlanRoom(pushes, pops, statuses, wire_size, !WalGiveUp);
       credit = plan.Credit;
       owes = std::move(plan.Owes);
     }
-    WalReservation = ReserveWalRoom(*wal, wire.size(), WalRoom, WalGiveUp, credit, owes);
+    WalReservation = ReserveWalRoom(*wal, wire_size, WalRoom, WalGiveUp, credit, owes);
+    WalStreamer = std::move(streamer);
   }
   /* Only now that nothing above can refuse the transaction: a refused one leaves its updates as
      they were. */
@@ -663,12 +659,21 @@ TTransaction::~TTransaction() NO_THROW {
             statuses.push_back(TWalRetention::TStatusChange{status.first->GetRepoId(), status.second, status.first->GetSequenceNumber()});
           }
           if (Manager->GetWal()) {
-            TReplicationStreamer streamer;
-            streamer.PushTransaction(Replica);
+            /* The record Prepare built, now that the pushes have their sequence numbers, or, if
+               it built none, a new one. */
+            std::unique_ptr<TReplicationStreamer> streamer = std::move(WalStreamer);
+            const bool prepared = streamer && streamer->UpdateSequenceNumbers(Replica);
+            if (!prepared) {
+              streamer = std::make_unique<TReplicationStreamer>();
+              streamer->PushTransaction(Replica);
+            }
+            if (OnWalRecordForTest) {
+              OnWalRecordForTest(*streamer, prepared);
+            }
             auto recorder = std::make_shared<Io::TRecorder>();
             /* serialize */ {
               Io::TBinaryOutputOnlyStream strm(recorder);
-              streamer.Write(strm);
+              streamer->Write(strm);
               strm.Flush();
             }
             std::string wire;

@@ -75,8 +75,23 @@ namespace Orly {
         Cores.emplace_back(Arena, state.get());
       }
 
+      /* Replace the core at the given index with one holding the given value, which must be a
+         value a core holds in itself (a number, say), not in a note of the arena.  The vector
+         then writes as if the value had been pushed there in the first place. */
+      template <typename TVal>
+      void Replace(size_t idx, const TVal &val) {
+        assert(idx < Cores.size());
+        Sabot::State::TAny::TWrapper state(Native::State::New(val, StateBuffer));
+        TCore core(Arena, state.get());
+        assert(!core.TryGetOffset());
+        Cores[idx] = core;
+      }
+
       /* Write the vector to the given stream. */
       void Write(Io::TBinaryOutputStream &strm) const;
+
+      /* The number of bytes Write() writes. */
+      size_t GetWriteSize() const;
 
       inline size_t GetNumArenaBytes() const {
         assert(Arena);
@@ -97,7 +112,17 @@ namespace Orly {
         ~TDirtyArena();
 
         /* Call by for each note, in order of increasing depth. */
-        bool ForEachNote(const std::function<bool (const TNote *)> &cb) const;
+        template <typename TCb>
+        bool ForEachNote(const TCb &cb) const {
+          for (const auto &item: NotesByDepth) {
+            for (const TNote *note: item.second) {
+              if (!cb(note)) {
+                return false;
+              }
+            }
+          }
+          return true;
+        }
 
         /* See base class. */
         virtual TOffset Propose(TNote *proposed_note) override;
