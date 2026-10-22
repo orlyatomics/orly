@@ -1017,7 +1017,7 @@ namespace Orly {
           /* The stream holds a reference on the page it just went to, so take ours from it. That avoids the
              slot lock, and the LRU churn when the stream is the only holder. */
           typename Util::TCache<PhysicalCachePageSize>::TSlot *const data_slot = Stream.GetLoadedDataSlot();
-          typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Retain(Stream.GetLoadedMainSlot(), data_slot);
+          typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Retain(Stream.GetLoadedMainSlot(), data_slot, loaded_page_id);
           try {
             data1 = main_slot;
             data2 = data_slot;
@@ -1077,7 +1077,7 @@ namespace Orly {
             const size_t loaded_page_id = Stream.GetLoadedPageId();
             /* As above: take the reference from the stream's. */
             typename Util::TCache<PhysicalCachePageSize>::TSlot *const data_slot = Stream.GetLoadedDataSlot();
-            typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Retain(Stream.GetLoadedMainSlot(), data_slot);
+            typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Retain(Stream.GetLoadedMainSlot(), data_slot, loaded_page_id);
             data1 = main_slot;
             data2 = data_slot;
             data3 = reinterpret_cast<void *>(loaded_page_id);

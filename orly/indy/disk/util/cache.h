@@ -29,6 +29,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <syslog.h>
 
@@ -406,6 +407,7 @@ namespace Orly {
                      - transition from LockedSlot -> page_id
                   */
                   const size_t prev_ref_count = slot.RefCount++;
+                  assert(prev_ref_count != std::numeric_limits<size_t>::max());
                   if (prev_ref_count == 0) {
                     assert(slot.LRUMembership.TryGetCollector());
                     #ifdef PERF_STATS
@@ -431,6 +433,7 @@ namespace Orly {
                          - return a pointer to the first slot in the chain.
                       */
                       const size_t prev_ref_count = (next_slot->RefCount)++;
+                      assert(prev_ref_count != std::numeric_limits<size_t>::max());
                       if (prev_ref_count == 0) {
                         assert(next_slot->LRUMembership.TryGetCollector());
                         #ifdef PERF_STATS
@@ -505,7 +508,10 @@ namespace Orly {
              reclaimed or moved, and the 0 <-> 1 transitions that need the lock cannot happen. Returns
              `main_slot`, so it can stand in for `Get` where the caller has the slots in hand. Drop the
              reference with `Release(main_slot, data_slot, page_id)`. */
-          inline TSlot *Retain(TSlot *main_slot, TSlot *data_slot) {
+          inline TSlot *Retain(TSlot *main_slot, TSlot *data_slot, size_t page_id) {
+            assert(data_slot == main_slot || data_slot->MainSlot == main_slot);
+            assert(&SlotArray[page_id % NumSlots] == main_slot);
+            assert(data_slot == main_slot || data_slot->PageId.load(std::memory_order_relaxed) == page_id);
             assert(data_slot->RefCount.load(std::memory_order_relaxed) > 0UL);
             data_slot->RefCount.fetch_add(1UL, std::memory_order_relaxed);
             return main_slot;
@@ -515,6 +521,9 @@ namespace Orly {
              reference is still held, drop ours without taking the slot lock. Only the drop to zero, which
              puts the slot back in the LRU, needs the lock. */
           inline void Release(TSlot *main_slot, TSlot *data_slot, size_t page_id) {
+            assert(data_slot == main_slot || data_slot->MainSlot == main_slot);
+            assert(&SlotArray[page_id % NumSlots] == main_slot);
+            assert(data_slot == main_slot || data_slot->PageId.load(std::memory_order_relaxed) == page_id);
             size_t count = data_slot->RefCount.load(std::memory_order_relaxed);
             while (count > 1UL) {
               if (data_slot->RefCount.compare_exchange_weak(count, count - 1UL, std::memory_order_release, std::memory_order_relaxed)) {
@@ -554,6 +563,7 @@ namespace Orly {
                   /* this is the most common case. The first entry in the chain is the one that matches our page_id. */
                   assert(slot.RefCount > 0);
                   const size_t new_ref_count = --slot.RefCount;
+                  assert(new_ref_count != std::numeric_limits<size_t>::max());
                   if (new_ref_count == 0UL) {
                     TLRU &lru = LRUArray[sched_getcpu() % NumLRU];
                     assert(!slot.LRUMembership.TryGetCollector());
@@ -574,6 +584,7 @@ namespace Orly {
                       assert(next_slot->RefCount > 0);
 
                       const size_t new_ref_count = --(next_slot->RefCount);
+                      assert(new_ref_count != std::numeric_limits<size_t>::max());
                       if (new_ref_count == 0UL) {
                         TLRU &lru = LRUArray[sched_getcpu() % NumLRU];
                         assert(!next_slot->LRUMembership.TryGetCollector());
@@ -684,6 +695,16 @@ namespace Orly {
               throw;
             }
             Release(main_slot, page_id);
+          }
+
+          /* The number of references held on this page, not counting the one this call takes to look. For
+             tests that compare counts before and after. */
+          inline size_t CountReferences(size_t page_id) {
+            TSlot *data_slot;
+            TSlot *main_slot = Get(page_id, data_slot);
+            const size_t count = data_slot->RefCount.load() - 1UL;
+            Release(main_slot, page_id);
+            return count;
           }
 
           inline bool AssertNoRefCount(size_t page_id) {
