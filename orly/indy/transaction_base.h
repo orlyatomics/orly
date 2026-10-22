@@ -131,6 +131,11 @@ namespace Orly {
            on the commit path. See orly/indy/transaction_base.cc. */
         static std::function<void ()> OnCommitBetweenPushAndPopForTest;
 
+        /* Test-only instrumentation hook, invoked in ~TTransaction with the WAL record it is about
+           to append: true if it is the one Prepare built, with its sequence numbers filled in;
+           false if it had to build a new one.  Defaults to empty; never set in production. */
+        static std::function<void (const TReplicationStreamer &, bool)> OnWalRecordForTest;
+
         class TTransactionCompletion {
           NO_COPY(TTransactionCompletion);
           public:

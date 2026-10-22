@@ -90,6 +90,7 @@ static size_t CountPromotionsAhead(const Orly::Indy::L0::TManager::TRepo *repo) 
 
 /* Test-only; empty in production. See header. */
 std::function<void ()> TTransaction::OnCommitBetweenPushAndPopForTest;
+std::function<void (const Orly::Indy::TReplicationStreamer &, bool)> TTransaction::OnWalRecordForTest;
 
 /* Whether a replicated status change (pause, unpause, fail) lines up with our copy of the repo.
    follow_or_discard is the master's lowest unpromoted sequence number when the change committed;
@@ -661,9 +662,13 @@ TTransaction::~TTransaction() NO_THROW {
             /* The record Prepare built, now that the pushes have their sequence numbers, or, if
                it built none, a new one. */
             std::unique_ptr<TReplicationStreamer> streamer = std::move(WalStreamer);
-            if (!streamer || !streamer->UpdateSequenceNumbers(Replica)) {
+            const bool prepared = streamer && streamer->UpdateSequenceNumbers(Replica);
+            if (!prepared) {
               streamer = std::make_unique<TReplicationStreamer>();
               streamer->PushTransaction(Replica);
+            }
+            if (OnWalRecordForTest) {
+              OnWalRecordForTest(*streamer, prepared);
             }
             auto recorder = std::make_shared<Io::TRecorder>();
             /* serialize */ {

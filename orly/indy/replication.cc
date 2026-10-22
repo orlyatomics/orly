@@ -93,6 +93,14 @@ bool TReplicationStreamer::UpdateSequenceNumbers(const L1::TTransaction::TReplic
   }
   auto idx = SeqNumCores.begin();
   for (const auto &mutation : replica.GetMutationList()) {
+    /* The record was built before the transaction applied, so PushTransaction() could not check
+       this; check it here, where the numbers are final.  See PushTransaction(). */
+    const L1::TTransaction::TReplica::TMutation::TKind kind = mutation.GetKind();
+    (void)kind;
+    assert(mutation.GetSequenceNumber() ||
+           kind == L1::TTransaction::TReplica::TMutation::Pauser ||
+           kind == L1::TTransaction::TReplica::TMutation::UnPauser ||
+           kind == L1::TTransaction::TReplica::TMutation::Failer);
     TransactionBuilder.Replace(*idx, mutation.GetSequenceNumber().value_or(EmptyRepoSequenceNumber));
     ++idx;
   }
