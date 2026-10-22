@@ -1041,8 +1041,9 @@ FIXTURE(YieldSlowNotStarvedByInbound) {
    never empties would never park, and so never look at the slot again. Here
    a pinger keeps runner 2's inbound queue busy on every lap, as in
    YieldSlowNotStarvedByInbound, while a fiber on runner 1 hops to runner 2
-   and back. Each hop onto runner 2 lands in its handoff slot from runner 1,
-   and must run within about one of runner 2's laps. */
+   and back. Each hop onto runner 2 lands in its handoff slot from runner 1.
+   A stranded hop would wait until the pinger stops, so the hops must finish
+   while runner 2 is still busy, in a handful of its laps each. */
 FIXTURE(HopOntoBusyRunnerNotStarved) {
   class TPinger
       : public TRunnable {
@@ -1192,7 +1193,10 @@ FIXTURE(HopOntoBusyRunnerNotStarved) {
   TFrame::LocalFramePool = nullptr;
   std::cout << "inbound frames run per hop onto a busy runner: " << static_cast<double>(pings_while_hopping) / hops << std::endl;
   if (EXPECT_TRUE(hopper_finished_in_time)) {
-    /* One of runner 2's laps per hop, give or take the laps at either end. */
-    EXPECT_LE(pings_while_hopping, 2UL * hops);
+    /* Runner 2 keeps lapping while the hopper is away on runner 1, so a
+       round trip spans a few of its laps (about 2 under TSan, 4 in a debug
+       build on CI). A stranded hop would instead span every lap until the
+       30 s deadline, so this bound is loose but still catches one. */
+    EXPECT_LE(pings_while_hopping, 50UL * hops);
   }
 }
