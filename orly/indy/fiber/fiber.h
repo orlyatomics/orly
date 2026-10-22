@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cassert>
 #include <cerrno>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -589,11 +590,32 @@ namespace Orly {
         TFrame *FreeFrame;
         Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool *FreeFramePool;
 
+        /* How many times Run() has switched to a frame. A frame running on this runner that
+           sees it move between two looks knows it was switched out in between, whether it
+           yielded or waited (#1015). Read it only from a frame running on this runner: it is a
+           plain counter, written by Run() on the same thread. */
+        [[nodiscard]] uint64_t GetSwitchCount() const noexcept {
+          return SwitchCount;
+        }
+
+        /* True if a frame other than the caller is ready to run on this runner, or has been
+           handed to it and will be once the caller gives way. Call only from a frame running on
+           this runner. Cheap: two plain loads and two relaxed ones of lines that are written
+           only when a frame is handed over. May say true just after a handoff it has already
+           drained (see Run()), never false while a handed-over frame waits. */
+        [[nodiscard]] bool HasOtherReadyFrame() const noexcept {
+          assert(this == LocalRunner.Get());
+          return ReadyToRunQueue || NewReadyToRunQueue
+              || ParkSlots[RunnerId].HandoffPending.load(std::memory_order_relaxed)
+              || InboundFrameQueue.load(std::memory_order_relaxed);
+        }
+
         private:
 
         TRunner(size_t total_num_runners, size_t runner_id, THandoffQueue *handoff_matrix, TParkSlot *park_slots)
             : FreeFrame(nullptr),
               FreeFramePool(nullptr),
+              SwitchCount(0UL),
               //MyFrameQueue(this),
               ReadyToRunQueue(nullptr),
               NewReadyToRunQueue(nullptr),
@@ -643,6 +665,9 @@ namespace Orly {
         /* Block until a frame is handed to us or ShutDown() is called (or a
            safety-net timeout passes). */
         void Park();
+
+        /* See GetSwitchCount(). */
+        uint64_t SwitchCount;
 
         //mutable TFrameQueue::TImpl MyFrameQueue;
         TFrame *ReadyToRunQueue;

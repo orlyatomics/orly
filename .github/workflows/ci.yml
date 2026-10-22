@@ -763,6 +763,34 @@ jobs:
           grep '^WS SCALE FAIL' .ci-release/ws-scale-control.log
           echo "control OK: the scale check fails with one statement in flight"
 
+      # #1015: with one fast runner, a point read issued a quarter of the way into a long scan
+      # must answer before the scan does. A fiber doesn't give way while it computes, so this
+      # holds only because the scan yields to a ready statement once it has run for
+      # --read_yield_us.
+      - name: A point read doesn't wait behind a long scan
+        if: matrix.group == 'durability'
+        run: bash clients/smoke/run-scan-yield.sh
+
+      # Negative control for the step above: with --read_yield_rows=0 the scan never yields, so
+      # the check must FAIL, after a scan long enough to test anything. If it passes, the check no
+      # longer tells whether the scan yields.
+      - name: The scan-yield check fails when scans don't yield
+        if: matrix.group == 'durability'
+        run: |
+          if EXTRA_ARGS=--read_yield_rows=0 bash clients/smoke/run-scan-yield.sh \
+               > .ci-release/scan-yield-control.log 2>&1; then
+            cat .ci-release/scan-yield-control.log
+            echo "CONTROL FAIL: the scan-yield check passed with --read_yield_rows=0"
+            exit 1
+          fi
+          if ! grep -q '^SCAN YIELD FAIL: the point read answered after the scan' .ci-release/scan-yield-control.log; then
+            cat .ci-release/scan-yield-control.log
+            echo "CONTROL FAIL: the smoke failed before its reads could test anything"
+            exit 1
+          fi
+          grep '^trial\|^SCAN YIELD FAIL' .ci-release/scan-yield-control.log
+          echo "control OK: the scan-yield check fails when scans don't yield"
+
       # #730: SIGKILL orlyi under write load on a loopback volume, restart it, and check every
       # write against the client's ledger and the loss bound in docs/durability.md. A short run;
       # the kill-campaign workflow runs the full 40 kills on dispatch.

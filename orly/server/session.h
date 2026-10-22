@@ -44,6 +44,7 @@
 #include <orly/server/batch_call.h>
 #include <orly/server/pov.h>
 #include <orly/server/pov_review.h>
+#include <orly/server/read_quantum.h>
 #include <orly/server/runner_balancer.h>
 #include <orly/server/version_of.h>
 #include <orly/var.h>
@@ -145,6 +146,14 @@ namespace Orly {
            limit. */
         [[nodiscard]] virtual size_t GetReadBudgetSteps() const { return 0UL; }
 
+        /* How many rows a call walks between looks at the clock, to see whether it should give
+           way on its fast runner (#1015). 0 means it never looks, nor weighs its reads. */
+        [[nodiscard]] virtual size_t GetReadYieldRows() const { return 0UL; }
+
+        /* How long, in microseconds, a call runs without a break before it yields to another
+           fiber ready on its fast runner (#1015; TReadQuantum). 0 means it never yields. */
+        [[nodiscard]] virtual size_t GetReadYieldUs() const { return 0UL; }
+
         /* Per-`Try` latency/counter statistics. These are pushed on every read
            and write (the hot path) and folded into a single aggregate by the
            periodic reporter. TThreadLocalSigmaCalc keeps a private accumulator
@@ -176,31 +185,75 @@ namespace Orly {
            its call count); then switches back.  It stays where it is if that is already a fast
            runner: a websocket statement already runs on one (#761), holding a lease of weight 1,
            and a second hop would only add a cross-runner handoff each way.  It then charges the
-           rest of the weight to that runner, so new work steers around the batch. */
-        class TFastRunnerSwitch final {
+           rest of the weight to that runner, so new work steers around the batch.
+
+           As the pacer of the call's reads (#1015; TContext::SetReadPacer()), it adds to that
+           weight as the call walks rows, and yields the fiber once the call has run for
+           --read_yield_us without a break while another fiber is ready on the same runner, so
+           that a point read doesn't wait behind a whole scan; see TReadQuantum. */
+        class TFastRunnerSwitch final : public TReadQuantum<TFastRunnerSwitch> {
           NO_COPY(TFastRunnerSwitch);
           public:
 
-          explicit TFastRunnerSwitch(TServer *server, size_t weight = 1UL) {
-            assert(server);
+          explicit TFastRunnerSwitch(TServer *server, size_t weight = 1UL)
+              : TReadQuantum(std::chrono::microseconds(server->GetReadYieldUs())),
+                Balancer(&*server->FastRunnerBalancer) {
             Indy::Fiber::TRunner *local = Indy::Fiber::TRunner::LocalRunner;
             for (size_t i = 0UL; i < server->FastRunnerVec.size(); ++i) {
               if (server->FastRunnerVec[i].get() == local) {
+                Index = i;
                 if (weight > 1UL) {
-                  Lease = server->FastRunnerBalancer->Charge(i, weight - 1UL);
+                  Lease = Balancer->Charge(i, weight - 1UL);
                 }
                 return;
               }
             }
-            Lease = server->FastRunnerBalancer->Acquire(weight);
-            Switcher.emplace(server->FastRunnerVec[Lease.GetIndex()].get());
+            Lease = Balancer->Acquire(weight);
+            Index = Lease.GetIndex();
+            Switcher.emplace(server->FastRunnerVec[Index].get());
           }
 
           private:
 
+          /* The hooks TReadQuantum paces with. */
+          static TClock::time_point Now() noexcept {
+            return TClock::now();
+          }
+
+          static TPlace Where() noexcept {
+            const Indy::Fiber::TRunner *runner = Indy::Fiber::TRunner::LocalRunner;
+            return {runner, runner ? runner->GetSwitchCount() : 0UL};
+          }
+
+          static bool OthersReady() noexcept {
+            const Indy::Fiber::TRunner *runner = Indy::Fiber::TRunner::LocalRunner;
+            return runner && runner->HasOtherReadyFrame();
+          }
+
+          static void GiveWay() {
+            /* Slow, so that the frames handed to this runner since its last lap get in first:
+               a plain Yield() would requeue us ahead of them (#584). */
+            Indy::Fiber::YieldSlow();
+          }
+
+          void Weigh(size_t more) noexcept {
+            if (Lease) {
+              Lease.Add(more);
+            } else {
+              Lease = Balancer->Charge(Index, more);
+            }
+          }
+
+          TRunnerBalancer *Balancer;
+
+          /* The runner we run on. */
+          size_t Index = 0UL;
+
           /* Declared in this order so that we switch back before the lease is released. */
           TRunnerBalancer::TLease Lease;
           std::optional<Indy::Fiber::TSwitchToRunner> Switcher;
+
+          friend class TReadQuantum<TFastRunnerSwitch>;
 
         };  // TFastRunnerSwitch
 

@@ -397,6 +397,14 @@ namespace Orly {
            from ReadBudgetMB unless the command line gives it; 0 means no limit. */
         size_t ReadBudgetSteps;
 
+        /* Rows a method call walks between looks at the clock (#1015); 0 means it never looks,
+           so never yields nor weighs its reads. */
+        size_t ReadYieldRows;
+
+        /* Microseconds a method call runs without a break before it yields to another statement
+           ready on its fast runner (#1015); 0 means never. */
+        size_t ReadYieldUs;
+
         /* Durable acknowledgments via write-ahead log (#755). "local" / "true" (default), "false". */
         std::string DurableAcks = "local";
 
@@ -549,6 +557,14 @@ namespace Orly {
 
       size_t GetReadBudgetSteps() const override {
         return Cmd.ReadBudgetSteps;
+      }
+
+      size_t GetReadYieldRows() const override {
+        return Cmd.ReadYieldRows;
+      }
+
+      size_t GetReadYieldUs() const override {
+        return Cmd.ReadYieldUs;
       }
 
       bool IsMemoryAdmissionOn() const override {

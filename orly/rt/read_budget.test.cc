@@ -160,3 +160,39 @@ FIXTURE(VectorGrowth) {
   /* Charged what was allocated, and no more. */
   EXPECT_EQ(budget.GetBytes(), vec.capacity() * sizeof(int64_t));
 }
+
+namespace {
+
+  /* Records the work it was told of. */
+  class TCountingPacer final : public TReadPacer {
+    public:
+
+    void Pace(size_t work) override {
+      Told.push_back(work);
+    }
+
+    std::vector<size_t> Told;
+
+  };  // TCountingPacer
+
+}  // namespace
+
+FIXTURE(PacerIsToldEveryN) {
+  TReadBudget budget(0, 0);
+  TCountingPacer pacer;
+  budget.SetPacer(&pacer, 10UL);
+  for (int i = 0; i < 35; ++i) {
+    budget.Tick(1UL);
+  }
+  EXPECT_TRUE(pacer.Told == (std::vector<size_t>{10UL, 20UL, 30UL}));
+  /* Charged steps count as work too, without the pacer charging the budget. */
+  budget.Charge(5UL, 0UL);
+  EXPECT_EQ(pacer.Told.size(), 4UL);
+  EXPECT_EQ(budget.GetSteps(), 5UL);
+  /* A null pacer, or an `every` of 0, stops it. */
+  budget.SetPacer(nullptr, 10UL);
+  budget.Tick(100UL);
+  budget.SetPacer(&pacer, 0UL);
+  budget.Tick(100UL);
+  EXPECT_EQ(pacer.Told.size(), 4UL);
+}

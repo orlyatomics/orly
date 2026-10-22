@@ -42,6 +42,22 @@ namespace Orly {
 
   namespace Rt {
 
+    /* Told as a call works, so that a long one can make room for others on its fast runner
+       (#1015). A fiber doesn't yield while it computes, so without this a point read that lands
+       behind a 1,000-row scan waits for the whole scan. */
+    class TReadPacer {
+      public:
+
+      /* Called once every so much work (TReadBudget::SetPacer()), with the work done so far. May
+         yield the fiber: nothing that charges a budget holds a lock across the charge. */
+      virtual void Pace(size_t work) = 0;
+
+      protected:
+
+      ~TReadPacer() = default;
+
+    };  // TReadPacer
+
     /* The in-flight budget of one method call (or one batch of them). */
     class TReadBudget final {
       NO_COPY(TReadBudget);
@@ -64,7 +80,30 @@ namespace Orly {
         if (Steps > MaxSteps || Bytes > MaxBytes) [[unlikely]] {
           OnOverBudget(Steps > MaxSteps);
         }
+        Tick(steps);
       }
+
+      /* Tell `pacer` every `every` units of work: a sequence step is one unit, and a row a
+         context walks is RowWork of them (TContext::ChargeRow()). A null pacer or an `every` of
+         0 stops pacing. */
+      void SetPacer(TReadPacer *pacer, size_t every) noexcept {
+        Pacer = every ? pacer : nullptr;
+        PaceEvery = every;
+        NextPace = Pacer ? Work + every : Unlimited;
+      }
+
+      /* Count work toward the pacer, without charging the budget. */
+      void Tick(size_t work) {
+        Work += work;
+        if (Work >= NextPace) [[unlikely]] {
+          NextPace = Work + PaceEvery;
+          Pacer->Pace(Work);
+        }
+      }
+
+      /* The work one row stands for, in sequence steps: a row costs microseconds, a step tens of
+         nanoseconds. */
+      static constexpr size_t RowWork = 64UL;
 
       /* Throws as Charge() would if this much more were charged, but charges nothing. For work
          whose size is known before it starts. */
@@ -88,6 +127,10 @@ namespace Orly {
       size_t Steps = 0UL, Bytes = 0UL;
 
       size_t MaxSteps, MaxBytes;
+
+      /* See SetPacer(). */
+      TReadPacer *Pacer = nullptr;
+      size_t Work = 0UL, PaceEvery = 0UL, NextPace = Unlimited;
 
     };  // TReadBudget
 

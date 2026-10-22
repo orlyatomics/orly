@@ -814,6 +814,8 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
        write's effects and building its update are bounded by write admission instead. */
     context.SetReadBudget(server->GetReadBudgetRows(), server->GetReadBudgetBytes(), &my_arena,
         server->GetReadBudgetSteps());
+    /* Weigh a long read as it goes, and let other statements on this runner in (#1015). */
+    context.SetReadPacer(&fast_runner_switch, server->GetReadYieldRows());
     call_timer.Start();
     result_core = func->Call(indy_context, prog_args);
     call_timer.Stop();
@@ -1094,6 +1096,7 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     /* One read budget for the whole batch, as for a single call in Try() (#694). */
     context.SetReadBudget(server->GetReadBudgetRows(), server->GetReadBudgetBytes(), &my_arena,
         server->GetReadBudgetSteps());
+    context.SetReadPacer(&fast_runner_switch, server->GetReadYieldRows());
     /* Yield every K calls so reads parked on this runner (e.g. waiting in
        TCompletionTrigger::Wait for a page-cache miss) can resume between calls
        instead of waiting out the whole batch (#912). Their wakeups arrive as
