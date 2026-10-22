@@ -220,9 +220,17 @@ TMemoryLayer::~TMemoryLayer() {
 }
 
 void TMemoryLayer::Insert(TUpdate *update) NO_THROW {
+  LinkEntries(update);
+  PublishUpdate(update);
+}
+
+void TMemoryLayer::LinkEntries(TUpdate *update) NO_THROW {
   for (TUpdate::TEntryCollection::TCursor csr(&update->EntryCollection/*, InvCon::TOrient::Rev*/); csr; ++csr) {
     LinkEntry(&*csr);
   }
+}
+
+void TMemoryLayer::PublishUpdate(TUpdate *update) NO_THROW {
   update->MemoryLayerMembership.ReverseInsert(&UpdateCollection);
 }
 

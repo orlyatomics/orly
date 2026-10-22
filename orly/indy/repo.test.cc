@@ -24,6 +24,7 @@
 
 #include <orly/indy/repo.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <functional>
@@ -86,7 +87,10 @@ static const size_t CountBenchRows = [] {
 static const size_t CountBenchChunk = std::min<size_t>(CountBenchRows, 250000UL);
 /* RangeCountsByRankMatchTheWalk writes every key of its group once, and about as many again. */
 static constexpr size_t RankCountKeys = 6000UL;
-Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 20000UL + (2UL * RankCountKeys) + CountBenchRows + CountBenchChunk);
+/* ReadersSeeWholeUpdatesWhileAppending appends AppendStressUpdates updates of AppendStressEntries entries each. */
+static constexpr size_t AppendStressUpdates = 24UL;
+static constexpr size_t AppendStressEntries = 2000UL;
+Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 20000UL + (2UL * RankCountKeys) + CountBenchRows + CountBenchChunk + (AppendStressUpdates * AppendStressEntries));
 
 const std::vector<size_t> MemMergeCoreVec{0};
 const std::vector<size_t> DiskMergeCoreVec{0};
@@ -410,6 +414,136 @@ FIXTURE(RangeCountDiskBenchmark) {
     fin = true;
     cond.notify_one();
   });
+}
+
+/* AppendUpdate links an update's entries into the memory layer outside DataLock and publishes the
+   sequence number afterwards, so a reader must see exactly the updates up to the HighestSeqNum it
+   snapshotted: all of each, none of a later one. One thread appends big updates of unique keys.
+   With readers, other threads snapshot and walk the whole key range meanwhile (memory layers only:
+   a plain thread cannot wait on the disk, so nothing is merged). Without, this fiber thread seals
+   and merges the memory layer (StepMergeMem) meanwhile, since the seal must not land between an
+   append's link and its publish; the whole key range is then checked once the appender is done. */
+static void AppendStress(bool with_readers, bool bump_numbers = false) {
+  Fiber::TFiberTestRunner runner([with_readers, bump_numbers](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler);
+    const Base::TUuid repo_id(TUuid::Twister);
+    const Base::TUuid idx_id(TUuid::Twister);
+    auto repo = manager->GetRepo(repo_id, TTtl::max(), std::nullopt, true);
+    auto *stepped = dynamic_cast<TSteppedSafeRepo *>(repo.Get());
+    if (!EXPECT_TRUE(stepped != nullptr)) {
+      std::lock_guard<std::mutex> lock(mut);
+      fin = true;
+      cond.notify_one();
+      return;
+    }
+    std::atomic<bool> appending(true);
+    std::atomic<size_t> num_walks(0UL), num_bad(0UL), num_partial_seen(0UL);
+    std::atomic<size_t> first_bad_high(0UL), first_bad_count(0UL);
+    std::thread appender([&] {
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      for (size_t n = 0UL; n < AppendStressUpdates; ++n) {
+        TSuprena arena;
+        auto transaction = manager->NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&arena), TKey(Base::TUuid(TUuid::Twister), &arena, state_alloc));
+        for (size_t j = 0UL; j < AppendStressEntries; ++j) {
+          const auto key = static_cast<int64_t>(n * AppendStressEntries + j);
+          update->AddEntry(TIndexKey(idx_id, TKey(make_tuple(key), &arena, state_alloc)), TKey(key, &arena, state_alloc), TMutator::Assign);
+        }
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      }
+      appending = false;
+    });
+    vector<std::thread> readers;
+    for (size_t r = 0UL; with_readers && r < 4UL; ++r) {
+      readers.emplace_back([&] {
+        TRunnerFileCaches reader_caches;
+        TSuprena arena;
+        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+        const TIndexKey from(idx_id, TKey(make_tuple(static_cast<int64_t>(0)), &arena, state_alloc));
+        const TIndexKey to(idx_id, TKey(make_tuple(std::numeric_limits<int64_t>::max()), &arena, state_alloc));
+        const auto walk = [&] {
+          auto view = make_unique<Orly::Indy::TRepo::TView>(stepped);
+          const TSequenceNumber high = view->GetUpper().value_or(0UL);
+          size_t count = 0UL;
+          TSequenceNumber max_seq = 0UL;
+          auto walker_ptr = stepped->NewPresentWalker(view, from, to);
+          for (TPresentWalker &walker = *walker_ptr; walker; ++walker) {
+            ++count;
+            max_seq = std::max(max_seq, (*walker).SequenceNumber);
+          }
+          /* Updates 1..high, each whole; nothing newer than the snapshot, and not part of one. */
+          if (count != high * AppendStressEntries || max_seq > high) {
+            if (num_bad++ == 0UL) {
+              first_bad_high = high;
+              first_bad_count = count;
+            }
+          }
+          if (count % AppendStressEntries) {
+            ++num_partial_seen;
+          }
+          ++num_walks;
+        };
+        while (appending) {
+          walk();
+        }
+        walk();
+      });
+    }
+    while (appending) {
+      if (bump_numbers) {
+        /* The importer's numbering moves must wait for an append in flight, not land inside it. */
+        stepped->UseSequenceNumbers(1UL);
+      } else if (!with_readers) {
+        stepped->StepMergeMem();
+      }
+      std::this_thread::sleep_for(1ms);
+    }
+    appender.join();
+    for (auto &reader : readers) {
+      reader.join();
+    }
+    std::printf("AppendStress readers=%d walks=%zu bad=%zu partial=%zu first_bad_high=%zu first_bad_count=%zu\n",
+                with_readers,
+                num_walks.load(), num_bad.load(), num_partial_seen.load(), first_bad_high.load(), first_bad_count.load());
+    EXPECT_EQ(num_bad.load(), 0UL);
+    EXPECT_TRUE(!with_readers || num_walks.load() > 100UL);
+    /* At the end every entry is there. */ {
+      auto view = make_unique<Orly::Indy::TRepo::TView>(stepped);
+      EXPECT_TRUE(bump_numbers || *view->GetUpper() == AppendStressUpdates);
+      TSuprena arena;
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      const TIndexKey from(idx_id, TKey(make_tuple(static_cast<int64_t>(0)), &arena, state_alloc));
+      const TIndexKey to(idx_id, TKey(make_tuple(std::numeric_limits<int64_t>::max()), &arena, state_alloc));
+      size_t count = 0UL;
+      auto walker_ptr = stepped->NewPresentWalker(view, from, to);
+      for (TPresentWalker &walker = *walker_ptr; walker; ++walker) {
+        ++count;
+      }
+      EXPECT_EQ(count, AppendStressUpdates * AppendStressEntries);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
+FIXTURE(ReadersSeeWholeUpdatesWhileAppending) {
+  AppendStress(true);
+}
+
+FIXTURE(SealDoesNotSplitAnAppend) {
+  AppendStress(false);
+}
+
+FIXTURE(NumberingMovesDoNotSplitAnAppend) {
+  AppendStress(false, true);
 }
 
 /* #749: a count passes over by rank each stretch of keys only one disk file holds. Build a root

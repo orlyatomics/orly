@@ -69,6 +69,15 @@ namespace Orly {
 
       void Insert(TUpdate *update) NO_THROW;
 
+      /* Insert split in two so a repo can do the O(entries) half outside its DataLock.
+         LinkEntries links the update's entries into the entry index; readers walk that index without
+         a lock and filter by their snapshot's sequence window, so they tolerate it concurrently.
+         Single writer per layer. PublishUpdate then adds the update to the layer's update list,
+         which GetUpdate walks under DataLock, so it must be called with DataLock held, after
+         LinkEntries, in sequence order. Insert is exactly LinkEntries then PublishUpdate. */
+      void LinkEntries(TUpdate *update) NO_THROW;
+      void PublishUpdate(TUpdate *update) NO_THROW;
+
       void ReverseInsert(TUpdate *update) NO_THROW;
 
       [[nodiscard]] inline TEntryCollection *GetEntryCollection() const noexcept;
@@ -327,12 +336,12 @@ namespace Orly {
     }
 
     inline TSequenceNumber TMemoryLayer::GetLowestSeq() const noexcept {
-      assert(Size);
+      assert(UpdateCollection.TryGetFirstMember());
       return UpdateCollection.TryGetFirstMember()->GetSequenceNumber();
     }
 
     inline TSequenceNumber TMemoryLayer::GetHighestSeq() const noexcept {
-      assert(Size);
+      assert(UpdateCollection.TryGetLastMember());
       return UpdateCollection.TryGetLastMember()->GetSequenceNumber();
     }
 
