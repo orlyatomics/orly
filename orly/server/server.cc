@@ -2253,6 +2253,15 @@ void TServer::Shutdown() {
   auto ms_since_start = [&shutdown_start] {
     return static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - shutdown_start).count());
   };
+  /* Log each phase's own time as it ends (#1025). The lines above used to give only the time since the
+     drain began, so a slow stop could not say which phase it waited on. */
+  auto phase_start = shutdown_start;
+  auto log_phase = [&phase_start, &ms_since_start](const char *phase) {
+    const auto now = std::chrono::steady_clock::now();
+    syslog(LOG_INFO, "TServer::Shutdown(): %s took %ldms, %ldms since the drain began (#1025)", phase,
+           static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(now - phase_start).count()), ms_since_start());
+    phase_start = now;
+  };
   /* Wait for the kicked connections to actually release their sessions:
      no write can commit after this, and the durable Clear() in the teardown
      jumper below must see only genuinely closed durables.  Bounded -- a
@@ -2265,6 +2274,7 @@ void TServer::Shutdown() {
       syslog(LOG_WARNING, "TServer::Shutdown(): [%zu] client connection(s) still live after the drain deadline (#460)", LiveConnectionCount);
     }
   }
+  log_phase("the connection drain");
   /* Let Tetris promote everything the povs hold, all the way up to the
      global pov, while the merges, the layer cleaners and the replication
      release that makes promoted updates mergeable all still run (#744).  An
@@ -2359,6 +2369,7 @@ void TServer::Shutdown() {
     if (const size_t refused = StopRefusedWriteCount.load()) {
       syslog(LOG_INFO, "TServer::Shutdown(): refused [%zu] write(s) that arrived after the stop began (#769)", refused);
     }
+    log_phase("the Tetris wait");
   }
   /* Let the in-flight update pipeline settle while ALL of the cadence
      machinery (replication release, mergers, tetris) is still running: a
@@ -2370,6 +2381,7 @@ void TServer::Shutdown() {
      relevant interval. */
   std::this_thread::sleep_for(std::chrono::milliseconds(
       3 * std::max<size_t>({Cmd.ReplicationInterval, Cmd.MergeMemInterval, Cmd.DurableWriteInterval, 100})));
+  log_phase("the settle sleep");
   /* Now stop the standalone service loops -- the housekeeper (blocked on
      its timer) and the three replication loops (blocked in epoll_wait) --
      and WAIT for each to actually return:
@@ -2391,15 +2403,18 @@ void TServer::Shutdown() {
   HousecleaningTimer.FireNow();
   RepoManager->StopReplicationServices();
   RepoManager->JoinReplicationServices();
+  log_phase("stopping replication");
   /* A null handle means the job was never accepted (or Init never got that
      far) -- there is nothing to join. */
   if (HousekeeperHandle && !Scheduler->Cancel(HousekeeperHandle)) {
     HousekeeperExited.Pop();
   }
+  log_phase("stopping the housekeeper");
   ScrubWakeCond.notify_all();
   if (ScrubHandle && !Scheduler->Cancel(ScrubHandle)) {
     ScrubExited.Pop();
   }
+  log_phase("stopping the scrub");
   /* Stop the merge loops first: the flush below must be the only drainer
      of the merge queue, or a live merger mid-step could re-enqueue a
      still-dirty repo after the flush saw an empty queue and returned, and
@@ -2411,8 +2426,9 @@ void TServer::Shutdown() {
      finish and the stop hung for good.  The wake sems can be pushed from
      any thread. */
   RepoManager->StopMergeRunners();
-  syslog(LOG_INFO, "TServer::Shutdown(): merge runners stopped after %ldms (#744)", ms_since_start());
+  log_phase("stopping the merge runners");
   StopWalCheckpointer();
+  log_phase("stopping the WAL checkpointer");
   /* Flush on a fiber, while every runner is still alive. */
   Indy::Fiber::TJumpRunnable flush_jumper([this] {
     /* Flush-on-shutdown (#440): merge every dirty repo memory layer out to
@@ -2435,7 +2451,7 @@ void TServer::Shutdown() {
     }
   });
   flush_jumper(FramePoolManager.get(), FastRunnerVec[0].get());
-  syslog(LOG_INFO, "TServer::Shutdown(): flushed after %ldms (#744)", ms_since_start());
+  log_phase("the flush");
   /* The merge runners are stopped and the flush is done, so nothing makes dead repo layers any
      more: stop the repo layer cleaner, before Tetris goes (a disk layer's removal visits the
      Tetris runners, #648).  Join it here, on this thread and not on a fiber: that removal also
@@ -2443,6 +2459,7 @@ void TServer::Shutdown() {
      the cleaner may be waiting to visit (#744). */
   RepoManager->StopLayerCleaner();
   RepoManager->JoinLayerCleaner();
+  log_phase("stopping the repo layer cleaner");
   /* Tear down the fiber-entangled managers on a fiber, while every runner
      is still alive: ~TDurableManager blocks on TSingleSem (fiber-only) for
      its writer/merger fibers, and ~TRepoTetrisManager's StopAllPlayers
@@ -2479,6 +2496,7 @@ void TServer::Shutdown() {
     Wal.reset();
   });
   teardown_jumper(FramePoolManager.get(), FastRunnerVec[0].get());
+  log_phase("the manager teardown");
   /* Stop the engine-level services that would otherwise wedge the
      scheduler's teardown: the background runners this server hosts on
      scheduler jobs (replication, layer cleaners, mergers, slave wait) and
@@ -2534,6 +2552,7 @@ void TServer::Shutdown() {
     }
   }
   RunnerHostHandles.clear();
+  log_phase("stopping the runners");
   syslog(LOG_INFO, "TServer::Shutdown() complete");
 }
 

@@ -405,7 +405,7 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
   };
   TDataFile data_file(engine, storage_speed, source, file_uuid,
                       dest_gen_id, temp_file_consol_thresh, 0U, priority, source_range,
-                      false /* do_cache */);
+                      false /* do_cache */, cancel);
   NumKeys = data_file.GetNumKeys();
   LowestSeq = data_file.GetLowestSequence();
   HighestSeq = data_file.GetHighestSequence();

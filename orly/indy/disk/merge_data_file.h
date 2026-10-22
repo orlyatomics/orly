@@ -46,13 +46,6 @@ namespace Orly {
       template <bool ScanAheadAllowed>
       using TDataDiskArena = TDiskArena<Util::LogicalBlockSize, Util::LogicalBlockSize, Util::PhysicalBlockSize, Util::PageCheckedBlock, DiskArenaMaxCacheSize, ScanAheadAllowed>;
 
-      /* Thrown out of a TMergeDataFile constructor whose cancel flag was raised. The output is freed and the
-         inputs are untouched. */
-      class TMergeCancelled : public std::runtime_error {
-        public:
-        TMergeCancelled() : std::runtime_error("merge cancelled by shutdown") {}
-      };
-
       class TMergeDataFile {
         NO_COPY(TMergeDataFile);
         public:

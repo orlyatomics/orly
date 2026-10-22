@@ -248,7 +248,7 @@ class TIndexFile
     KeyTrigger.Wait();
   }
 
-  void ConstructArena(TDataFile::TBlockVec &block_vec);
+  void ConstructArena(TDataFile::TBlockVec &block_vec, const std::atomic<bool> *cancel);
 
   void PrepKeyRange(TDataFile::TUpdateCollector *update_collector, TDataFile::TBlockVec *block_vec);
 
@@ -391,7 +391,8 @@ size_t MakeArena(Disk::Util::TEngine *engine,
                  size_t max_total_note_bytes,
                  size_t &num_note_out,
                  size_t &num_bytes_out,
-                 bool do_cache);
+                 bool do_cache,
+                 const std::atomic<bool> *cancel = nullptr);
 
 void TIndexFile::EmplaceOrderedNotes(TOrderedNoteIndex &note_index, TSuprena *arena, size_t &total_bytes, TCore::TOffset offset) {
   const TCore::TNote *const note = reinterpret_cast<const TCore::TNote *>(offset);
@@ -469,7 +470,7 @@ Atom::TCore TIndexFile::RemapMainCore(const Atom::TCore &core, Atom::TCore::TAre
   });
 }
 
-void TIndexFile::ConstructArena(TDataFile::TBlockVec &block_vec) {
+void TIndexFile::ConstructArena(TDataFile::TBlockVec &block_vec, const std::atomic<bool> *cancel) {
   ArenaByteOffset = MakeArena(Engine,
                               StorageSpeed,
                               Priority,
@@ -483,7 +484,8 @@ void TIndexFile::ConstructArena(TDataFile::TBlockVec &block_vec) {
                               MaxArenaBytes,
                               NumArenaNotes,
                               NumArenaBytes,
-                              DoCache);
+                              DoCache,
+                              cancel);
 }
 
 void TIndexFile::PushKey(const TDataFile::TEntryView &entry) {
@@ -810,7 +812,8 @@ TDataFile::TDataFile(Util::TEngine *engine,
                      TSequenceNumber /*release_up_to*/,
                      DiskPriority priority,
                      const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range,
-                     bool do_cache)
+                     bool do_cache,
+                     const std::atomic<bool> *cancel)
     : Engine(engine),
       StorageSpeed(storage_speed),
       Priority(priority),
@@ -819,7 +822,8 @@ TDataFile::TDataFile(Util::TEngine *engine,
       NumKeys(0UL),
       TempFileConsolThresh(temp_file_consol_thresh),
       UpdateCollector(HERE, Source::DataFileUpdateIndex, TempFileConsolThresh, StorageSpeed, Engine, true),
-      DoCache(do_cache) {
+      DoCache(do_cache),
+      Cancel(cancel) {
   Build(source, nullptr, file_uid, gen_id, cover_range);
 }
 
@@ -858,6 +862,12 @@ void TDataFile::Build(const TEntrySource &source,
   /* Once InsertFile has been issued the file map may own our blocks, so an unwind past that
      point must not free them. */
   bool file_inserted = false;
+  /* Only before InsertFile: past it the file map owns the blocks, and the file is as good as written (#1025). */
+  const auto throw_if_cancelled = [this, &file_inserted] {
+    if (Cancel && !file_inserted && Cancel->load(std::memory_order_relaxed)) {
+      throw TMergeCancelled();
+    }
+  };
   try {
     auto main_arena_note_index = make_unique<TIndexFile::TOrderedNoteIndex>(
         HERE, Source::DataFileNoteIndex, TempFileConsolThresh, StorageSpeed, Engine, true);
@@ -953,11 +963,13 @@ void TDataFile::Build(const TEntrySource &source,
       }
     }  // done generating the arena index
     for (const auto &iter : index_map) {
+      throw_if_cancelled();
       TIndexFile &index_file = *iter.second;
       if (index_file.MaxArenaBytes) {
-        index_file.ConstructArena(BlockVec);
+        index_file.ConstructArena(BlockVec, Cancel);
       }
     }
+    throw_if_cancelled();
     /* write out the main arena */
     size_t num_main_arena_notes = 0UL;
     size_t num_main_arena_bytes = 0UL;
@@ -975,8 +987,10 @@ void TDataFile::Build(const TEntrySource &source,
                                       main_arena_max_bytes,
                                       num_main_arena_notes,
                                       num_main_arena_bytes,
-                                      DoCache);
+                                      DoCache,
+                                      Cancel);
     }
+    throw_if_cancelled();
     /* write the in-order key indexes */ {
       std::optional<Base::TUuid> prev_index_id;
       TIndexFile *cur_index_file = nullptr;
@@ -1033,6 +1047,7 @@ void TDataFile::Build(const TEntrySource &source,
       }
     }
 
+    throw_if_cancelled();
     TCompletionTrigger completion_trigger;
     /* The update index stores ONE entry per distinct sequence number (the
        write loop below groups by SequenceNumber), so NumUpdates -- which
@@ -1164,6 +1179,7 @@ void TDataFile::Build(const TEntrySource &source,
     }
     size_t num_blocks = 0UL;
     size_t num_meta_blocks = 0UL;
+    throw_if_cancelled();
     /* compute / write out the meta-data */ {
       /*
         # of blocks
@@ -1350,7 +1366,8 @@ size_t MakeArena(Disk::Util::TEngine *engine,
                  size_t max_total_note_bytes,
                  size_t &num_notes_out,
                  size_t &num_bytes_out,
-                 bool do_cache) {
+                 bool do_cache,
+                 const std::atomic<bool> *cancel) {
   assert(remap_index.empty());
   Atom::TCore::TArena *cur_arena = nullptr;
   auto remapper = [&remap_index, &cur_arena](TCore::TOffset off) {
@@ -1408,6 +1425,10 @@ size_t MakeArena(Disk::Util::TEngine *engine,
         /* insert the ordered notes first */ {
           std::optional<TIndexFile::TOrderedNote> prev_note;
           for (; ordered_csr; ++ordered_csr) {
+            /* A big fold spends most of its time here, between the two walks of its source (#1025). */
+            if (cancel && cancel->load(std::memory_order_relaxed)) {
+              throw TMergeCancelled();
+            }
             const TIndexFile::TOrderedNote &ordered_note = *ordered_csr;
             const TCore::TNote *const note = ordered_note.Note;
             const size_t note_size = sizeof(TCore::TNote) + note->GetRawSize();

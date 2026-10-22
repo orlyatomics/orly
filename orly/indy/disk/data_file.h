@@ -30,8 +30,11 @@
 #include <orly/indy/memory_layer.h>
 #include <orly/sabot/all.h>
 
+#include <atomic>
+#include <chrono>
 #include <functional>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 
 namespace Orly {
@@ -39,6 +42,16 @@ namespace Orly {
   namespace Indy {
 
     namespace Disk {
+
+      /* Thrown out of a TMergeDataFile, TFoldDataFile or TDataFile constructor whose cancel flag was raised. The
+         output is freed and the inputs are untouched. */
+      class TMergeCancelled : public std::runtime_error {
+        public:
+        TMergeCancelled() : std::runtime_error("merge cancelled by shutdown") {}
+
+        /* When the merge saw the flag, so a catcher can tell the wait for a checkpoint from the unwind (#1025). */
+        const std::chrono::steady_clock::time_point ThrownAt = std::chrono::steady_clock::now();
+      };
 
         class TRemapObj {
         public:
@@ -202,7 +215,9 @@ namespace Orly {
         using TEntrySource = std::function<void (const std::function<void (const TEntryView &)> &)>;
 
         /* Writes the entries a source yields (#745 §9.6: the fold streams its output this way,
-           without a memory layer or the update pools). Nothing is notified on completion. */
+           without a memory layer or the update pools). Nothing is notified on completion. Once
+           'cancel' is raised, the constructor throws TMergeCancelled at its next checkpoint, up to
+           the point the file map takes the file, and frees what it wrote (#1025). */
         TDataFile(Util::TEngine *engine,
                   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
                   const TEntrySource &source,
@@ -212,7 +227,8 @@ namespace Orly {
                   TSequenceNumber release_up_to,
                   DiskPriority priority,
                   const std::optional<std::pair<TSequenceNumber, TSequenceNumber>> &cover_range = std::nullopt,
-                  bool do_cache = false);
+                  bool do_cache = false,
+                  const std::atomic<bool> *cancel = nullptr);
 
         TDataFile(Util::TEngine *engine,
                   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed,
@@ -279,6 +295,9 @@ namespace Orly {
         TUpdateCollector UpdateCollector;
 
         bool DoCache;
+
+        /* See the source constructor; null for a memory layer's file, which is never cancelled. */
+        const std::atomic<bool> *Cancel = nullptr;
 
         #ifndef NDEBUG
         std::unordered_set<size_t> WrittenBlockSet;
