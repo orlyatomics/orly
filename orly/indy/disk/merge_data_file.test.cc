@@ -1141,3 +1141,70 @@ FIXTURE(CancelMergeAndFold) {
     cond.notify_one();
   });
 }
+
+/* #1025: a flag raised after the source's first walk stops the TDataFile a fold writes before
+   it builds its arenas, rather than after it has published the file. Nothing is published and
+   no blocks leak; with the flag down, the same source writes the file. */
+FIXTURE(CancelDataFileBetweenWalks) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    Base::TUuid file_id(TUuid::Best);
+    Base::TUuid idx(TUuid::Twister);
+    TMockMem mem_layer;
+    InsertEntries(mem_layer, 1UL, {{idx, 42L, 10L, TMutator::Assign}});
+    InsertEntries(mem_layer, 2UL, {{idx, 43L, 1L, TMutator::Assign}});
+
+    std::atomic<bool> cancel(false);
+    bool raise_after_first_walk = true;
+    size_t walks = 0UL;
+    const TDataFile::TEntrySource source = [&](const std::function<void (const TDataFile::TEntryView &)> &cb) {
+      for (TMemoryLayer::TEntryCollection::TCursor csr(mem_layer.GetEntryCollection()); csr; ++csr) {
+        cb(TDataFile::TEntryView{csr->GetIndexKey().GetIndexId(), csr->GetKey(), csr->GetOp(), csr->GetMetadata(),
+                                 csr->GetId(), &csr->GetSuprena(), csr->GetSequenceNumber(), csr->GetMutator()});
+      }
+      if (++walks == 1UL && raise_after_first_walk) {
+        cancel.store(true);
+      }
+    };
+    const auto has_gen = [&](size_t gen) {
+      vector<TFileObj> files;
+      mem_engine.GetEngine()->AppendFileGenSet(file_id, files);
+      for (const auto &f : files) {
+        if (f.GenId == gen) return true;
+      }
+      return false;
+    };
+
+    const size_t avail_before = mem_engine.GetVolMan()->GetSpace().GetAvailable();
+    bool threw = false;
+    try {
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, source, file_id, 1UL, 20UL, 0U, Low,
+                          std::nullopt, false, &cancel);
+    } catch (const TMergeCancelled &) {
+      threw = true;
+    }
+    EXPECT_TRUE(threw);
+    /* The flag was seen before the second walk. */
+    EXPECT_EQ(walks, 1UL);
+    EXPECT_FALSE(has_gen(1UL));
+    EXPECT_EQ(mem_engine.GetVolMan()->GetSpace().GetAvailable(), avail_before);
+
+    cancel.store(false);
+    raise_after_first_walk = false;
+    walks = 0UL;
+    {
+      TDataFile data_file(mem_engine.GetEngine(), TVolume::TDesc::Fast, source, file_id, 1UL, 20UL, 0U, Low,
+                          std::nullopt, false, &cancel);
+    }
+    EXPECT_EQ(walks, 2UL);
+    EXPECT_TRUE(has_gen(1UL));
+    const auto state = ReadState(mem_engine, file_id, 1UL, idx);
+    EXPECT_EQ(state.size(), 2UL);
+
+    GracefullShutdown();
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
