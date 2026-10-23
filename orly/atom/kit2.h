@@ -167,6 +167,15 @@ namespace Orly {
       static inline bool TryQuickOrderElems(TArena *lhs_arena, const TCore *lhs, size_t lhs_count,
                                             TArena *rhs_arena, const TCore *rhs, size_t rhs_count, Atom::TComparison &comp);
 
+      /* Order this member of a stored key against the member at the same position of a pattern, which may be a free, the way
+         Sabot would: by type first, and by value only when the types are the same.  True, setting `same_type` and, when it is
+         set, `comp`, when this member is a string, a blob, or an integer, bool, char, duration, time point or uuid and that one
+         is too or is a free (a free's type never orders equal to a stored member's).  False when there is no quick answer -- a
+         float, a desc, an opt, a nested tuple, ... -- and the caller must ask Sabot.  Spares a pattern seek building Sabot
+         states and types for every key it passes. */
+      inline bool TryQuickOrderPatternMember(TArena *this_arena, const TCore &that_core, TArena *that_arena,
+                                             bool &same_type, Atom::TComparison &comp) const;
+
       inline bool MatchType(TArena *this_arena, const TCore &that_core, TArena *that_arena) const;
 
       inline Orly::Sabot::TMatchResult PrefixMatch(TArena *this_arena, const TCore &that_core, TArena *that_arena) const;
@@ -1394,6 +1403,34 @@ namespace Orly {
       }
       comp = QuickCompare(lhs_count, rhs_count);
       return true;
+    }
+
+    inline bool TCore::TryQuickOrderPatternMember(TArena *this_arena, const TCore &that_core, TArena *that_arena,
+                                                  bool &same_type, Atom::TComparison &comp) const {
+      /* Tycons that hold values of one Sabot type map to one class: direct and indirect strings, direct and indirect blobs,
+         and each fixed-size scalar whose quick order is its Sabot order.  Anything else has no class. */
+      const auto type_class = [](TTycon tycon) -> int {
+        if (tycon <= TTycon::MaxDirectStr || tycon == TTycon::Str) {
+          return static_cast<int>(TTycon::Str);
+        }
+        if ((tycon >= TTycon::MinDirectBlob && tycon <= TTycon::MaxDirectBlob) || tycon == TTycon::Blob) {
+          return static_cast<int>(TTycon::Blob);
+        }
+        if ((tycon >= TTycon::Int8 && tycon <= TTycon::Char) || (tycon >= TTycon::Duration && tycon <= TTycon::Uuid)) {
+          return static_cast<int>(tycon);
+        }
+        return -1;
+      };
+      if (that_core.Tycon == TTycon::Free && Tycon != TTycon::Free) {
+        same_type = false;
+        return true;
+      }
+      const int this_class = type_class(Tycon), that_class = type_class(that_core.Tycon);
+      if (this_class < 0 || that_class < 0) {
+        return false;
+      }
+      same_type = this_class == that_class;
+      return !same_type || TryQuickOrderComparison(this_arena, that_core, that_arena, comp);
     }
 
     inline bool TCore::IsSelfOrderedDirect() const {
