@@ -25,6 +25,7 @@
 #include <orly/indy/repo.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -739,7 +740,8 @@ FIXTURE(RangeCountsByRankMatchTheWalk) {
       }
       /* A skip passes over the same keys by rank as by stepping, and the cursor then yields the same keys and values: a skip of
          none, of a few keys or of a stretch across files with deletes in it, of every key, and past the end. Each charges the same
-         rows, and gives up at the same row under a budget. */ {
+         rows, and gives up at the same row under a budget. The rank skip steps through the first keys of each stretch, so the
+         skips also put its switch to rank (SetRankStepsFirst()) at, just before and just after the skip's end. */ {
         /* The keys and values after skipping `n`, the count Skip() returned, and the rows charged. */
         struct TSkipped {
           vector<pair<int64_t, int64_t>> Rest;
@@ -751,10 +753,11 @@ FIXTURE(RangeCountsByRankMatchTheWalk) {
         };
         size_t skipped_by_rank = 0UL;
         const auto skip_then_walk = [&](const L0::TManager::TPtr<TRepo> &repo, const TQuery &query, int64_t n, bool by_rank,
-                                        size_t max_rows) {
+                                        size_t max_rows, size_t steps_first) {
           TSuprena ctx_arena;
           TContext context(repo, &ctx_arena);
           context.SetRankCounts(by_rank);
+          context.SetRankStepsFirst(steps_first);
           if (max_rows) {
             context.SetReadBudget(max_rows, 0, nullptr, 0);
           }
@@ -778,13 +781,15 @@ FIXTURE(RangeCountsByRankMatchTheWalk) {
         for (int i = 0; i < 150; ++i) {
           const TQuery query = random_query();
           for (const auto *repo : {&child, &root}) {
-            const TSkipped all = skip_then_walk(*repo, query, 0, false, 0UL);
+            const size_t steps_first = std::array<size_t, 4>{1UL, 2UL, 5UL, 32UL}[std::uniform_int_distribution<size_t>(0UL, 3UL)(rng)];
+            const int64_t k = static_cast<int64_t>(steps_first);
+            const TSkipped all = skip_then_walk(*repo, query, 0, false, 0UL, steps_first);
             EXPECT_EQ(all.Skipped, 0);
             const int64_t total = static_cast<int64_t>(all.Rest.size());
             const int64_t some = std::uniform_int_distribution<int64_t>(0L, total + 1L)(rng);
-            for (const int64_t n : {0L, 1L, some, total / 2L, total, total + 3L}) {
-              const TSkipped stepped = skip_then_walk(*repo, query, n, false, 0UL);
-              const TSkipped ranked = skip_then_walk(*repo, query, n, true, 0UL);
+            for (const int64_t n : {0L, 1L, k - 1L, k, k + 1L, some, total / 2L, total, total + 3L}) {
+              const TSkipped stepped = skip_then_walk(*repo, query, n, false, 0UL, steps_first);
+              const TSkipped ranked = skip_then_walk(*repo, query, n, true, 0UL, steps_first);
               EXPECT_TRUE(ranked == stepped);
               EXPECT_EQ(stepped.Skipped, std::min(n, total));
               const size_t from = static_cast<size_t>(std::min(n, total));
@@ -793,8 +798,8 @@ FIXTURE(RangeCountsByRankMatchTheWalk) {
             }
             /* Under a budget, both give up at the same row, or neither does. */
             const size_t max_rows = std::uniform_int_distribution<size_t>(1UL, static_cast<size_t>(total) + 2UL)(rng);
-            const TSkipped stepped = skip_then_walk(*repo, query, some, false, max_rows);
-            const TSkipped ranked = skip_then_walk(*repo, query, some, true, max_rows);
+            const TSkipped stepped = skip_then_walk(*repo, query, some, false, max_rows, steps_first);
+            const TSkipped ranked = skip_then_walk(*repo, query, some, true, max_rows, steps_first);
             EXPECT_EQ(ranked.TooLarge, stepped.TooLarge);
             EXPECT_EQ(ranked.Rows, stepped.Rows);
             if (!stepped.TooLarge) {

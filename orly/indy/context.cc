@@ -353,17 +353,33 @@ std::optional<int64_t> TContext::TryCountByRank(const Indy::TIndexKey &from, con
     const bool alone = !heap || !Atom::IsEq(heap.Peek(next_pos).CompareKeys(top));
     if (alone && source.File) {
       /* No other layer of any repo holds a key from this one up to the next key in the merge,
-         so this file alone decides every key in that stretch. */
-      if (!source.Counts) {
-        source.Counts = source.Layer->GetTombstoneCounts(from.GetIndexId(), source.File->GetNumRanks());
+         so this file alone decides every key in that stretch. Step through its first keys, and
+         pass the rest by rank only once the stretch has proved long (see SetRankStepsFirst()). */
+      const Indy::TPresentWalker::TItem *bound = heap ? &heap.Peek(next_pos) : nullptr;
+      Indy::TPresentWalker &walker = *source.Walker;
+      if (!top.Op.IsTombstone()) {
+        add_to_count(1UL);
       }
-      const auto [keys, tombstones] = source.File->SkipBelow(heap ? &heap.Peek(next_pos) : nullptr, *source.Counts,
-                                                             static_cast<size_t>(limit - count));
-      assert(tombstones <= keys);
-      RowsCountedByRank += keys - tombstones;
-      add_to_count(keys - tombstones);
-      if (*source.Walker) {
-        heap.Insert(**source.Walker, pos);
+      source.File->NextKey();
+      for (size_t stepped = 1UL;
+           walker && count < limit && (!bound || Atom::IsLt((*walker).CompareKeys(*bound))); ++stepped) {
+        if (stepped >= RankStepsFirst) {
+          if (!source.Counts) {
+            source.Counts = source.Layer->GetTombstoneCounts(from.GetIndexId(), source.File->GetNumRanks());
+          }
+          const auto [keys, tombstones] = source.File->SkipBelow(bound, *source.Counts, static_cast<size_t>(limit - count));
+          assert(tombstones <= keys);
+          RowsCountedByRank += keys - tombstones;
+          add_to_count(keys - tombstones);
+          break;
+        }
+        if (!(*walker).Op.IsTombstone()) {
+          add_to_count(1UL);
+        }
+        source.File->NextKey();
+      }
+      if (walker) {
+        heap.Insert(*walker, pos);
       }
       continue;
     }
@@ -658,8 +674,9 @@ int64_t TContext::TKeyCursor::Skip(int64_t n) {
   Cached = false;
   ContextMembership.Remove();
   int64_t skipped = 0;
-  if (!Csr) {
-    /* The walk hasn't started, so it can start wherever the skip ends. */
+  if (!Csr && static_cast<size_t>(n) >= Owner->RankStepsFirst) {
+    /* The walk hasn't started, so it can start wherever the skip ends. A shorter skip than the steps a stretch takes before
+       it is passed by rank could pass nothing by rank, and would only set up its walkers twice. */
     std::optional<Indy::TKey> resume;
     if (const auto counted = Owner->TryCountByRank(Key, IsRange ? &To : nullptr, n, &resume)) {
       skipped = *counted;

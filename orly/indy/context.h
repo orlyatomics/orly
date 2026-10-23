@@ -275,6 +275,14 @@ namespace Orly {
         RankCounts = on;
       }
 
+      /* How many keys of a stretch that one disk file alone holds a count or skip steps through before passing the rest by
+         rank (#1045). Where other layers' keys interleave with the file's, as a memory layer's do under ingest, most stretches
+         are a few keys long, and stepping them costs less than the rank search; a long stretch pays at most this many steps
+         first. Tests set it to put the switch from stepping to rank at chosen keys. */
+      void SetRankStepsFirst(size_t n) noexcept {
+        RankStepsFirst = n;
+      }
+
       /* The keys this context has counted by rank, without reading each one (#749). */
       [[nodiscard]] size_t GetRowsCountedByRank() const noexcept {
         return RowsCountedByRank;
@@ -428,6 +436,9 @@ namespace Orly {
 
       /* See SetRankCounts() and GetRowsCountedByRank(). */
       bool RankCounts = true;
+
+      /* See SetRankStepsFirst(). */
+      size_t RankStepsFirst = 32UL;
 
       /* See GetAt(). */
       std::optional<TSequenceNumber> At;
