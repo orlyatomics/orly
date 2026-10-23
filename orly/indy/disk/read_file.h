@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <ostream>
+#include <vector>
 
 #include <base/class_traits.h>
 #include <base/inv_con/unordered_multimap.h>
@@ -238,6 +239,15 @@ namespace Orly {
         }
 
         virtual ~TDiskArena() {
+          /* Every pin is released before its arena goes, so all that is left are the references we hold ourselves. */
+          assert(Held.Pins == 0UL);
+          assert(Retired.empty());
+          if (Held.DataSlot) {
+            Cache->Release(Held.MainSlot, Held.DataSlot, Held.PageId);
+          }
+          for (const auto &page: Retired) {
+            Cache->Release(page.MainSlot, page.DataSlot, page.PageId);
+          }
         }
 
         inline virtual void ReleaseNote(const Atom::TCore::TNote *note, Atom::TCore::TOffset offset, void *data1, void *data2, void *data3);
@@ -252,6 +262,26 @@ namespace Orly {
 
         private:
 
+        using TSlot = typename Util::TCache<PhysicalCachePageSize>::TSlot;
+
+        /* A cache page this arena holds one reference to, and the pins it has handed out on that page (#1018).
+           Taking a cache reference per pin is an atomic add on the page's slot, and dropping it a CAS, and
+           every session reading the same keys is doing the same to the same slot. A range read pins a note or
+           two per row, nearly always on the page it pinned last, so the arena takes one cache reference per
+           page and counts its pins on it locally; it is used by one fiber at a time, as its stream is. */
+        struct TPinnedPage {
+          TSlot *MainSlot = nullptr;
+          TSlot *DataSlot = nullptr;
+          size_t PageId = 0UL;
+          size_t Pins = 0UL;
+        };
+
+        /* Pin a note on the page the stream has loaded, and return that page's main slot. */
+        TSlot *PinLoadedPage();
+
+        /* Drop a pin PinLoadedPage() handed out. */
+        void UnpinPage(TSlot *main_slot, TSlot *data_slot, size_t page_id);
+
         TArenaInFile *File;
 
         DiskPriority Priority;
@@ -265,6 +295,15 @@ namespace Orly {
         TStream<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, StreamLocalCacheSize, ScanAheadAllowed> Stream;
 
         size_t NumNotes;
+
+        /* The page the arena last pinned on. Its reference is kept when its pins drop to zero, as the next
+           row's notes are most likely on the same page; it goes when a pin lands on another page, or with
+           the arena. The stream holds references to the pages it has loaded anyway, so this is one more at most. */
+        TPinnedPage Held;
+
+        /* Pages the arena moved off while pins on them were still out. Each keeps its reference until its last
+           pin is dropped. A range read holds at most a key or two at a time, so this stays short. */
+        std::vector<TPinnedPage> Retired;
 
       };  // TDiskArena
 
@@ -985,10 +1024,69 @@ namespace Orly {
       /*** Inline ***/
 
       template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, size_t LocalCacheSize, bool ScanAheadAllowed>
+      inline typename TDiskArena<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, LocalCacheSize, ScanAheadAllowed>::TSlot *
+          TDiskArena<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, LocalCacheSize, ScanAheadAllowed>::PinLoadedPage() {
+        TSlot *const data_slot = Stream.GetLoadedDataSlot();
+        const size_t page_id = Stream.GetLoadedPageId();
+        if (Held.DataSlot != data_slot || Held.PageId != page_id) {
+          /* A pin on another page. Retire the one we hold if pins on it are still out, else drop its reference. */
+          if (Held.Pins) {
+            Retired.push_back(Held);
+          } else if (Held.DataSlot) {
+            Cache->Release(Held.MainSlot, Held.DataSlot, Held.PageId);
+          }
+          Held = TPinnedPage{};
+          /* Coming back to a page we retired: hold it again rather than take a second reference, so a page
+             is never both held and retired and a pin's release finds the one entry that counts it. */
+          const auto pos = std::ranges::find_if(Retired, [data_slot, page_id](const TPinnedPage &page) {
+            return page.DataSlot == data_slot && page.PageId == page_id;
+          });
+          if (pos != Retired.end()) {
+            Held = *pos;
+            *pos = Retired.back();
+            Retired.pop_back();
+          } else {
+            /* The stream holds a reference on the page it just went to, so take ours from it. That avoids the
+               slot lock, and the LRU churn when the stream is the only holder. */
+            Held.MainSlot = Cache->Retain(Stream.GetLoadedMainSlot(), data_slot, page_id);
+            Held.DataSlot = data_slot;
+            Held.PageId = page_id;
+          }
+        }
+        ++Held.Pins;
+        return Held.MainSlot;
+      }
+
+      template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, size_t LocalCacheSize, bool ScanAheadAllowed>
+      inline void TDiskArena<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, LocalCacheSize, ScanAheadAllowed>::UnpinPage(TSlot *main_slot, TSlot *data_slot, size_t page_id) {
+        if (Held.DataSlot == data_slot && Held.PageId == page_id) {
+          assert(Held.MainSlot == main_slot);
+          assert(Held.Pins > 0UL);
+          --Held.Pins;
+          return;
+        }
+        const auto pos = std::ranges::find_if(Retired, [data_slot, page_id](const TPinnedPage &page) {
+          return page.DataSlot == data_slot && page.PageId == page_id;
+        });
+        assert(pos != Retired.end());
+        if (pos == Retired.end()) {
+          /* Not a pin of ours; it can't happen, but if it does it must still give its reference back. */
+          Cache->Release(main_slot, data_slot, page_id);
+          return;
+        }
+        assert(pos->MainSlot == main_slot);
+        assert(pos->Pins > 0UL);
+        if (--pos->Pins == 0UL) {
+          Cache->Release(pos->MainSlot, pos->DataSlot, pos->PageId);
+          *pos = Retired.back();
+          Retired.pop_back();
+        }
+      }
+
+      template <size_t CachePageSize, size_t BlockSize, size_t PhysicalBlockSize, Util::TBufKind BufKind, size_t LocalCacheSize, bool ScanAheadAllowed>
       inline void TDiskArena<CachePageSize, BlockSize, PhysicalBlockSize, BufKind, LocalCacheSize, ScanAheadAllowed>::ReleaseNote(const Atom::TCore::TNote *note, Atom::TCore::TOffset offset, void *data1, void *data2, void *data3) {
         if (data1) { /* This data fit in the block, release the block. */
-          Cache->Release(reinterpret_cast<typename Util::TCache<PhysicalCachePageSize>::TSlot *>(data1), reinterpret_cast<typename Util::TCache<PhysicalCachePageSize>::TSlot *>(data2), reinterpret_cast<size_t>(data3));
-          //File->GetService()->ReleaseBuf(reinterpret_cast<TPageCache::TObj *>(data));
+          UnpinPage(reinterpret_cast<TSlot *>(data1), reinterpret_cast<TSlot *>(data2), reinterpret_cast<size_t>(data3));
         } else { /* the data did not fit in the block, free the buffer we allocated. */
           assert(offset / DataChunkSize != (offset + note->GetRawSize() + sizeof(Atom::TCore::TNote)) / DataChunkSize);
           free(const_cast<Atom::TCore::TNote *>(note));
@@ -1014,10 +1112,8 @@ namespace Orly {
         /* try to just point at the memory in the cache block if the note is contiguous. */
         if (note_offset / DataChunkSize == (note_offset + note_size) / DataChunkSize) {
           data1 = nullptr;
-          /* The stream holds a reference on the page it just went to, so take ours from it. That avoids the
-             slot lock, and the LRU churn when the stream is the only holder. */
-          typename Util::TCache<PhysicalCachePageSize>::TSlot *const data_slot = Stream.GetLoadedDataSlot();
-          typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Retain(Stream.GetLoadedMainSlot(), data_slot, loaded_page_id);
+          TSlot *const data_slot = Stream.GetLoadedDataSlot();
+          TSlot *const main_slot = PinLoadedPage();
           try {
             data1 = main_slot;
             data2 = data_slot;
@@ -1025,7 +1121,7 @@ namespace Orly {
             data_slot->SyncGetData(HERE, Priority, Cache, BufKind, Source::DiskArena, loaded_page_id, SyncTrigger);
             SyncTrigger.Wait();
           } catch (...) {
-            Cache->Release(main_slot, data_slot, loaded_page_id);
+            UnpinPage(main_slot, data_slot, loaded_page_id);
             data1 = nullptr;
             throw;
           }
@@ -1075,9 +1171,8 @@ namespace Orly {
         if (note_offset / DataChunkSize == (note_offset + note_size) / DataChunkSize) {
           try {
             const size_t loaded_page_id = Stream.GetLoadedPageId();
-            /* As above: take the reference from the stream's. */
-            typename Util::TCache<PhysicalCachePageSize>::TSlot *const data_slot = Stream.GetLoadedDataSlot();
-            typename Util::TCache<PhysicalCachePageSize>::TSlot *const main_slot = Cache->Retain(Stream.GetLoadedMainSlot(), data_slot, loaded_page_id);
+            TSlot *const data_slot = Stream.GetLoadedDataSlot();
+            TSlot *const main_slot = PinLoadedPage();
             data1 = main_slot;
             data2 = data_slot;
             data3 = reinterpret_cast<void *>(loaded_page_id);
