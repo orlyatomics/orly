@@ -411,6 +411,10 @@ namespace Orly {
            gives it; 0 means no limit. */
         size_t MaxFoldInputMB;
 
+        /* --min_fold_run: a disk merge folds only if a key in it has a longer run of entries that are not
+           assignments (TRepo::SetMinFoldRun). */
+        size_t MinFoldRun;
+
         /* Durable acknowledgments via write-ahead log (#755). "local" / "true" (default), "false". */
         std::string DurableAcks = "local";
 

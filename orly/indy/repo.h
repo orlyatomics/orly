@@ -113,6 +113,25 @@ namespace Orly {
          are not Assigns, so the cap never lets a key's run grow without bound (#988). */
       static constexpr size_t MaxUnfoldedRun = 64UL;
 
+      /* A disk merge folds its output only if some key in it has more than this many entries that are not Assigns.
+         A fold rewrites the whole merged file, every key of it, to collapse the few keys whose run it shortens, and
+         costs several times what the merge itself does. A shorter run is left as it is, as past the fold cap: the
+         unfolded file is a correct result, a read walks the run, and a later merge that takes the file in folds once
+         a run passes this. 0, the default, folds every merge that has an entry that is not an Assign. orlyi sets it
+         from --min_fold_run. */
+      static void SetMinFoldRun(size_t run) {
+        MinFoldRun.store(run, std::memory_order_relaxed);
+      }
+
+      static size_t GetMinFoldRun() {
+        return MinFoldRun.load(std::memory_order_relaxed);
+      }
+
+      /* How many merges have kept their output unfolded because no run in it passed GetMinFoldRun(). */
+      static size_t GetNumFoldsShortRuns() {
+        return NumFoldsShortRuns.load(std::memory_order_relaxed);
+      }
+
       /* How many merges have kept their output unfolded because it passed GetMaxFoldInputBytes(). */
       static size_t GetNumFoldsTooLarge() {
         return NumFoldsTooLarge.load(std::memory_order_relaxed);
@@ -950,6 +969,9 @@ namespace Orly {
       /* See SetMaxFoldInputBytes(). */
       static std::atomic<size_t> MaxFoldInputBytes;
 
+      /* See SetMinFoldRun(). */
+      static std::atomic<size_t> MinFoldRun;
+
       /* A repo's concrete present-walker: builds one sub-walker per data layer
          (each disk layer + the memtable) and k-way-merges them through MinHeap,
          yielding the newest entry per key in key order. (Same-key entries are
@@ -1312,6 +1334,7 @@ namespace Orly {
       static std::atomic<size_t> NumFoldsTooLarge;
       static std::atomic<size_t> LongestRunKeptUnfolded;
       static std::atomic<size_t> NumFoldsForLongRuns;
+      static std::atomic<size_t> NumFoldsShortRuns;
 
       /* Raise the durable sequence number (see GetDurableSequenceNumber) to at least this. */
       void NoteDurable(TSequenceNumber seq_num) {

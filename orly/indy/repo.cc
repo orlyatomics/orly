@@ -1415,6 +1415,8 @@ atomic<size_t> TRepo::MaxFoldInputBytes{numeric_limits<size_t>::max()};
 atomic<size_t> TRepo::NumFoldsTooLarge{0UL};
 atomic<size_t> TRepo::LongestRunKeptUnfolded{0UL};
 atomic<size_t> TRepo::NumFoldsForLongRuns{0UL};
+atomic<size_t> TRepo::MinFoldRun{0UL};
+atomic<size_t> TRepo::NumFoldsShortRuns{0UL};
 
 atomic<size_t> TRepo::ReadPrepFramesInUse{0UL};
 
@@ -2995,10 +2997,13 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
      update pools (it streams the merged file key by key), so it no longer claims pool space up
      front (#858); a heap allocation failure or cache-page exhaustion (#932) lands here. */
   const auto keep_unfolded = [&](const char *reason) {
-    static std::atomic<size_t> fold_misses(0UL);
-    const size_t misses = ++fold_misses;
-    if ((misses & (misses - 1UL)) == 0UL) {
-      syslog(LOG_ERR, "MergeFiles: %s to fold %ld keys; keeping the merge unfolded (%ld times so far)", reason, merge_data_file.GetNumKeys(), misses);
+    /* A merge whose runs are all short keeps its output unfolded by policy, not for want of anything; no log. */
+    if (reason) {
+      static std::atomic<size_t> fold_misses(0UL);
+      const size_t misses = ++fold_misses;
+      if ((misses & (misses - 1UL)) == 0UL) {
+        syslog(LOG_ERR, "MergeFiles: %s to fold %ld keys; keeping the merge unfolded (%ld times so far)", reason, merge_data_file.GetNumKeys(), misses);
+      }
     }
     out_num_keys = merge_data_file.GetNumKeys();
     out_saved_low_seq = merge_data_file.GetLowestSequence();
@@ -3010,6 +3015,12 @@ size_t TSafeRepo::MergeFiles(const std::vector<size_t> &gen_id_vec,
     AddMergeBytes(merge_data_file.GetFileLength());
     return intermediate_gen_id;
   };
+  /* A merge with no run longer than the minimum fold run stays unfolded: the fold would rewrite every key in the file
+     to shorten runs a read walks cheaply, and a later merge that takes the file in folds once a run is long enough. */
+  if (merge_data_file.GetMaxKeyNonAssignEntries() <= GetMinFoldRun()) {
+    NumFoldsShortRuns.fetch_add(1UL, std::memory_order_relaxed);
+    return keep_unfolded(nullptr);
+  }
   /* #988: a merged file past the fold cap stays unfolded, unless a key in it has a run too long to leave: a merge that
      takes the file in is larger still, so the run would only grow, and every read of the key would walk it. */
   if (merge_data_file.GetFileLength() > GetMaxFoldInputBytes()) {
