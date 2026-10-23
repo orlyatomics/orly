@@ -162,7 +162,11 @@ three times the file's size, so a merged file larger than a sixteenth of the
 budget is kept unfolded (`--max_fold_input_mb`, 0 for no limit), unless a
 key in it has a `+=` run of more than 64 entries. With that
 cap, a heavy read load at a 6 GiB budget peaked at 5.7 to 5.9 GiB RSS
-([#988](https://github.com/orlyatomics/orly/issues/988)).
+([#988](https://github.com/orlyatomics/orly/issues/988)). A merge of any size
+leaves runs of up to 64 such entries unfolded (`--min_fold_run`, 0 to fold
+every one): the fold rewrites every key in the file, so folding for a few short
+runs kept merges from keeping up with ingest
+([#1037](https://github.com/orlyatomics/orly/issues/1037)).
 
 The smallest limit the image runs in is **768 MiB** (`--memory=768m`). Below
 747 MiB, `orlyi` refuses to start and says how much it needs. The floor is the

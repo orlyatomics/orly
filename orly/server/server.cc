@@ -479,6 +479,14 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "budget (--memory_budget_mb). 0 means no limit."
   );
   Param(
+      &TCmd::MinFoldRun, "min_fold_run", Optional, "min_fold_run\0",
+      "A disk merge folds its output (collapses each key's run of entries that are not assignments, such as "
+      "+=) only if some key in it has a run longer than this. A fold rewrites the whole merged file, and costs "
+      "several times what the merge does, so a merge whose runs are all short leaves them: still correct, a "
+      "read walks the run, and a later merge folds once a run passes this. Default 64. 0 folds every merge "
+      "that has such an entry."
+  );
+  Param(
       &TCmd::ReadBudgetMB, "read_budget_mb", Optional, "read_budget_mb\0",
       "The per-read memory budget (issue #694): a method call that builds more than this many "
       "MiB of results is refused with a read_too_large error. Default: a sixteenth of the "
@@ -703,6 +711,7 @@ TServer::TCmd::TCmd()
       ReadYieldRows(8UL),
       ReadYieldUs(1000UL),
       MaxFoldInputMB(0UL),
+      MinFoldRun(64UL),
       DurableAcks("local"),
       WalMB(256),
       OperationRetentionCount(4096),
@@ -1300,6 +1309,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
      (#762). */
   Indy::TRepo::SetReadPrepFrameBudget(Cmd.NumFiberFrames / 2UL);
   Indy::TRepo::SetMaxFoldInputBytes(Cmd.MaxFoldInputMB ? Cmd.MaxFoldInputMB * 1024UL * 1024UL : std::numeric_limits<size_t>::max());
+  Indy::TRepo::SetMinFoldRun(Cmd.MinFoldRun);
   Disk::Util::TDiskController::TEvent::InitializeDiskEventPoolManager(Cmd.NumDiskEvents);
   using TLocalReadFileCache = Orly::Indy::Disk::TLocalReadFileCache<Orly::Indy::Disk::Util::LogicalPageSize,
     Orly::Indy::Disk::Util::LogicalBlockSize,

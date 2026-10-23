@@ -1388,6 +1388,48 @@ FIXTURE(DiskMergePastTheFoldCapStaysUnfolded) {
   });
 }
 
+/* A merge whose runs are no longer than the minimum fold run keeps its output unfolded, and its `+=` chain still reads
+   in full. Each round here adds a run of ten to the counter, and each merge takes in the last one's output, so with a
+   minimum of 16 the merges alternate: a run of ten or so stays unfolded, the next one past 16 folds. At 0, the default,
+   every merge folds. */
+FIXTURE(DiskMergeWithShortRunsStaysUnfolded) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    const int64_t counter = -1L;
+    const size_t old_min = TRepo::GetMinFoldRun();
+    for (size_t min_run : {0UL, 16UL}) {
+      TRepo::SetMinFoldRun(min_run);
+      const size_t short_runs = TRepo::GetNumFoldsShortRuns();
+      {
+        TRootRepoFixture root(false);
+        root.Commit({{counter, 0L, TMutator::Assign}});
+        for (int64_t key = 0L; key < 100L; ++key) {
+          root.Commit({{key, key, TMutator::Assign}});
+        }
+        root.Flush();
+        int64_t expected = 0L;
+        for (int64_t round = 0L; round < 12L; ++round) {
+          for (int64_t i = 0L; i < 10L; ++i) {
+            root.Commit({{counter, 1L, TMutator::Add}});
+            ++expected;
+          }
+          root.Flush();
+          root.MergeDisk(4UL);
+          EXPECT_EQ(root.Read(counter), root.Int(expected));
+        }
+        for (int64_t key = 0L; key < 100L; ++key) {
+          EXPECT_EQ(root.Read(key), root.Int(key));
+        }
+      }
+      EXPECT_EQ(TRepo::GetNumFoldsShortRuns() > short_runs, min_run > 0UL);
+    }
+    TRepo::SetMinFoldRun(old_min);
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 /* #988: the fold cap must not let a `+=` run grow without bound. Every merge here is past the cap, and each one takes
    in the last one's output, so without the run bound the counter's run would only grow, to 300 entries. Once it passes
    MaxUnfoldedRun the merge folds anyway, and the run starts again from one. */
