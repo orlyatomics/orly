@@ -667,8 +667,11 @@ FIXTURE(QuickOrderElemsMatchesOrderingInPlace) {
   TTestArena lhs_arena, rhs_arena;
   std::mt19937_64 rng(1018);
   const vector<string> strs = {"vi", "vj", "", string(30, 'x'), string(30, 'x') + "y"};
-  const vector<Base::TUuid> uuids = {Base::TUuid("01234567-89ab-cdef-0123-456789abcdef"), Base::TUuid("11234567-89ab-cdef-0123-456789abcdef")};
-  const vector<int64_t> ints = {-7, 0, 3, std::numeric_limits<int64_t>::max()};
+  /* Uuids that differ in their first byte, their last, and their top bit, which TryQuickOrderElems orders without
+     TryQuickOrderComparison; so too int64s across the whole range. */
+  const vector<Base::TUuid> uuids = {Base::TUuid("01234567-89ab-cdef-0123-456789abcdef"), Base::TUuid("11234567-89ab-cdef-0123-456789abcdef"),
+                                     Base::TUuid("01234567-89ab-cdef-0123-456789abcdee"), Base::TUuid("f1234567-89ab-cdef-0123-456789abcdef")};
+  const vector<int64_t> ints = {std::numeric_limits<int64_t>::min(), -7, 0, 3, 256, std::numeric_limits<int64_t>::max()};
   const vector<double> dbls = {-1.5, 0.0, 2.25, std::numeric_limits<double>::quiet_NaN()};
   const auto pick = [&rng](const auto &vec) { return vec[rng() % vec.size()]; };
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize() * 2);

@@ -919,6 +919,140 @@ FIXTURE(RangeWalkMergesLayersInKeyOrder) {
   });
 }
 
+/* A range walk over uuid-led keys, as the merge orders them by their copied-out uuid and int64 elements: across a memtable and
+   disk layers that all hold entries of the same keys, it yields each key's entries together, newest first, with its newest one
+   the last op written, deletes included; it yields every key in the range and none past it, and, run out, stays run out. The
+   uuids differ in their first byte, their last, and their top bit, and few, so most comparisons are ties on the uuid. */
+FIXTURE(RangeWalkMergesUuidKeyedLayers) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRunnerFileCaches file_caches;
+    TSuprena arena;
+    vector<uint8_t> state_buf(Sabot::State::GetMaxStateSize());
+    void *const state = state_buf.data();
+    TScheduler scheduler;
+    scheduler.SetPolicy(TScheduler::TPolicy(10, 10, 10ms));
+    Disk::Sim::TMemEngine engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    {
+      TMyManager manager(engine.GetEngine(), &scheduler);
+      const Base::TUuid index_id(TUuid::Twister);
+      auto repo = manager.GetRepo(Base::TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true);
+      auto *stepped = dynamic_cast<TSteppedSafeRepo *>(repo.Get());
+      /* Ascending. */
+      const vector<Base::TUuid> uuids = {Base::TUuid("01234567-89ab-cdef-0123-456789abcdee"), Base::TUuid("01234567-89ab-cdef-0123-456789abcdef"),
+                                         Base::TUuid("11234567-89ab-cdef-0123-456789abcdef"), Base::TUuid("f1234567-89ab-cdef-0123-456789abcdef")};
+      constexpr int64_t Keys = 40L;
+      const auto key = [&](TSuprena &key_arena, size_t u, int64_t n) {
+        return TIndexKey(index_id, TKey(make_tuple(uuids[u], n), &key_arena, state));
+      };
+      /* The ops on each key, oldest first: a value, or a delete. */
+      std::map<pair<size_t, int64_t>, vector<std::optional<int64_t>>> model;
+      std::mt19937_64 rng(1040);
+      std::uniform_int_distribution<size_t> pick_u(0UL, uuids.size() - 1UL);
+      std::uniform_int_distribution<int64_t> pick_n(-Keys / 2L, Keys / 2L), pick_val(-1000L, 1000L);
+      const auto commit = [&](size_t count) {
+        std::map<pair<size_t, int64_t>, std::optional<int64_t>> ops;
+        while (ops.size() < count) {
+          const int64_t val = pick_val(rng);
+          ops[{pick_u(rng), pick_n(rng)}] = val % 4L ? std::optional<int64_t>(val) : std::nullopt;
+        }
+        TSuprena update_arena;
+        auto transaction = manager.NewTransaction();
+        auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{}, TKey(&update_arena), TKey(Base::TUuid(TUuid::Twister), &update_arena, state));
+        for (const auto &[un, op] : ops) {
+          update->AddEntry(key(update_arena, un.first, un.second),
+                           op ? TKey(*op, &update_arena, state) : TKey(Orly::Native::TTombstone::Tombstone, &update_arena, state));
+          model[un].push_back(op);
+        }
+        transaction->Push(repo, update);
+        transaction->Prepare();
+        transaction->CommitAction();
+      };
+      /* Most keys are written in most rounds, so their entries tie across the layers. */
+      for (int round = 0; round < 4; ++round) {
+        commit(100UL);
+        stepped->StepMergeMem();
+      }
+      commit(100UL);
+      const auto walk = [&](const TIndexKey &from, const TIndexKey &to) {
+        auto view = make_unique<Orly::Indy::TRepo::TView>(stepped);
+        auto walker_ptr = stepped->NewPresentWalker(view, from, to);
+        TPresentWalker &walker = *walker_ptr;
+        vector<pair<size_t, int64_t>> walked;
+        size_t num_rows = 0UL, num_ties = 0UL;
+        std::optional<TSequenceNumber> last_seq;
+        TSuprena val_arena;
+        for (; walker; ++walker) {
+          const TPresentWalker::TItem &item = *walker;
+          ++num_rows;
+          const auto [u_id, n] = Sabot::AsNative<tuple<Base::TUuid, int64_t>>(*Sabot::State::TAny::TWrapper(item.Key.NewState(item.KeyArena, state)));
+          const size_t u = static_cast<size_t>(std::find(uuids.begin(), uuids.end(), u_id) - uuids.begin());
+          if (!EXPECT_LT(u, uuids.size())) {
+            continue;
+          }
+          if (!walked.empty() && walked.back() == make_pair(u, n)) {
+            /* An older entry of the same key, from another layer. */
+            EXPECT_TRUE(last_seq && item.SequenceNumber < *last_seq);
+            last_seq = item.SequenceNumber;
+            ++num_ties;
+            continue;
+          }
+          EXPECT_TRUE(walked.empty() || walked.back() < make_pair(u, n));
+          walked.emplace_back(u, n);
+          last_seq = item.SequenceNumber;
+          const auto found = model.find({u, n});
+          if (!EXPECT_TRUE(found != model.end())) {
+            continue;
+          }
+          EXPECT_LE(1UL, found->second.size());
+          if (const auto &newest = found->second.back()) {
+            EXPECT_TRUE(TKey(item.Op, item.OpArena) == TKey(*newest, &val_arena, state));
+          } else {
+            EXPECT_TRUE(item.Op.IsTombstone());
+          }
+        }
+        /* Run out, it stays run out. */
+        EXPECT_FALSE(static_cast<bool>(walker));
+        EXPECT_FALSE(static_cast<bool>(walker));
+        return std::make_tuple(walked, num_rows, num_ties);
+      };
+      /* The whole index: every key, deleted or not, since there was no disk merge to drop one. */ {
+        TSuprena query_arena;
+        const auto [walked, num_rows, num_ties] = walk(key(query_arena, 0UL, std::numeric_limits<int64_t>::min()),
+                                                       key(query_arena, uuids.size() - 1UL, std::numeric_limits<int64_t>::max()));
+        vector<pair<size_t, int64_t>> expected;
+        for (const auto &[un, ops] : model) {
+          expected.push_back(un);
+        }
+        EXPECT_TRUE(walked == expected);
+        EXPECT_GT(num_ties, 100UL);
+        EXPECT_GT(num_rows, walked.size());
+      }
+      /* Each uuid's keys alone: ranges that end where the next uuid's begin. */
+      for (size_t u = 0; u < uuids.size(); ++u) {
+        TSuprena query_arena;
+        const auto [walked, num_rows, num_ties] = walk(key(query_arena, u, std::numeric_limits<int64_t>::min()),
+                                                       key(query_arena, u, std::numeric_limits<int64_t>::max()));
+        vector<pair<size_t, int64_t>> expected;
+        for (const auto &[un, ops] : model) {
+          if (un.first == u) {
+            expected.push_back(un);
+          }
+        }
+        EXPECT_TRUE(walked == expected);
+      }
+      /* Past every key, and between two of them: nothing. */ {
+        TSuprena query_arena;
+        EXPECT_TRUE(get<0>(walk(key(query_arena, uuids.size() - 1UL, Keys), key(query_arena, uuids.size() - 1UL, 2L * Keys))).empty());
+        EXPECT_TRUE(get<0>(walk(TIndexKey(index_id, TKey(make_tuple(Base::TUuid("01234567-89ab-cdef-0123-456789abcdef"), Keys), &query_arena, state)),
+                                TIndexKey(index_id, TKey(make_tuple(Base::TUuid("11234567-89ab-cdef-0123-456789abcdee"), 2L * Keys), &query_arena, state)))).empty());
+      }
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 /* #592: overwrite the same keys round after round on a root safe repo, merge its disk files,
    and check that:
    (a) every key still reads its latest value, and a `+=` counter its full sum;

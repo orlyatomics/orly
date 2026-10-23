@@ -1,0 +1,1 @@
+- **Fixed (performance)**: A range read's layer merge orders int64 and uuid key elements inline, without the out-of-line per-element comparison, and its heap tests each comparison's value directly. Results are unchanged ([#1042](https://github.com/orlyatomics/orly/issues/1042)).
