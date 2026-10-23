@@ -29,6 +29,16 @@
    most once every WeighEvery, since each time is an atomic add on a line the other runners'
    statements write too.
 
+   With a slice (--read_slice_us, #1015), the runner's queue has two levels, and a call that has
+   run that long in all, not counting time switched out, drops to the lower one: from then on it
+   gives way at every look that finds a fiber ready at normal priority, and goes to the back of
+   the runner's low-priority queue (Indy::Fiber::TRunner::ScheduleFrameLow()), which runs only
+   when nothing at normal priority is ready. Every statement starts at normal priority, so a
+   point read that arrives while long reads hold the runner waits for one look's worth of rows,
+   not for a quantum from each of them. With nothing else ready the long read runs on, so a
+   runner never idles while there is low-priority work; among themselves, low-priority calls
+   take turns of a quantum. A slice of 0 keeps the single level.
+
    The policy is here, apart from the fiber runner, so it can be tested with a fake clock and
    runner: TDerived provides
 
@@ -36,6 +46,8 @@
      TPlace Where();         // The runner the call is on, and that runner's switch count.
      bool OthersReady();     // Is another fiber ready to run on that runner?
      void GiveWay();         // Yield the fiber.
+     bool HighReady();       // Is another fiber ready at normal priority on that runner?
+     void GiveWayLow();      // Yield the fiber to the runner's low-priority queue.
      void Weigh(size_t n);   // Add n small statements' worth to the runner's load.
 
    Copyright 2010-2026 Atomic Kismet Company
@@ -91,17 +103,41 @@ namespace Orly {
           LastWeighed = now;
         }
         const TPlace place = self.Where();
-        if (place != Place) {
+        if (place != Place || !Looked) {
           /* Switched out since the last look, or the first look: the slice starts now. */
+          if (Looked) {
+            Ran += LastLook - SliceStart;
+          }
+          Looked = true;
           Place = place;
           SliceStart = now;
+          LastLook = now;
           return;
         }
-        if (Quantum.count() && now - SliceStart >= Quantum && self.OthersReady()) {
+        LastLook = now;
+        const TClock::duration in_slice = now - SliceStart;
+        if (Slice.count()) {
+          if (!Low && Ran + in_slice >= Slice) {
+            Low = true;
+          }
+          if (Low) {
+            if (self.HighReady() || (Quantum.count() && in_slice >= Quantum && self.OthersReady())) {
+              ++Yields;
+              self.GiveWayLow();
+            }
+            return;
+          }
+        }
+        if (Quantum.count() && in_slice >= Quantum && self.OthersReady()) {
           ++Yields;
           /* Comes back with the switch count moved, so the next look starts a new slice. */
           self.GiveWay();
         }
+      }
+
+      /* True once the call has run past the slice and dropped to low priority. */
+      [[nodiscard]] bool IsLow() const noexcept {
+        return Low;
       }
 
       /* How many times the call has yielded. */
@@ -118,9 +154,10 @@ namespace Orly {
 
       protected:
 
-      /* 0 never yields, but still weighs. */
-      explicit TReadQuantum(std::chrono::microseconds quantum) noexcept
-          : Quantum(quantum) {}
+      /* A quantum of 0 never yields at normal priority, but still weighs. A slice of 0 never
+         drops to low priority. */
+      explicit TReadQuantum(std::chrono::microseconds quantum, std::chrono::microseconds slice = {}) noexcept
+          : Quantum(quantum), Slice(slice) {}
 
       ~TReadQuantum() = default;
 
@@ -129,9 +166,18 @@ namespace Orly {
       /* How long a slice runs before the call yields to a ready fiber. */
       const std::chrono::microseconds Quantum;
 
-      /* Where the call was at the last look, and when its slice began. */
+      /* How long the call runs in all before it drops to low priority. */
+      const std::chrono::microseconds Slice;
+
+      /* Where the call was at the last look, when its slice began, and when that look was. */
+      bool Looked = false;
       TPlace Place;
       TClock::time_point SliceStart;
+      TClock::time_point LastLook;
+
+      /* The time the call ran in its earlier slices, and whether it is at low priority. */
+      TClock::duration Ran{};
+      bool Low = false;
 
       /* What Weigh() has added, in small statements, and when it last did. */
       size_t Charged = 0UL;

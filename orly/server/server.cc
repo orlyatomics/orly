@@ -515,6 +515,15 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "0 never yields. Default: 1000."
   );
   Param(
+      &TCmd::ReadSliceUs, "read_slice_us", Optional, "read_slice_us\0",
+      "How long, in microseconds, a method call may run on its fast runner in all, not counting "
+      "time it waits for disk, before it drops to that runner's low-priority queue (issue #1015). "
+      "The runner runs low-priority calls only when nothing else is ready, and a call there gives "
+      "way at every look (read_yield_rows) that finds a statement ready, so a point read waits "
+      "for a few rows of a long scan, not for a slice of every scan ahead of it. Low-priority "
+      "calls take turns of read_yield_us. 0 keeps a single queue. Default: 200."
+  );
+  Param(
       &TCmd::ReadYieldRows, "read_yield_rows", Optional, "read_yield_rows\0",
       "How many rows a method call walks between looks at the clock, to see whether it has held "
       "its fast runner for read_yield_us (issue #1015). Each look also adds to its runner's load "
@@ -724,6 +733,7 @@ TServer::TCmd::TCmd()
       ReadBudgetSteps(0UL),
       ReadYieldRows(8UL),
       ReadYieldUs(1000UL),
+      ReadSliceUs(200UL),
       EditRunner("fast"),
       EditSpillLoad(1UL),
       MaxFoldInputMB(0UL),

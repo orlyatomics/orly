@@ -607,8 +607,26 @@ namespace Orly {
           assert(this == LocalRunner.Get());
           return ReadyToRunQueue || NewReadyToRunQueue
               || ParkSlots[RunnerId].HandoffPending.load(std::memory_order_relaxed)
+              || InboundFrameQueue.load(std::memory_order_relaxed)
+              || LowQueueHead;
+        }
+
+        /* Like HasOtherReadyFrame(), but true only for frames at normal priority: not for frames
+           waiting in the low-priority queue (ScheduleFrameLow()). Call only from a frame running on
+           this runner. */
+        [[nodiscard]] bool HasOtherHighReadyFrame() const noexcept {
+          assert(this == LocalRunner.Get());
+          return ReadyToRunQueue || NewReadyToRunQueue
+              || ParkSlots[RunnerId].HandoffPending.load(std::memory_order_relaxed)
               || InboundFrameQueue.load(std::memory_order_relaxed);
         }
+
+        /* Queue 'frame', which must be the frame running on this runner, at low priority (#1015):
+           Run() takes the low-priority frames one at a time, in the order they were queued, and
+           only on a lap that finds no other frame ready, so a frame queued here runs after every
+           frame at normal priority, but runs on any lap that has nothing else to do. Only the
+           runner's own thread touches the queue, so it needs no atomics. */
+        inline void ScheduleFrameLow(TFrame *frame);
 
         private:
 
@@ -672,6 +690,10 @@ namespace Orly {
         //mutable TFrameQueue::TImpl MyFrameQueue;
         TFrame *ReadyToRunQueue;
         TFrame *NewReadyToRunQueue;
+
+        /* See ScheduleFrameLow(): a FIFO, linked through InboundQueueNextFrame. */
+        TFrame *LowQueueHead = nullptr;
+        TFrame *LowQueueTail = nullptr;
 
         std::atomic<bool> KeepRunning;
 
@@ -828,6 +850,14 @@ namespace Orly {
 
         inline void Wait(bool come_back_right_away) {
           ComeBackRightAway = come_back_right_away;
+          TRunner::Yield(MyFiber);
+        }
+
+        /* Yield to every frame at normal priority on this runner; see
+           TRunner::ScheduleFrameLow(). */
+        inline void YieldLow() {
+          ComeBackRightAway = false;
+          TRunner::LocalRunner->ScheduleFrameLow(this);
           TRunner::Yield(MyFiber);
         }
 
@@ -1283,6 +1313,11 @@ namespace Orly {
         TFrame::LocalFrame->YieldSlow();
       }
 
+      static inline void YieldLow() {
+        assert(TFrame::LocalFrame);
+        TFrame::LocalFrame->YieldLow();
+      }
+
       static inline void Wait(bool come_back_right_away = false) {
         assert(TFrame::LocalFrame);
         TFrame::LocalFrame->Wait(come_back_right_away);
@@ -1360,6 +1395,18 @@ namespace Orly {
         PushFrameOntoQueue(HandoffSlot(other_runner->RunnerId, RunnerId).Ptr, frame);
         ParkSlots[other_runner->RunnerId].HandoffPending.store(true, std::memory_order_release);
         ParkSlots[other_runner->RunnerId].Parker.Wake();
+      }
+
+      inline void TRunner::ScheduleFrameLow(TFrame *frame) {
+        assert(frame);
+        assert(this == LocalRunner.Get());
+        frame->InboundQueueNextFrame = nullptr;
+        if (LowQueueTail) {
+          LowQueueTail->InboundQueueNextFrame = frame;
+        } else {
+          LowQueueHead = frame;
+        }
+        LowQueueTail = frame;
       }
 
       inline void TRunner::ScheduleFrame(TFrame *frame) {
