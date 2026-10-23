@@ -23,6 +23,20 @@
 
 using namespace Orly::Indy;
 
+size_t TKey::GetNumDefined() const {
+  if (!GetArena() || !GetCore().IsTuple()) {
+    return 0UL;
+  }
+  const std::optional<Atom::TCore::TOffset> off = GetCore().TryGetOffset();
+  if (!off) {
+    return 0UL;
+  }
+  void *pin_alloc = alloca(sizeof(Atom::TCore::TArena::TFinalPin));
+  Atom::TCore::TArena::TFinalPin::TWrapper pin(
+      GetArena()->Pin(*off, sizeof(Atom::TCore::TNote) + (sizeof(Atom::TCore) * *GetCore().TryGetElemCount()), pin_alloc));
+  return pin->GetNote()->GetTupleNumNonFree();
+}
+
 void TKey::CheckFreesTrail() const {
   if (!GetArena() || !GetCore().IsTuple()) {
     return;

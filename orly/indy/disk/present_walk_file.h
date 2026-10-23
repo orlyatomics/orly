@@ -28,10 +28,13 @@
 #include <cassert>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include <base/class_traits.h>
+#include <orly/indy/disk/key_filter.h>
 #include <orly/indy/disk/read_file.h>
 #include <orly/indy/disk/tombstone_counts.h>
 #include <orly/indy/present_walker.h>
@@ -340,6 +343,27 @@ namespace Orly {
               Valid = false;
             }
             return {target - rank, tombstones};
+          }
+
+          /* A filter over the stored hashes of the hash table Init searches for a key with num_defined defined members, so a
+             read can rule this file out without a walker (TDiskLayer::MayContain). One that holds nothing when the file has
+             no data for the index; null, meaning the file may hold anything, when no such table exists or it has more than
+             max_slots slots. Reads the whole table. */
+          std::unique_ptr<const TKeyFilter> MakeKeyFilter(size_t num_defined, size_t max_slots) {
+            if (!IndexFile) {
+              return std::make_unique<const TKeyFilter>(std::span<const uint64_t>());
+            }
+            if (num_defined == 0UL || num_defined > IndexFile->GetNumHashTables()) {
+              return nullptr;
+            }
+            const size_t num_slots = IndexFile->GetNumHashSlots(num_defined);
+            if (num_slots > max_slots) {
+              return nullptr;
+            }
+            std::vector<uint64_t> hashes;
+            hashes.reserve(num_slots);
+            IndexFile->ForEachStoredHash(num_defined, IndexStream, [&hashes](uint64_t hash) { hashes.push_back(hash); });
+            return std::make_unique<const TKeyFilter>(hashes);
           }
 
           private:

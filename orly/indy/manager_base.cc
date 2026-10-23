@@ -260,6 +260,12 @@ std::unique_ptr<Orly::Indy::TPresentWalker> TManager::TRepo::NewPresentWalkerFil
   throw;
 }
 
+std::unique_ptr<const Orly::Indy::Disk::TKeyFilter> TManager::TRepo::MakeKeyFilter(size_t /*gen_id*/,
+                                                                                   const Base::TUuid &/*index_id*/,
+                                                                                   size_t /*num_defined*/) const {
+  return nullptr;
+}
+
 std::unique_ptr<Orly::Indy::TUpdateWalker> TManager::TRepo::NewUpdateWalkerFile(size_t /*gen_id*/, TSequenceNumber /*from*/) const {
   assert(false);  /* repo's with files should implement this virtual function; otherwise it should never get called. */
   throw;

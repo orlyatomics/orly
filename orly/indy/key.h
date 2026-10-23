@@ -85,6 +85,10 @@ namespace Orly {
          appear to the right of fixed expressions"); a pattern built directly in C++ must keep to it too (#944). */
       void CheckFreesTrail() const;
 
+      /* The number of this tuple's members that are not free, or 0 if it is not a tuple. It picks the hash table a data file
+         searches for the key (Disk::TReadFile::TIndexFile::FindInHash). */
+      [[nodiscard]] size_t GetNumDefined() const;
+
       [[nodiscard]] static bool EqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);
 
       [[nodiscard]] static bool TupleEqEq(const Atom::TCore &lhs, Atom::TCore::TArena *lhs_arena, const Atom::TCore &rhs, Atom::TCore::TArena *rhs_arena);

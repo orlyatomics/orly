@@ -766,6 +766,34 @@ namespace Orly {
             }
           }
 
+          /* The number of hash tables, one for each prefix length from 1 up. */
+          size_t GetNumHashTables() const {
+            return NumHashFieldsByOffset.size();
+          }
+
+          /* The number of slots in the hash table FindInHash searches for a key with num_defined defined members. */
+          size_t GetNumHashSlots(size_t num_defined) const {
+            assert(num_defined > 0UL && num_defined <= NumHashFieldsByOffset.size());
+            return NumHashFieldsByOffset[num_defined - 1].second;
+          }
+
+          /* Call func with the stored hash of every entry in that table, the value FindInHash compares a key's hash with. */
+          template <typename TFunc>
+          void ForEachStoredHash(size_t num_defined, TInStream &in_stream, const TFunc &func) const {
+            assert(num_defined > 0UL && num_defined <= NumHashFieldsByOffset.size());
+            const auto &[byte_offset_of_hash_table, num_hash_fields] = NumHashFieldsByOffset[num_defined - 1];
+            in_stream.GoTo(byte_offset_of_hash_table);
+            Atom::TCore cur_core;
+            size_t offset;
+            for (size_t i = 0; i < num_hash_fields; ++i) {
+              in_stream.Read(&cur_core, sizeof(Atom::TCore));
+              in_stream.Read(offset);
+              if (memcmp(&cur_core, &TData::NullCore, sizeof(Atom::TCore)) != 0) {
+                func(static_cast<uint64_t>(cur_core.ForceGetStoredHash()));
+              }
+            }
+          }
+
           bool BinaryLowerBoundOnKey(const TKey &key, size_t &out_offset, TInStream &in_stream, TArena *file_arena) const {
             assert(NumCurKeys > 0);
             size_t first = 0U;

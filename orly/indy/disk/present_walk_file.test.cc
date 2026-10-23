@@ -596,3 +596,117 @@ FIXTURE(PoolIsTrimmed) {
     GracefullShutdown();
   });
 }
+
+/* The filter a disk layer keeps over a hash table, as TSafeRepo::MakeKeyFilter makes it. */
+static unique_ptr<const TKeyFilter> MakeFilter(TEngine *engine, const Base::TUuid &file_id, size_t gen_id, const Base::TUuid &index_id,
+                                               size_t num_defined, size_t max_slots = 1UL << 18) {
+  unique_ptr<TLocalWalkerCache::TPresentWalkFile, TLocalWalkerCache::TPresentWalkFile::TDeleter> file(
+      TLocalWalkerCache::Cache->Get(engine, file_id, gen_id, index_id));
+  return file->MakeKeyFilter(num_defined, max_slots);
+}
+
+/* A read skips a file when the filter over its hash table rules the read's key out. The filter must never rule out a key or
+   prefix the file holds, and a file it rules out must be one the read's walker finds empty: for a point, a pattern of
+   trailing frees, and a range from a key to a pattern it unifies with, at the file's edges and in its gaps. */
+FIXTURE(KeyFilter) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRAIITest required_thread_locals;
+    const TScheduler::TPolicy scheduler_policy(10, 10, milliseconds(10));
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+
+    Sim::TMemEngine mem_engine(&scheduler,
+                               256 /* disk space: 256MB */,
+                               256,
+                               16384 /* page cache slots: 64MB */,
+                               1 /* num page lru */,
+                               1024 /* block cache slots: 64MB */,
+                               1 /* num block lru */);
+    TEngine *engine = mem_engine.GetEngine();
+
+    Base::TUuid data_file_id(TUuid::TimeAndMAC);
+    TSuprena arena;
+    size_t data_gen_id = 1;
+    TSequenceNumber seq_num = 0U;
+    Base::TUuid int_int_idx(Base::TUuid::Twister);
+    Base::TUuid absent_idx(Base::TUuid::Twister);
+    const vector<pair<int64_t, int64_t>> held{{1L, 2L}, {2L, 4L}, {7L, 14L}, {91L, 182L}, {92L, 184L}};
+    /* data file 1 */ {
+      TMockMem mem_layer;
+      for (const auto &[a, b] : held) {
+        Insert(mem_layer, ++seq_num, int_int_idx, 2L, a, b);
+      }
+      TDataFile data_file(engine, TVolume::TDesc::Fast, &mem_layer, data_file_id, data_gen_id, 20UL, 0U, RealTime);
+    }
+    const unique_ptr<const TKeyFilter> by_first = MakeFilter(engine, data_file_id, data_gen_id, int_int_idx, 1UL);
+    const unique_ptr<const TKeyFilter> by_both = MakeFilter(engine, data_file_id, data_gen_id, int_int_idx, 2UL);
+    EXPECT_TRUE(by_first != nullptr);
+    EXPECT_TRUE(by_both != nullptr);
+    if (by_first && by_both) {
+    /* Everything the file holds passes. */
+    for (const auto &[a, b] : held) {
+      const TKey key(make_tuple(a, b), &arena, state_alloc);
+      const TKey prefix(make_tuple(a, Native::TFree<int64_t>()), &arena, state_alloc);
+      EXPECT_EQ(key.GetNumDefined(), 2UL);
+      EXPECT_EQ(prefix.GetNumDefined(), 1UL);
+      EXPECT_TRUE(by_both->MayContain(key.GetHash()));
+      EXPECT_TRUE(by_first->MayContain(prefix.GetHash()));
+    }
+    /* Keys it doesn't hold: below its first, between and beside its keys, and just past its last. Each one ruled out is one
+       the point walk finds nothing for. */ {
+      const vector<pair<int64_t, int64_t>> probes{{0L, 0L}, {1L, 1L}, {1L, 3L}, {7L, 13L}, {7L, 15L}, {8L, 14L}, {92L, 185L}, {93L, 0L}};
+      size_t ruled_out = 0UL;
+      for (const auto &[a, b] : probes) {
+        const TKey key(make_tuple(a, b), &arena, state_alloc);
+        if (!by_both->MayContain(key.GetHash())) {
+          ++ruled_out;
+          CheckNotExists(engine, data_file_id, data_gen_id, int_int_idx, a, b);
+        }
+      }
+      EXPECT_GE(ruled_out + 1UL, probes.size());
+    }
+    /* Prefixes it doesn't hold. A pattern walk and a range walk from (a, 0) to (a, free) find nothing for one ruled out, the
+       range walk included: it starts at the next key in the file, (91, 182) for a = 8, which is past the range. */ {
+      size_t ruled_out = 0UL;
+      const vector<int64_t> probes{0L, 3L, 8L, 90L, 93L};
+      for (const int64_t a : probes) {
+        const TKey prefix(make_tuple(a, Native::TFree<int64_t>()), &arena, state_alloc);
+        if (!by_first->MayContain(prefix.GetHash())) {
+          ++ruled_out;
+          EXPECT_EQ(CheckExistsFree(engine, data_file_id, data_gen_id, int_int_idx, [](const TKey &) {}, a, Native::TFree<int64_t>()), 0UL);
+          TPresentWalkFileWrapper range(engine, data_file_id, data_gen_id, int_int_idx, TKey(make_tuple(a, 0L), &arena, state_alloc), prefix);
+          EXPECT_FALSE(range);
+        }
+      }
+      EXPECT_GE(ruled_out + 1UL, probes.size());
+    }
+    /* A range from (7, 0) to (7, free) yields only the key with that prefix. */ {
+      const TKey prefix(make_tuple(7L, Native::TFree<int64_t>()), &arena, state_alloc);
+      size_t found = 0UL;
+      for (TPresentWalkFileWrapper range(engine, data_file_id, data_gen_id, int_int_idx, TKey(make_tuple(7L, 0L), &arena, state_alloc), prefix); range; ++range) {
+        EXPECT_EQ(TKey((*range).Key, (*range).KeyArena), TKey(make_tuple(7L, 14L), &arena, state_alloc));
+        ++found;
+      }
+      EXPECT_EQ(found, 1UL);
+    }
+    }  // if
+    /* An index the file has no data for: the filter holds nothing. */ {
+      const unique_ptr<const TKeyFilter> none = MakeFilter(engine, data_file_id, data_gen_id, absent_idx, 2UL);
+      EXPECT_TRUE(none != nullptr);
+      if (none) {
+        EXPECT_FALSE(none->MayContain(TKey(make_tuple(1L, 2L), &arena, state_alloc).GetHash()));
+        EXPECT_EQ(none->GetNumBytes(), 0UL);
+      }
+    }
+    /* No filter, so every key may be there, for a table the file doesn't have or one past the slot bound. */ {
+      EXPECT_TRUE(MakeFilter(engine, data_file_id, data_gen_id, int_int_idx, 0UL) == nullptr);
+      EXPECT_TRUE(MakeFilter(engine, data_file_id, data_gen_id, int_int_idx, 3UL) == nullptr);
+      EXPECT_TRUE(MakeFilter(engine, data_file_id, data_gen_id, int_int_idx, 2UL, 1UL) == nullptr);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+    GracefullShutdown();
+  });
+}
