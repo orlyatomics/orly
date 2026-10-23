@@ -258,6 +258,13 @@ namespace Orly {
          the head hasn't moved, unless forced.  Throws on a WAL failure. */
       void Checkpoint(uint64_t global_flushed_seq, bool force = false);
 
+      /* The checkpoint of a clean stop: as Checkpoint, forced, but first copy forward every Pov
+         record and pause below the oldest pin of a repo that isn't paused, and every paused repo
+         there whose copy is smaller than the ring it holds behind.  Recovery replays everything
+         from the head, so a head left behind by an old Pov record had the next start rebuild
+         every update written since, promoted or not (#REOPEN).  Throws on a WAL failure. */
+      void CheckpointForRestart(uint64_t global_flushed_seq);
+
       /* What a checkpoint carries as its payload, given the head it is taken at (#733): the state
          that the records before the head held and recovery will no longer replay. Set once, before
          the first Checkpoint. */
@@ -393,6 +400,9 @@ namespace Orly {
       struct TPressure {
         uint64_t Below = 0UL;
         size_t Behind = SIZE_MAX;
+        /* A clean stop's (CheckpointForRestart): a paused repo is copied only if its copy is
+           smaller than the ring it holds behind. */
+        bool Restart = false;
 
         bool Copies(uint64_t lsn, size_t behind) const {
           return lsn < Below && behind > Behind;
@@ -402,6 +412,9 @@ namespace Orly {
       /* The pressure for this pass: copy early only if the ring refused a record since the last
          pass and the copies would give back a sixteenth of the ring more than they write. */
       TPressure GetPressure(Disk::TWal *wal);
+
+      /* Checkpoint, copying forward what `pressure` says on top of what is half the ring behind. */
+      void CheckpointWith(uint64_t global_flushed_seq, bool force, const std::optional<TPressure> &pressure);
 
       /* Copy forward every Pov record more than half the ring behind, or that `pressure` copies;
          move its pin once durable. */

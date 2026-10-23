@@ -2557,9 +2557,10 @@ void TServer::Shutdown() {
     if (Wal) {
       Wal->Flush();
       /* The flush released the pins of everything it wrote, so the head can move up to what is
-         still unpromoted in a pov, or a live pov's record. */
+         still unpromoted in a pov.  Copy the live povs' records forward first, or the next start
+         replays every update written since the oldest of them (#REOPEN). */
       try {
-        RepoManager->GetWalRetention()->Checkpoint(GlobalRepo->GetDurableSequenceNumber().value_or(0UL), true);
+        RepoManager->GetWalRetention()->CheckpointForRestart(GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
       } catch (const std::exception &ex) {
         syslog(LOG_ERR, "TServer::Shutdown(): WAL checkpoint failed: %s", ex.what());
       }

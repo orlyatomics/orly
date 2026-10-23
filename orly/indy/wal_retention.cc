@@ -1171,7 +1171,13 @@ void TWalRetention::CopyPausedReposForward(Disk::TWal *wal, const TPressure &pre
       for (const auto &pin : repo->second.Pins) {
         oldest = min(oldest, pin.second.Lsn);
       }
-      if (const size_t behind = wal->GetRingBytesBehind(oldest); behind > limit || pressure.Copies(oldest, behind)) {
+      size_t cost = 0UL;
+      if (pressure.Restart) {
+        for (const auto &pin : repo->second.Pins) {
+          cost += GetCopyDebt(pin.second).GroupBytes;
+        }
+      }
+      if (const size_t behind = wal->GetRingBytesBehind(oldest); behind > limit || (pressure.Copies(oldest, behind) && behind > cost)) {
         candidates.push_back(pause.first);
       }
     }
@@ -1236,13 +1242,30 @@ void TWalRetention::ReoweCopyRoomLocked(uint64_t head) {
 }
 
 void TWalRetention::Checkpoint(uint64_t global_flushed_seq, bool force) {
+  CheckpointWith(global_flushed_seq, force, nullopt);
+}
+
+void TWalRetention::CheckpointForRestart(uint64_t global_flushed_seq) {
+  Disk::TWal *wal = Manager->GetWal();
+  if (!wal) {
+    return;
+  }
+  uint64_t floor;
+  /* lock */ {
+    lock_guard<mutex> lock(Mutex);
+    floor = GetUnpausedFloorLocked();
+  }
+  CheckpointWith(global_flushed_seq, true, TPressure{floor, 0UL, true});
+}
+
+void TWalRetention::CheckpointWith(uint64_t global_flushed_seq, bool force, const optional<TPressure> &restart) {
   Disk::TWal *wal = Manager->GetWal();
   if (!wal) {
     return;
   }
   lock_guard<mutex> checkpoint_lock(CheckpointMutex);
   DropDeadPins();
-  const TPressure pressure = GetPressure(wal);
+  const TPressure pressure = restart ? *restart : GetPressure(wal);
   CopyPovsForward(wal, pressure);
   CopyPausedReposForward(wal, pressure);
   CopyPausesForward(wal, pressure);
@@ -1257,6 +1280,9 @@ void TWalRetention::Checkpoint(uint64_t global_flushed_seq, bool force) {
   }
   if (!force && LastCheckpointHead && *LastCheckpointHead == head) {
     return;
+  }
+  if (restart) {
+    syslog(LOG_INFO, "TWalRetention: clean-stop checkpoint at head %ld, %ld KiB behind the end (#REOPEN)", head, wal->GetRingBytesBehind(head) / 1024UL);
   }
   if (PayloadProvider) {
     const std::string payload = PayloadProvider(head);
