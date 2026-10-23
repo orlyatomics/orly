@@ -42,6 +42,7 @@
 #include <orly/notification/notification.h>
 #include <orly/package/manager.h>
 #include <orly/server/batch_call.h>
+#include <orly/server/edit_runner.h>
 #include <orly/server/pov.h>
 #include <orly/server/pov_review.h>
 #include <orly/server/read_quantum.h>
@@ -154,6 +155,13 @@ namespace Orly {
            fiber ready on its fast runner (#1015; TReadQuantum). 0 means it never yields. */
         [[nodiscard]] virtual size_t GetReadYieldUs() const { return 0UL; }
 
+        /* Where a write's commit runs (--edit_runner; see <orly/server/edit_runner.h>). */
+        [[nodiscard]] virtual TEditRunner GetEditRunner() const { return TEditRunner::Fast; }
+
+        /* Under --edit_runner=spill, how many commits a slow runner takes before the next one
+           stays on its fast runner. */
+        [[nodiscard]] virtual size_t GetEditSpillLoad() const { return 1UL; }
+
         /* Per-`Try` latency/counter statistics. These are pushed on every read
            and write (the hot path) and folded into a single aggregate by the
            periodic reporter. TThreadLocalSigmaCalc keeps a private accumulator
@@ -213,6 +221,12 @@ namespace Orly {
             Switcher.emplace(server->FastRunnerVec[Index].get());
           }
 
+          /* Take the statement off its fast runner's load while it runs elsewhere: a write
+             committing on a slow runner (TEditSwitch). Pacing, if it weighs again, charges anew. */
+          void Lighten() noexcept {
+            Lease.Release();
+          }
+
           private:
 
           /* The hooks TReadQuantum paces with. */
@@ -257,6 +271,28 @@ namespace Orly {
 
         };  // TFastRunnerSwitch
 
+        /* For its lifetime, moves a statement that has effects onto a slow runner for its
+           commit, as --edit_runner says, taking it off its fast runner's load meanwhile; then
+           switches back.  Make it on the fast runner, after the method has run and the read
+           budget (and with it the pacing) is lifted, and inside 'fast''s lifetime. */
+        class TEditSwitch final {
+          NO_COPY(TEditSwitch);
+          public:
+
+          TEditSwitch(TServer *server, TFastRunnerSwitch &fast)
+              : Switch(server->GetEditRunner(), server->SlowRunnerBalancer ? &*server->SlowRunnerBalancer : nullptr,
+                       server->SlowRunnerVec, server->GetEditSpillLoad()) {
+            if (Switch.Moved()) {
+              fast.Lighten();
+            }
+          }
+
+          private:
+
+          TEditRunnerSwitch Switch;
+
+        };  // TEditSwitch
+
         /* A lease on the least-loaded fast runner (#908), for a statement to be latched onto
            FastRunnerVec[lease.GetIndex()].  Call only once the fast runners are up. */
         [[nodiscard]] TRunnerBalancer::TLease LeaseFastRunner() noexcept {
@@ -273,6 +309,9 @@ namespace Orly {
         std::vector<std::unique_ptr<Indy::Fiber::TRunner>> SlowRunnerVec;
         std::vector<std::unique_ptr<std::thread>> SlowRunnerThreadVec;
         std::atomic<size_t> SlowAssignmentCounter{0UL};
+        /* Which slow runner a write's commit goes to (--edit_runner); made once SlowRunnerVec is
+           full. */
+        std::optional<TRunnerBalancer> SlowRunnerBalancer;
         std::unique_ptr<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>> FramePoolManager;
         std::vector<std::unique_ptr<Indy::Fiber::TRunner>> FastRunnerVec;
         /* Which fast runner each statement goes to (#908); made once FastRunnerVec is full. */

@@ -406,6 +406,13 @@ namespace Orly {
            ready on its fast runner (#1015); 0 means never. */
         size_t ReadYieldUs;
 
+        /* Where a write's commit runs: fast, slow or spill (see <orly/server/edit_runner.h>). */
+        std::string EditRunner;
+
+        /* Under --edit_runner=spill, the commits a slow runner takes before the next one stays
+           on its fast runner. */
+        size_t EditSpillLoad;
+
         /* The largest merged file, in MiB, a disk merge folds (#988); a larger one is kept unfolded. A fold holds its
            whole output in memory. ResolveMemoryDefaults() derives it from the memory budget unless the command line
            gives it; 0 means no limit. */
@@ -575,6 +582,14 @@ namespace Orly {
 
       size_t GetReadYieldUs() const override {
         return Cmd.ReadYieldUs;
+      }
+
+      TEditRunner GetEditRunner() const override {
+        return EditRunnerMode;
+      }
+
+      size_t GetEditSpillLoad() const override {
+        return Cmd.EditSpillLoad;
       }
 
       bool IsMemoryAdmissionOn() const override {
@@ -1143,6 +1158,9 @@ namespace Orly {
 
       /* The command-line arguments we constructed with. */
       const TCmd &Cmd;
+
+      /* Cmd.EditRunner, parsed once (#1038). */
+      TEditRunner EditRunnerMode = TEditRunner::Fast;
 
       /* The manager of durable objects.  Set by the constructor and never null. */
       std::shared_ptr<Durable::TManager> DurableManager;
