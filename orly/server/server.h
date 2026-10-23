@@ -20,6 +20,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -1236,6 +1237,14 @@ namespace Orly {
          InitFinished handshake so a server that could not initialize does
          not limp along half-built (#435). */
       std::exception_ptr InitError;
+
+      /* Logs the time the startup phase that just ended took, and the time since construction
+         began (#1031). The constructor and Init() call it in turn, never at once: the
+         constructor waits on InitCond for Init() to finish. */
+      void LogStartupPhase(const char *phase, const std::string &detail = std::string());
+
+      std::chrono::steady_clock::time_point StartupBegan;
+      std::chrono::steady_clock::time_point StartupPhaseBegan;
 
       /* The websockets server object */
       std::unique_ptr<TWs> Ws;

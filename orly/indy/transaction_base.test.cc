@@ -52,7 +52,9 @@ using namespace Orly::Indy;
 
 Orly::Indy::Util::TPool L0::TManager::TRepo::TMapping::Pool(sizeof(TRepo::TMapping), "Repo Mapping", 100UL);
 Orly::Indy::Util::TPool L0::TManager::TRepo::TMapping::TEntry::Pool(sizeof(TRepo::TMapping::TEntry), "Repo Mapping Entry", 100UL);
-Orly::Indy::Util::TPool L0::TManager::TRepo::TDataLayer::Pool(sizeof(TMemoryLayer), "Data Layer", 100UL);
+/* The fixtures together hold more memory layers than 100 by the last of them (#1031 added one
+   more and the one after it ran out). */
+Orly::Indy::Util::TPool L0::TManager::TRepo::TDataLayer::Pool(sizeof(TMemoryLayer), "Data Layer", 200UL);
 
 Orly::Indy::Util::TPool L1::TTransaction::TMutation::Pool(max(max(sizeof(L1::TTransaction::TPusher), sizeof(L1::TTransaction::TPopper)), sizeof(L1::TTransaction::TStatusChanger)), "Transaction::TMutation", 100UL);
 Orly::Indy::Util::TPool L1::TTransaction::Pool(sizeof(L1::TTransaction), "Transaction", 100UL);
@@ -2490,6 +2492,56 @@ FIXTURE(Issue963CopiesUnderRingPressure) {
       SetPaused(manager.get(), child, false);
       EXPECT_TRUE(WaitFor([&] { return !child->GetMemBacklogDepth(); }, 10s));
       EXPECT_TRUE(VisibleKeys(parent, idx_id) == std::vector<int64_t>({1, 2, 3, 4}));
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
+/* A live pov's Pov record holds the head less than half the ring behind, so a checkpoint leaves
+   it there; the checkpoint of a clean stop copies it forward, so the next start doesn't replay
+   everything written since (#1031). */
+FIXTURE(Issue1031CleanStopCopiesPovsForward) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    Disk::Sim::TFaultPlan plan;
+    Disk::Sim::TFaultDevice device(&plan, Issue963DeviceSectors);
+    const auto config = MakeIssue963WalConfig();
+    Disk::TWal wal(&device, config);
+    auto manager = make_unique<TMyManager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    manager->SetWal(&wal);
+    TWalRetention *retention = manager->GetWalRetention();
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TPromotingTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager, manager.get());
+      manager->SetTetrisManager(&tetris);
+      auto parent = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+      const TUuid child_id(TUuid::Twister);
+      auto child = manager->GetRepo(child_id, TTtl::max(), parent, true, true);
+      const uint64_t pov_lsn = retention->AppendPov(child_id, "the child's Pov record");
+      EXPECT_EQ(retention->ComputeHead(), pov_lsn);
+      const std::string payload(2000UL, 'X');
+      uint64_t last = 0UL;
+      for (int round = 0; round < 16; ++round) {
+        last = wal.Append(Disk::TWalRecordType::Txn, payload.data(), payload.size());
+      }
+      EXPECT_TRUE(wal.WaitForDurable(last, 5000ms));
+      EXPECT_LT(wal.GetRingBytesBehind(pov_lsn), wal.GetCapacityBytes() / 2UL);
+      retention->Checkpoint(0UL, true);
+      EXPECT_EQ(retention->ComputeHead(), pov_lsn);
+      EXPECT_EQ(wal.GetLastAppendedLsn(), last);
+      retention->CheckpointForRestart(0UL);
+      EXPECT_GT(retention->ComputeHead(), last);
+      EXPECT_GT(wal.GetLastAppendedLsn(), last);
+      const auto cp = Disk::TWal::ReadNewestCheckpoint(&device, config.CheckpointSlot0Offset, config.CheckpointSlot1Offset, config.StoreId, config.CheckpointSlotBytes);
+      EXPECT_TRUE(cp.has_value());
+      if (cp) {
+        EXPECT_GT(cp->HeadLsn, last);
+      }
     }
     std::lock_guard<std::mutex> lock(mut);
     fin = true;

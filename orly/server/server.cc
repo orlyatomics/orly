@@ -22,6 +22,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <ctime>
+#include <fstream>
 #include <limits>
 #include <optional>
 #include <sstream>
@@ -29,6 +31,7 @@
 #include <arpa/inet.h>
 #include <poll.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 
 #include <base/as_str.h>
 #include <base/booster.h>
@@ -1201,6 +1204,46 @@ void TServer::RestoreOperation(const Base::TUuid &repo_id, Indy::TSequenceNumber
   }
 }
 
+/* Milliseconds since this process started, to the kernel's clock tick, or -1 where /proc can't say. */
+static long MsSinceProcessStart() {
+#ifdef __linux__
+  std::ifstream stat("/proc/self/stat");
+  std::string line;
+  if (!std::getline(stat, line)) {
+    return -1;
+  }
+  /* The command name in field 2 can hold spaces and parentheses, so count fields from its last ')'. */
+  const auto name_end = line.rfind(')');
+  if (name_end == std::string::npos) {
+    return -1;
+  }
+  std::istringstream fields(line.substr(name_end + 1));
+  std::string skipped;
+  for (int field = 3; field < 22; ++field) {
+    fields >> skipped;
+  }
+  unsigned long long start_ticks = 0;
+  timespec now{};
+  const long ticks_per_s = sysconf(_SC_CLK_TCK);
+  if (!(fields >> start_ticks) || ticks_per_s <= 0 || clock_gettime(CLOCK_BOOTTIME, &now) != 0) {
+    return -1;
+  }
+  return static_cast<long>(now.tv_sec * 1000L + now.tv_nsec / 1000000L - static_cast<long>(start_ticks * 1000ULL / ticks_per_s));
+#else
+  return -1;
+#endif
+}
+
+void TServer::LogStartupPhase(const char *phase, const std::string &detail) {
+  const auto now = std::chrono::steady_clock::now();
+  const auto ms = [](std::chrono::steady_clock::duration d) {
+    return static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(d).count());
+  };
+  syslog(LOG_INFO, "TServer startup: %s took %ldms, %ldms since construction began%s%s (#1031)", phase,
+         ms(now - StartupPhaseBegan), ms(now - StartupBegan), detail.empty() ? "" : "; ", detail.c_str());
+  StartupPhaseBegan = now;
+}
+
 TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     : TSession::TServer(cmd.SlowCoreVec.size() +
                         cmd.FastCoreVec.size() +
@@ -1235,6 +1278,8 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
       Scheduler(scheduler),
       Cmd(cmd),
       HousecleaningTimer(chrono::milliseconds(cmd.HousecleaningInterval)) {
+  StartupBegan = StartupPhaseBegan = std::chrono::steady_clock::now();
+  syslog(LOG_INFO, "TServer startup: construction began %ldms after the process started (#1031)", MsSinceProcessStart());
   /* The memory budget and the sizes it chose (#669), decided while parsing, before the log
      was open. */
   for (const auto &[level, line]: Cmd.MemoryBudgetReport) {
@@ -1352,6 +1397,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     runner->Run();
   };
   ScheduleHostJob(std::bind(launch_bg_fiber_sched, &BGFastRunner));
+  LogStartupPhase("the frame pools and runner threads");
 
   Fiber::TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *>::TThreadLocalPool(FramePoolManager.get());
   Frame = Fiber::TFrame::LocalFramePool->Alloc();
@@ -1376,6 +1422,8 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
   Ws.reset(TWs::New(this, cmd.NumWsThreads, cmd.WsPortNumber, cmd.BindAddress, cmd.AllowRemoteCompile,
                     cmd.AuthToken.value_or(string()),
                     cmd.MaxWsInFlight ? cmd.MaxWsInFlight : std::max<size_t>(4, cmd.NumFiberFrames / 8)));
+  LogStartupPhase("starting the websockets server",
+                  "serving " + std::to_string(MsSinceProcessStart()) + "ms after the process started");
 
   } catch (const std::exception &ex) {
     /* We cannot unwind: several members' destructors (the durable manager,
@@ -1420,6 +1468,7 @@ void TServer::Init() {
     }
 
     Disk::TBufBlock::Pool.Init(Cmd.DiskBufferBlockPoolSize);
+    LogStartupPhase("the object pools");
 
     /******** End Object Pools ********/
 
@@ -1543,6 +1592,7 @@ void TServer::Init() {
       engine_ptr = DiskEngine->GetEngine();
     }
     assert(engine_ptr);
+    LogStartupPhase(Cmd.MemorySim ? "the memory engine" : "opening the disk engine");
 
     syslog(LOG_INFO, "Cmd.DiscardOnCreate = %s", Cmd.DiscardOnCreate ? "true" : "false");
     size_t block_slots_available_per_merger = (((Cmd.BlockCacheSizeMB * 1024) / Disk::Util::PhysicalBlockSize) * 0.8) / Cmd.NumDiskMergeThreads;
@@ -1599,12 +1649,14 @@ void TServer::Init() {
     /* #745 stage 3: on a format 2 store, repos opened from here on keep their retention records (the system repo,
        opened before, does not, and has no window). */
     RepoManager->SetRetentionPersisted(DiskEngine && DiskEngine->IsRetentionPersisted());
+    LogStartupPhase("the repo manager and the system repo");
     auto global_ttl = TTtl::max();
     GlobalRepo = RepoManager->GetRepo(TSession::GlobalPovId,
                                       global_ttl,
                                       std::nullopt,
                                       true,
                                       Cmd.Create);
+    LogStartupPhase("opening the global repo");
 
     void *key_type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
     void *val_type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
@@ -1619,12 +1671,15 @@ void TServer::Init() {
       });
       idns_jumper(FramePoolManager.get(), &BGFastRunner);
       //auto pkg_key_mapping = RepoManager->GetIndexNamespaceMapping();
+      LogStartupPhase("reading the index namespace mapping and the saved repos");
+      size_t num_data_files = 0;
       std::lock_guard<std::mutex> lock(IndexMapMutex);
-      engine_ptr->ForEachFile([engine_ptr, this, key_type_alloc, val_type_alloc, &pkg_key_mapping](const Base::TUuid &file_uid,
+      engine_ptr->ForEachFile([engine_ptr, this, key_type_alloc, val_type_alloc, &pkg_key_mapping, &num_data_files](const Base::TUuid &file_uid,
                                                                                                    const Indy::Disk::TFileObj &file_obj) {
         if (file_uid != Indy::TManager::SystemRepoId) {
           switch (file_obj.Kind) {
             case Indy::Disk::TFileObj::TKind::DataFile: {
+              ++num_data_files;
               TIndexIdReader reader(engine_ptr, file_uid, Indy::Disk::RealTime, file_obj.GenId, file_obj.StartingBlockId, file_obj.StartingBlockOffset, file_obj.FileSize);
               auto main_arena = make_unique<TIndexIdReader::TArena>(&reader, engine_ptr->GetCache<TIndexIdReader::PhysicalCachePageSize>(), Orly::Indy::Disk::RealTime);
               const auto &index_map = reader.GetIndexByIdMap();
@@ -1671,6 +1726,7 @@ void TServer::Init() {
         }
         return true;
       });
+      LogStartupPhase("reading the index ids of every data file", std::to_string(num_data_files) + " data files");
     }
 
     /* Offline integrity scrub of a stopped store (#748). */
@@ -1720,6 +1776,7 @@ void TServer::Init() {
       }
       Indy::Disk::ReportOpenCheck(check);
     }
+    LogStartupPhase("the open check");
 
     /* Reinstall the packages recorded as installed when this image was last
        running (#435).  The .so files must still be in the package directory;
@@ -1743,6 +1800,7 @@ void TServer::Init() {
       });
       reinstall_jumper(FramePoolManager.get(), &BGFastRunner);
     }
+    LogStartupPhase("reinstalling packages");
 
     DurableManager = make_shared<Orly::Indy::Disk::TDurableManager>(Scheduler,
                                                                     RunnerCons,
@@ -1788,6 +1846,7 @@ void TServer::Init() {
 
     TetrisManager = new TRepoTetrisManager(Scheduler, RunnerCons, FramePoolManager.get(), tetris_runner_setup_cb, (RepoState == Orly::Indy::TManager::Solo), RepoManager.get(), &PackageManager, DurableManager.get(), Cmd.LogAssertionFailures, Cmd.TetrisCommutativeFastlane);
     RepoManager->SetTetrisManager(TetrisManager);
+    LogStartupPhase("the durable manager and the Tetris manager");
 
     /* Initialize and recover Write-Ahead Log (WAL) (#755). */
     if (DiskEngine && DiskEngine->HasWal() && Cmd.IsDurableAcksEnabled()) {
@@ -1831,6 +1890,7 @@ void TServer::Init() {
       }
 
       auto scan_result = Indy::Disk::TWal::Scan(persistent_dev, wal_config, start_group, start_lsn, start_lap, start_ring_offset, start_chain);
+      LogStartupPhase("reading the WAL checkpoint and scanning the WAL", std::to_string(scan_result.Records.size()) + " records");
       if (scan_result.Status == Indy::Disk::TScanStatus::DamagedAcknowledged || scan_result.Status == Indy::Disk::TScanStatus::Corrupt) {
         throw Indy::Disk::TWalCorruptError("WAL recovery failed: " + scan_result.ProblemDescription);
       }
@@ -1930,6 +1990,7 @@ void TServer::Init() {
           }
           restore_sem.Pop();
         }
+        LogStartupPhase("restoring the povs", std::to_string(restored_povs.size()) + " povs");
 
         /* Step 7: Replay transactions through slave apply path.  Each one pins the record it came
            from, as a live transaction pins the record it appends.  A paused repo copied forward
@@ -1958,7 +2019,13 @@ void TServer::Init() {
                                                    on_push ? *on_push : Indy::TManager::TPushCallback(), nullptr,
                                                    (skip && !skip->empty()) ? skip : nullptr);
         };
+        /* Where the replay's time goes, for the phase line below: the transaction records, and
+           the copies of paused repos (#963), which rebuild a repo's unpromoted updates. */
+        using TReplayClock = std::chrono::steady_clock;
+        TReplayClock::duration txn_time{}, copy_time{};
+        size_t copy_bytes = 0;
         for (const auto &rec : replay_records) {
+          const auto rec_began = TReplayClock::now();
           if (rec.Type == Indy::Disk::TWalRecordType::Txn) {
             retention->SetReplayLsn(rec.Lsn, rec.Size);
             const uint64_t rec_lsn = rec.Lsn;
@@ -1968,6 +2035,7 @@ void TServer::Init() {
                   RestoreOperation(repo_id, seq_num, meta_core, arena, rec_lsn);
                 };
             apply_wire(rec.Data, rec.Size, &on_push, &replay_plan.Skip);
+            txn_time += TReplayClock::now() - rec_began;
             continue;
           }
           auto copy = replay_plan.Copies.find(rec.Lsn);
@@ -1986,12 +2054,25 @@ void TServer::Init() {
             for (const auto &wire : part.Wires) {
               retention->SetReplayLsn(rec.Lsn, wire.size());
               apply_wire(wire.data(), wire.size(), nullptr, nullptr);
+              copy_bytes += wire.size();
             }
           }
           RepoManager->AdvanceReplayNumbering(first.RepoId, first.Next);
+          copy_time += TReplayClock::now() - rec_began;
         }
         retention->EndReplay();
         RepoManager->ClearReplaySeeds();
+        size_t replay_bytes = 0;
+        for (const auto &rec : replay_records) {
+          replay_bytes += rec.Size;
+        }
+        const auto as_ms = [](TReplayClock::duration d) {
+          return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(d).count());
+        };
+        LogStartupPhase("replaying the WAL", std::to_string(replay_records.size()) + " records, " +
+                        std::to_string(replay_bytes / 1024UL) + " KiB; transactions " + as_ms(txn_time) +
+                        "ms; " + std::to_string(replay_plan.Copies.size()) + " repo copies, " +
+                        std::to_string(copy_bytes / 1024UL) + " KiB applied, " + as_ms(copy_time) + "ms");
       });
       wal_recovery_jumper(FramePoolManager.get(), &BGFastRunner);
 
@@ -2001,6 +2082,7 @@ void TServer::Init() {
           repo->JoinTetris();
         }
       }
+      LogStartupPhase("the restored povs joining Tetris");
 
       /* Step 8: Instantiate Wal and write initial checkpoint.  The head is the oldest record the
          replay left pinned: an update not yet in a root's data file, or a live pov's record. */
@@ -2033,6 +2115,7 @@ void TServer::Init() {
       });
       retention->Checkpoint(GlobalRepo->GetDurableSequenceNumber().value_or(0UL), true);
       syslog(LOG_INFO, "WAL recovery complete: WAL instantiated at LSN %ld (head %ld, %ld povs restored), group %ld, ring offset %ld", next_lsn, retention->ComputeHead(), restored_povs.size(), next_group, scan_result.NextRingOffset);
+      LogStartupPhase("starting the WAL and writing its checkpoint");
       WalCheckpointer = std::thread([this, retention] {
         while (retention->WaitForWork(std::chrono::milliseconds(1000))) {
           try {
@@ -2058,6 +2141,7 @@ void TServer::Init() {
       });
       saved_repo_jumper(FramePoolManager.get(), &BGFastRunner);
     }
+    LogStartupPhase("queueing the saved repos the restart left");
     /* A slave keeps the exactly-once entries its master's writes carry, as recovery does (#862). */
     RepoManager->SetReplicatedPushCallback(
         [this](const Base::TUuid &repo_id, Indy::TSequenceNumber seq_num, const Atom::TCore &meta_core,
@@ -2153,6 +2237,8 @@ void TServer::Init() {
 
     }
 
+    LogStartupPhase("starting the replication, cleaner and merge loops");
+
     /* Open the listening socket for clients. A bind failure is logged and
        aborts startup. */
     auto open_listening_socket = [this](TFd &sock, in_port_t port, const char *who) {
@@ -2176,6 +2262,7 @@ void TServer::Init() {
        loop exits promptly once Shutdown() shuts the socket down, but only
        the join proves it is out of TServer members (#462, #463). */
     ScheduleHostJob(bind(&TServer::AcceptClientConnections, this));
+    LogStartupPhase("opening the client listener");
 
     HousekeeperHandle = Scheduler->ScheduleCancelable(bind(&TServer::CleanHouse, this));
     if (Cmd.ScrubInterval > 0 && !Cmd.MemorySim) {
@@ -2186,6 +2273,7 @@ void TServer::Init() {
     if (Cmd.DiskReserveMb || Cmd.DiskReservePct) {
       RefreshWriteAdmission(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
     }
+    LogStartupPhase("the housekeeper, scrub and reporter");
     DEBUG_LOG("TServer::Init end");
   } catch (const std::exception &ex) {
     syslog(LOG_ERR, "TServer::Init() caught exception [%s]", ex.what());
@@ -2469,9 +2557,10 @@ void TServer::Shutdown() {
     if (Wal) {
       Wal->Flush();
       /* The flush released the pins of everything it wrote, so the head can move up to what is
-         still unpromoted in a pov, or a live pov's record. */
+         still unpromoted in a pov.  Copy the live povs' records forward first, or the next start
+         replays every update written since the oldest of them (#1031). */
       try {
-        RepoManager->GetWalRetention()->Checkpoint(GlobalRepo->GetDurableSequenceNumber().value_or(0UL), true);
+        RepoManager->GetWalRetention()->CheckpointForRestart(GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
       } catch (const std::exception &ex) {
         syslog(LOG_ERR, "TServer::Shutdown(): WAL checkpoint failed: %s", ex.what());
       }
