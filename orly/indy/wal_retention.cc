@@ -1282,7 +1282,7 @@ void TWalRetention::CheckpointWith(uint64_t global_flushed_seq, bool force, cons
     return;
   }
   if (restart) {
-    syslog(LOG_INFO, "TWalRetention: clean-stop checkpoint at head %ld, %ld KiB behind the end (#REOPEN)", head, wal->GetRingBytesBehind(head) / 1024UL);
+    syslog(LOG_INFO, "TWalRetention: clean-stop checkpoint at head %ld, %ld KiB behind the end (#1031)", head, wal->GetRingBytesBehind(head) / 1024UL);
   }
   if (PayloadProvider) {
     const std::string payload = PayloadProvider(head);

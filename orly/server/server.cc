@@ -1239,7 +1239,7 @@ void TServer::LogStartupPhase(const char *phase, const std::string &detail) {
   const auto ms = [](std::chrono::steady_clock::duration d) {
     return static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(d).count());
   };
-  syslog(LOG_INFO, "TServer startup: %s took %ldms, %ldms since construction began%s%s (#REOPEN)", phase,
+  syslog(LOG_INFO, "TServer startup: %s took %ldms, %ldms since construction began%s%s (#1031)", phase,
          ms(now - StartupPhaseBegan), ms(now - StartupBegan), detail.empty() ? "" : "; ", detail.c_str());
   StartupPhaseBegan = now;
 }
@@ -1279,7 +1279,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
       Cmd(cmd),
       HousecleaningTimer(chrono::milliseconds(cmd.HousecleaningInterval)) {
   StartupBegan = StartupPhaseBegan = std::chrono::steady_clock::now();
-  syslog(LOG_INFO, "TServer startup: construction began %ldms after the process started (#REOPEN)", MsSinceProcessStart());
+  syslog(LOG_INFO, "TServer startup: construction began %ldms after the process started (#1031)", MsSinceProcessStart());
   /* The memory budget and the sizes it chose (#669), decided while parsing, before the log
      was open. */
   for (const auto &[level, line]: Cmd.MemoryBudgetReport) {
@@ -2558,7 +2558,7 @@ void TServer::Shutdown() {
       Wal->Flush();
       /* The flush released the pins of everything it wrote, so the head can move up to what is
          still unpromoted in a pov.  Copy the live povs' records forward first, or the next start
-         replays every update written since the oldest of them (#REOPEN). */
+         replays every update written since the oldest of them (#1031). */
       try {
         RepoManager->GetWalRetention()->CheckpointForRestart(GlobalRepo->GetDurableSequenceNumber().value_or(0UL));
       } catch (const std::exception &ex) {

@@ -1239,7 +1239,7 @@ namespace Orly {
       std::exception_ptr InitError;
 
       /* Logs the time the startup phase that just ended took, and the time since construction
-         began (#REOPEN). The constructor and Init() call it in turn, never at once: the
+         began (#1031). The constructor and Init() call it in turn, never at once: the
          constructor waits on InitCond for Init() to finish. */
       void LogStartupPhase(const char *phase, const std::string &detail = std::string());
 

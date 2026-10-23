@@ -262,7 +262,7 @@ namespace Orly {
          record and pause below the oldest pin of a repo that isn't paused, and every paused repo
          there whose copy is smaller than the ring it holds behind.  Recovery replays everything
          from the head, so a head left behind by an old Pov record had the next start rebuild
-         every update written since, promoted or not (#REOPEN).  Throws on a WAL failure. */
+         every update written since, promoted or not (#1031).  Throws on a WAL failure. */
       void CheckpointForRestart(uint64_t global_flushed_seq);
 
       /* What a checkpoint carries as its payload, given the head it is taken at (#733): the state

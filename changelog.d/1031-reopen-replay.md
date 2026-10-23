@@ -1,0 +1,1 @@
+- **Fixed (performance)**: A clean stop copies the live povs' records forward before its last WAL checkpoint, so the next start no longer replays (and rebuilds) every transaction written since the oldest branch was made; replay also skips building updates a repo already holds, and startup logs the time of each phase ([#1031](https://github.com/orlyatomics/orly/issues/1031)).
