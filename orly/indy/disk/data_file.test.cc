@@ -564,3 +564,121 @@ FIXTURE(NotePinOutlivesStreamMove) {
     cond.notify_one();
   });
 }
+
+/* An arena takes one cache reference per page, however many notes it pins there, and counts the pins itself (#1018).
+   Pin two notes on page A, one on page B (A is retired with its pins out), and a third on A (A comes back from
+   retirement), then release them out of order. The second pin on a page must not add a reference, and once the
+   arena is gone neither page may be left referenced. */
+FIXTURE(NotePinsShareOnePageReference) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    const TScheduler::TPolicy scheduler_policy(4, 10, milliseconds(10));
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 256, 1);
+    Disk::Util::TEngine *engine = mem_engine.GetEngine();
+    using TCachePage = Disk::Util::TCache<TReader::PhysicalCachePageSize>;
+    TCachePage *cache = engine->GetCache<TReader::PhysicalCachePageSize>();
+
+    Base::TUuid file_id(TUuid::Best);
+    const size_t data_gen_id = 1;
+    TSequenceNumber seq_num = 0U;
+    TUuid idx(TUuid::Twister);
+    /* Small notes, so most are pinned in place and each page holds several, spanning several pages. */ {
+      TMockMem mem_layer;
+      for (int64_t i = 0; i < 3000; ++i) {
+        TSuprena suprena;
+        void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+        Insert(mem_layer, ++seq_num, idx, TKey(to_string(i) + string(200, 'v'), &suprena, state_alloc), i);
+      }
+      TDataFile data_file(engine, TVolume::TDesc::Fast, &mem_layer, file_id, data_gen_id, 20UL, 0U, Medium);
+    }
+
+    TReader reader(HERE, engine, file_id, data_gen_id);
+    std::vector<size_t> offsets;
+    /* The scan's stream goes out of scope before the checks below. */ {
+      TReader::TArena scan(&reader, cache, RealTime);
+      for (TReader::TArena::TCursor csr(&scan, 0, scan.GetNumBytesOfArena()); csr; ++csr) {
+        offsets.push_back(csr.GetOffset());
+      }
+    }
+    auto held = [cache](size_t page_id) { return cache->CountReferences(page_id); };
+    struct TPinned {
+      const TCore::TNote *Note = nullptr;
+      size_t Offset = 0UL;
+      void *Data1 = nullptr, *Data2 = nullptr, *Data3 = nullptr;
+      size_t GetPageId() const { return reinterpret_cast<size_t>(Data3); }
+    };
+    size_t page_a = 0UL, page_b = 0UL;
+    /* Returns false if the file didn't give us the pins the test needs. */
+    auto run = [&]() {
+      TReader::TArena arena(&reader, cache, RealTime);
+      /* Pin the notes at `offsets[from...]` until one is pinned in place on a page `accept` likes; release the rest. */
+      auto pin_where = [&](size_t from, const std::function<bool (size_t)> &accept, size_t &at) {
+        for (size_t i = from; i < offsets.size(); ++i) {
+          TPinned pinned;
+          pinned.Offset = offsets[i];
+          pinned.Note = arena.TryAcquireNote(pinned.Offset, pinned.Data1, pinned.Data2, pinned.Data3);
+          if (pinned.Note && pinned.Data1 && accept(pinned.GetPageId())) {
+            at = i;
+            return pinned;
+          }
+          if (pinned.Note) {
+            arena.ReleaseNote(pinned.Note, pinned.Offset, pinned.Data1, pinned.Data2, pinned.Data3);
+          }
+        }
+        return TPinned{};
+      };
+      auto release = [&](const TPinned &pinned) {
+        arena.ReleaseNote(pinned.Note, pinned.Offset, pinned.Data1, pinned.Data2, pinned.Data3);
+      };
+      size_t at = 0UL;
+      const TPinned a1 = pin_where(0UL, [](size_t) { return true; }, at);
+      if (!EXPECT_TRUE(a1.Note != nullptr)) {
+        return false;
+      }
+      page_a = a1.GetPageId();
+      const size_t one_pin = held(page_a);
+      const TPinned a2 = pin_where(at + 1UL, [&](size_t page_id) { return page_id == page_a; }, at);
+      if (!EXPECT_TRUE(a2.Note != nullptr)) {
+        release(a1);
+        return false;
+      }
+      /* The second pin on A takes no reference of its own. */
+      EXPECT_EQ(held(page_a), one_pin);
+      const TPinned b = pin_where(at + 1UL, [&](size_t page_id) { return page_id != page_a; }, at);
+      if (!EXPECT_TRUE(b.Note != nullptr)) {
+        release(a1);
+        release(a2);
+        return false;
+      }
+      page_b = b.GetPageId();
+      /* Back to A while its pins are out: the arena reuses the reference it retired rather than taking another. */
+      const TPinned a3 = pin_where(0UL, [&](size_t page_id) { return page_id == page_a; }, at);
+      EXPECT_TRUE(a3.Note != nullptr);
+      EXPECT_EQ(held(page_a), one_pin);
+      /* The notes are still readable while pinned. */
+      EXPECT_TRUE(a1.Note->GetRawSize() > 0UL);
+      EXPECT_TRUE(b.Note->GetRawSize() > 0UL);
+      release(a1);
+      release(b);
+      if (a3.Note) {
+        release(a3);
+      }
+      release(a2);
+      return true;
+    };
+    if (EXPECT_TRUE(run())) {
+      /* Something outside the arena (the reader) may keep a steady reference, so compare a second run against the first. */
+      const size_t steady_a = held(page_a);
+      const size_t steady_b = held(page_b);
+      EXPECT_TRUE(run());
+      EXPECT_EQ(held(page_a), steady_a);
+      EXPECT_EQ(held(page_b), steady_b);
+    }
+    GracefullShutdown();
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}

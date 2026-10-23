@@ -20,7 +20,8 @@
 
 #include <cassert>
 #include <functional>
-#include <unordered_set>
+
+#include <absl/container/flat_hash_set.h>
 
 #include <orly/atom/kit2.h>
 #include <orly/sabot/compare_states.h>
@@ -35,7 +36,9 @@ namespace Orly {
       NO_COPY(TNoteInterner);
       public:
 
-      typedef std::unordered_set<const TCore::TNote *, TCore::TNote::THash, TCore::TNote::TIsEq> TNotes;
+      /* Open addressing, so interning a note doesn't allocate a node for it as well, which a result
+         of many rows did once a row (#1018). OrderNotes sorts, so the iteration order doesn't matter. */
+      using TNotes = absl::flat_hash_set<const TCore::TNote *, TCore::TNote::THash, TCore::TNote::TIsEq>;
 
       /* Do-little. */
       inline TNoteInterner();

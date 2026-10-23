@@ -21,6 +21,9 @@
 #include <orly/sabot/order_states.h>
 
 #include <memory>
+#include <string_view>
+
+#include <absl/hash/hash.h>
 
 using namespace std;
 using namespace Orly::Atom;
@@ -1066,7 +1069,7 @@ bool TCore::TNote::TOrderedArenaCompare::operator()(const TNote &lhs, const TNot
 }
 
 size_t TCore::TNote::THash::operator()(const TNote *note) const {
-  return note ? _Hash_impl::hash(note->GetStart(), note->RawSize) : 0;
+  return note ? absl::HashOf(std::string_view(reinterpret_cast<const char *>(note->GetStart()), note->RawSize)) : 0;
 }
 
 bool TCore::TNote::TIsEq::operator()(const TNote *lhs, const TNote *rhs) const {

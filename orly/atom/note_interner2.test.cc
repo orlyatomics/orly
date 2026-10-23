@@ -18,7 +18,11 @@
 
 #include <orly/atom/note_interner2.h>
 
+#include <cstring>
 #include <memory>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
 #include <base/test/kit.h>
 
@@ -69,4 +73,27 @@ FIXTURE(Typical) {
   EXPECT_TRUE(notes.find(note_a1) != notes.end());
   EXPECT_TRUE(notes.find(note_b1) != notes.end());
   EXPECT_TRUE(notes.find(note_b2) == notes.end());
+}
+
+/* Enough notes to make the set grow several times: each distinct note is kept once, each repeat hands back
+   the one kept, and the byte count counts only the kept ones (#1018). */
+FIXTURE(ManyNotes) {
+  TNoteInterner interner;
+  std::vector<const TCore::TNote *> first;
+  size_t bytes = 0UL;
+  for (int i = 0; i < 5000; ++i) {
+    const string str = "note " + to_string(i) + string(i % 40, 'x');
+    first.push_back(Propose(interner, str.c_str()));
+    bytes += sizeof(TCore::TNote) + str.size() + 1UL;
+  }
+  EXPECT_EQ(interner.GetSize(), 5000U);
+  EXPECT_EQ(interner.GetByteSize(), bytes);
+  bool all_same = true;
+  for (int i = 0; i < 5000; ++i) {
+    const string str = "note " + to_string(i) + string(i % 40, 'x');
+    all_same = all_same && Propose(interner, str.c_str()) == first[i] && interner.IsOwned(first[i]);
+  }
+  EXPECT_TRUE(all_same);
+  EXPECT_EQ(interner.GetSize(), 5000U);
+  EXPECT_EQ(interner.GetByteSize(), bytes);
 }
