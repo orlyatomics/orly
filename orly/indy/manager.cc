@@ -1412,7 +1412,14 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
             repo->SetNextSequenceNumber(seq_num);
             repo->SetReleasedUpTo(seq_num > 0UL ? seq_num - 1UL : 0UL);
           }
-          if (repo) {
+          if (repo && repo->GetNextSequenceNumber() > seq_num) {
+            /* The repo already has this update: after a restart, a root's data file holds every
+               update the WAL replays into it from before the stop, which is most of what a replay
+               after heavy writes carries (#REOPEN).  TTransaction::Push would discard it, so don't
+               build it first: sorting and copying its entries was most of the replay.  A repo's
+               next sequence number only goes up, so Push takes the same branch with no update. */
+            apply_transaction->Push(repo, std::shared_ptr<TUpdate>(), seq_num);
+          } else if (repo) {
             auto update = TUpdate::NewUpdate({}, entries, TKey(meta_core, arena), TKey(id_core, arena));
             apply_transaction->Push(repo, update, seq_num);
           } else {
