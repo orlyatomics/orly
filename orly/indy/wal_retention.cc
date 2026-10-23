@@ -1162,6 +1162,20 @@ void TWalRetention::CopyPausedReposForward(Disk::TWal *wal, const TPressure &pre
         ++copy;
       }
     }
+    /* At a clean stop, what copying every paused repo writes.  The next start replays from the
+       oldest of them, so a copy pays only if it is more than that behind again: then it saves
+       the next start more than it writes, and a stop with little written since the last doesn't
+       write them all again. */
+    size_t cost = 0UL;
+    if (pressure.Restart) {
+      for (const auto &pause : Paused) {
+        if (auto repo = Repos.find(pause.first); repo != Repos.end()) {
+          for (const auto &pin : repo->second.Pins) {
+            cost += GetCopyDebt(pin.second).GroupBytes;
+          }
+        }
+      }
+    }
     for (const auto &pause : Paused) {
       auto repo = Repos.find(pause.first);
       if (repo == Repos.end() || repo->second.Pins.empty() || PendingCopies.count(pause.first)) {
@@ -1171,13 +1185,7 @@ void TWalRetention::CopyPausedReposForward(Disk::TWal *wal, const TPressure &pre
       for (const auto &pin : repo->second.Pins) {
         oldest = min(oldest, pin.second.Lsn);
       }
-      size_t cost = 0UL;
-      if (pressure.Restart) {
-        for (const auto &pin : repo->second.Pins) {
-          cost += GetCopyDebt(pin.second).GroupBytes;
-        }
-      }
-      if (const size_t behind = wal->GetRingBytesBehind(oldest); behind > limit || (pressure.Copies(oldest, behind) && behind > cost)) {
+      if (const size_t behind = wal->GetRingBytesBehind(oldest); behind > limit || (pressure.Copies(oldest, behind) && behind > 2UL * cost)) {
         candidates.push_back(pause.first);
       }
     }
