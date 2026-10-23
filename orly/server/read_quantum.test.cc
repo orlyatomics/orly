@@ -264,8 +264,8 @@ FIXTURE(PacedByBudget) {
 }
 
 /* With a slice, a call drops to low priority once it has run that long in all, not counting time
-   switched out, and from then on yields at every look that finds a fiber ready at normal
-   priority (#1015). */
+   switched out, and from then on yields to a fiber ready at normal priority after each slice it
+   runs (#1015). */
 FIXTURE(DropsToLowAfterSlice) {
   TFakePacer pacer(1000us, 200us);
   pacer.Rows(8);
@@ -284,10 +284,17 @@ FIXTURE(DropsToLowAfterSlice) {
   EXPECT_TRUE(pacer.IsLow());
   /* Nothing ready: it runs on. */
   EXPECT_EQ(pacer.GetYields(), 0UL);
-  /* A fiber ready at normal priority: it yields at the next look, without waiting a quantum. */
+  /* A fiber ready at normal priority: it yields once it has run a slice since it was switched
+     in, without waiting a quantum. */
   pacer.High = true;
   pacer.Clock += 1us;
   pacer.Rows(48);
+  EXPECT_EQ(pacer.LowYields, 0UL);
+  pacer.Clock += 149us;
+  pacer.Rows(50);
+  EXPECT_EQ(pacer.LowYields, 0UL);
+  pacer.Clock += 1us;
+  pacer.Rows(52);
   EXPECT_EQ(pacer.LowYields, 1UL);
   pacer.High = false;
   /* Only other low-priority calls ready: they take turns of a quantum. */

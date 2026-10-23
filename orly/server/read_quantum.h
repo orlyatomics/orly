@@ -30,12 +30,14 @@
    statements write too.
 
    With a slice (--read_slice_us, #1015), the runner's queue has two levels, and a call that has
-   run that long in all, not counting time switched out, drops to the lower one: from then on it
-   gives way at every look that finds a fiber ready at normal priority, and goes to the back of
-   the runner's low-priority queue (Indy::Fiber::TRunner::ScheduleFrameLow()), which runs only
-   when nothing at normal priority is ready. Every statement starts at normal priority, so a
-   point read that arrives while long reads hold the runner waits for one look's worth of rows,
-   not for a quantum from each of them. With nothing else ready the long read runs on, so a
+   run that long in all, not counting time switched out, drops to the lower one: from then on,
+   once it has run a slice since it was last switched in, it gives way at the first look that
+   finds a fiber ready at normal priority, and goes to the back of the runner's low-priority
+   queue (Indy::Fiber::TRunner::ScheduleFrameLow()), which runs only when nothing at normal
+   priority is ready. Every statement starts at normal priority, so a point read that arrives
+   while long reads hold the runner waits for at most a slice of the one running, not for a
+   quantum from each of them; and a long read still runs a slice at a time, rather than paying
+   a switch every few rows while short work keeps arriving. With nothing else ready the long read runs on, so a
    runner never idles while there is low-priority work; among themselves, low-priority calls
    take turns of a quantum. A slice of 0 keeps the single level.
 
@@ -121,7 +123,7 @@ namespace Orly {
             Low = true;
           }
           if (Low) {
-            if (self.HighReady() || (Quantum.count() && in_slice >= Quantum && self.OthersReady())) {
+            if ((in_slice >= Slice && self.HighReady()) || (Quantum.count() && in_slice >= Quantum && self.OthersReady())) {
               ++Yields;
               self.GiveWayLow();
             }

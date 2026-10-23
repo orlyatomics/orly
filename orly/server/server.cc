@@ -519,9 +519,9 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "How long, in microseconds, a method call may run on its fast runner in all, not counting "
       "time it waits for disk, before it drops to that runner's low-priority queue (issue #1015). "
       "The runner runs low-priority calls only when nothing else is ready, and a call there gives "
-      "way at every look (read_yield_rows) that finds a statement ready, so a point read waits "
-      "for a few rows of a long scan, not for a slice of every scan ahead of it. Low-priority "
-      "calls take turns of read_yield_us. 0 keeps a single queue. Default: 200."
+      "way to a ready statement after each read_slice_us it runs, so a point read waits for at "
+      "most one slice of one long read, not for a slice of every long read ahead of it. "
+      "Low-priority calls take turns of read_yield_us. 0 keeps a single queue. Default: 200."
   );
   Param(
       &TCmd::ReadYieldRows, "read_yield_rows", Optional, "read_yield_rows\0",
