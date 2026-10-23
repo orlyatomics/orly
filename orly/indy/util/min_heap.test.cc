@@ -19,6 +19,8 @@
 #include <orly/indy/util/min_heap.h>
 
 #include <algorithm>
+#include <random>
+#include <utility>
 #include <vector>
 
 #include <orly/atom/suprena.h>
@@ -138,4 +140,59 @@ FIXTURE(ReplaceTop) {
     }
   }
   EXPECT_TRUE(seen == expected);
+}
+
+/* #1018: ReplaceTop remembers which of the root's children comes first; over many sources with runs, ties and sources running
+   dry, the merge still matches a plain sort by (key, source). */
+FIXTURE(ReplaceTopMatchesASortOverManySources) {
+  struct TBySource {
+    bool operator()(const TMyObj &lhs, size_t lhs_ref, const TMyObj &rhs, size_t rhs_ref) const {
+      return lhs.Key < rhs.Key || (lhs.Key == rhs.Key && lhs_ref < rhs_ref);
+    }
+  };
+  std::mt19937_64 rng(1018);
+  for (int round = 0; round < 200; ++round) {
+    const size_t num_sources = 1UL + rng() % 9UL;
+    std::vector<std::vector<size_t>> sources(num_sources);
+    std::vector<std::pair<size_t, size_t>> expected;
+    for (size_t i = 0; i < num_sources; ++i) {
+      const size_t len = rng() % 40UL;
+      for (size_t j = 0; j < len; ++j) {
+        /* Long runs of one source, and keys several sources share. */
+        sources[i].push_back(rng() % 3UL ? rng() % 20UL : rng() % 400UL);
+      }
+      std::sort(sources[i].begin(), sources[i].end());
+      for (size_t key : sources[i]) {
+        expected.emplace_back(key, i);
+      }
+    }
+    std::sort(expected.begin(), expected.end());
+    std::vector<TMyObj> cur;
+    cur.reserve(num_sources);
+    std::vector<size_t> next(num_sources, 0UL);
+    TMinHeap<TMyObj, size_t, TBySource> min_heap(num_sources);
+    for (size_t i = 0; i < num_sources; ++i) {
+      cur.emplace_back(sources[i].empty() ? 0 : sources[i][0], i);
+    }
+    for (size_t i = 0; i < num_sources; ++i) {
+      if (!sources[i].empty()) {
+        min_heap.Insert(cur[i], i);
+      }
+    }
+    std::vector<std::pair<size_t, size_t>> seen;
+    while (min_heap) {
+      size_t pos;
+      seen.emplace_back(min_heap.Peek(pos).GetKey(), pos);
+      if (++next[pos] < sources[pos].size()) {
+        cur[pos].Key = sources[pos][next[pos]];
+        min_heap.ReplaceTop(cur[pos]);
+      } else {
+        min_heap.Pop(pos);
+      }
+      EXPECT_EQ(min_heap.GetSize(), static_cast<size_t>(std::count_if(next.begin(), next.end(), [&](const size_t &n) {
+        return n < sources[&n - next.data()].size();
+      })));
+    }
+    EXPECT_TRUE(seen == expected);
+  }
 }

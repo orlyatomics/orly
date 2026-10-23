@@ -43,6 +43,7 @@
 #include <orly/indy/update.h>
 #include <orly/indy/update_walker.h>
 #include <orly/indy/util/merge_sorter.h>
+#include <orly/indy/merge_key.h>
 #include <orly/indy/util/min_heap.h>
 
 namespace Orly {
@@ -1120,9 +1121,33 @@ namespace Orly {
            memtable's. */
         std::vector<std::unique_ptr<Indy::TPresentWalker>> WalkerVec;
 
+        /* The heap's order: key ascending, then newest (highest sequence number) first, then, for
+           entries alike in both, the lower WalkerVec index first, so the order is total. Keys are
+           ordered through MergeKeys (#1018). */
+        struct TLayerOrder {
+          [[nodiscard]] bool operator()(const TItem &lhs, size_t lhs_pos, const TItem &rhs, size_t rhs_pos) const {
+            const Atom::TComparison comp = TMergeKey::Compare(lhs, (*Keys)[lhs_pos], rhs, (*Keys)[rhs_pos]);
+            return Atom::IsLt(comp) ||
+                   (Atom::IsEq(comp) && (lhs.SequenceNumber > rhs.SequenceNumber || (lhs.SequenceNumber == rhs.SequenceNumber && lhs_pos < rhs_pos)));
+          }
+          const std::vector<TMergeKey> *Keys;
+        };
+
+        /* Make the sub-walker at `pos`'s current item its key in the merge and put it in the heap. */
+        inline void Push(size_t pos);
+
+        /* Step the sub-walker at the top of the heap, `pos`, and put its next item in the heap, or
+           drop it from the heap when it has no more. */
+        inline void Advance(size_t pos);
+
+        /* The current key of each sub-walker in the heap, by WalkerVec index, copied out for the
+           heap's comparisons (#1018). Only the heap's comparisons read these, and only while there
+           are at least two sub-walkers in it; with one, Advance() doesn't copy the key. */
+        std::vector<TMergeKey> MergeKeys;
+
         /* K-way merge front: the current item of each sub-walker, keyed by its
            WalkerVec index; pops key-ascending, newest-sequence-first. */
-        Util::TMinHeap<TItem, size_t> MinHeap;
+        Util::TMinHeap<TItem, size_t, TLayerOrder> MinHeap;
 
         /* True while the heap still has items to yield. */
         bool Valid = false;
@@ -1660,12 +1685,35 @@ namespace Orly {
       return *this;
     }
 
+    inline void TRepo::TPresentWalker::Push(size_t pos) {
+      const Indy::TPresentWalker &walker = *WalkerVec[pos];
+      assert(walker);
+      MergeKeys[pos].Load(*walker);
+      MinHeap.Insert(*walker, pos);
+    }
+
+    inline void TRepo::TPresentWalker::Advance(size_t pos) {
+      Indy::TPresentWalker &walker = *WalkerVec[pos];
+      ++walker;
+      if (walker) {
+        /* The heap's other members are later than this walker's last key; with none, nothing compares its next one. */
+        if (MinHeap.GetSize() > 1UL) {
+          MergeKeys[pos].Load(*walker);
+        } else {
+          MergeKeys[pos].Clear();
+        }
+        MinHeap.ReplaceTop(*walker);
+      } else {
+        MinHeap.Pop(pos);
+      }
+    }
+
     inline void TRepo::TPresentWalker::Init() {
       bool done = false;
       while (Valid) {
         size_t pos;
         const Indy::TPresentWalker::TItem &cur_item = MinHeap.Peek(pos);
-        Indy::TPresentWalker &walker = *WalkerVec[pos];
+        [[maybe_unused]] const Indy::TPresentWalker &walker = *WalkerVec[pos];
         assert(cur_item.Key.IsTuple());
         assert((*walker).KeyArena == cur_item.KeyArena);
         assert((*walker).OpArena == cur_item.OpArena);
@@ -1675,12 +1723,7 @@ namespace Orly {
           done = true;
           Item = cur_item;
         }
-        ++walker;
-        if (walker) {
-          MinHeap.ReplaceTop(*walker);
-        } else {
-          MinHeap.Pop(pos);
-        }
+        Advance(pos);
         if (done) {
           break;
         } else {
@@ -1694,7 +1737,7 @@ namespace Orly {
       while (Valid) {
         size_t pos;
         const Indy::TPresentWalker::TItem &cur_item = MinHeap.Peek(pos);
-        Indy::TPresentWalker &walker = *WalkerVec[pos];
+        [[maybe_unused]] const Indy::TPresentWalker &walker = *WalkerVec[pos];
         assert(cur_item.Key.IsTuple());
         assert((*walker).KeyArena == cur_item.KeyArena);
         assert((*walker).OpArena == cur_item.OpArena);
@@ -1713,12 +1756,7 @@ namespace Orly {
           done = true;
           Item = cur_item;
         }
-        ++walker;
-        if (walker) {
-          MinHeap.ReplaceTop(*walker);
-        } else {
-          MinHeap.Pop(pos);
-        }
+        Advance(pos);
         if (done) {
           break;
         } else {

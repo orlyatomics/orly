@@ -85,8 +85,14 @@ namespace Orly {
           return NumElem > 0;
         }
 
+        /* The number of elements in the heap. */
+        inline size_t GetSize() const {
+          return NumElem;
+        }
+
         inline void Insert(const TVal &val, TRef ref) {
           assert(NumElem < MaxElem);
+          TopChildKnown = false;
           size_t i = NumElem;
           ++NumElem;
           new (Data + i) TMinHeapElem(val, ref);
@@ -108,6 +114,7 @@ namespace Orly {
           const TMinHeapElem &min_val = Data[0];
           ref = min_val.Ref;
           const TVal &min_ref = *(min_val.Val);
+          TopChildKnown = false;
           Data[0] = std::move(Data[NumElem - 1]);
           Data[NumElem - 1].~TMinHeapElem();
           --NumElem;
@@ -118,11 +125,29 @@ namespace Orly {
         /* Replace the value of the minimum element, keeping its ref, then restore heap order with a
            single sift-down. This is Pop() followed by Insert(val, ref) for the same ref, minus one pass:
            if the new value still orders before the root's children, nothing moves. The heap must be
-           non-empty. */
+           non-empty.
+
+           The heap remembers which of the root's children orders first, so while one input keeps
+           leading the merge, each call costs one comparison, against that child, rather than two
+           (#1018). That holds only while the children's values stay as they were: a caller may change
+           the value behind the minimum element only, and only right before passing it here. */
         inline void ReplaceTop(const TVal &val) {
           assert(NumElem > 0);
           Data[0].Val = &val;
-          MinHeapify(0);
+          if (NumElem < 3UL) {
+            MinHeapify(0);
+            return;
+          }
+          if (!TopChildKnown) {
+            TopChild = Less(Data[2], Data[1]) ? 2UL : 1UL;
+            TopChildKnown = true;
+          }
+          if (Less(Data[TopChild], Data[0])) {
+            const size_t child = TopChild;
+            TopChildKnown = false;
+            std::swap(Data[0], Data[child]);
+            MinHeapify(child);
+          }
         }
 
         private:
@@ -177,6 +202,11 @@ namespace Orly {
 
         /* Comparator */
         TComparator Comp;
+
+        /* Which of the root's children orders first (1 or 2), when TopChildKnown. Insert() and Pop()
+           forget it; ReplaceTop() keeps it while the root stays put. */
+        size_t TopChild = 1UL;
+        bool TopChildKnown = false;
 
       };  // TMinHeap
 

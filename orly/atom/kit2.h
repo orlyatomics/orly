@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -153,6 +154,18 @@ namespace Orly {
       inline bool TrySetStoredHash(size_t hash_val);
 
       inline bool TryQuickOrderComparison(TArena *this_arena, const TCore &that_core, TArena *that_arena, Atom::TComparison &comp) const;
+
+      /* Copy a tuple's top-level element cores into `elems`, which has room for `max_elems`, and set `elem_count`.  False, copying
+         nothing, if this is not a tuple or has more elements than that.  An indirect element still points into `arena`, so the copies
+         are good only while it lives.  A k-way merge copies each input's current key out once this way, rather than pinning its note
+         on every comparison (#1018). */
+      inline bool TryCopyTupleElems(TArena *arena, TCore *elems, size_t max_elems, size_t &elem_count) const;
+
+      /* Order two tuples, each given as its element cores (pinned in place, or copied out by TryCopyTupleElems), the way
+         TryQuickOrderComparison orders two tuples in different arenas.  False when some pair of elements has no quick order; the
+         caller must then order the tuples some other way. */
+      static inline bool TryQuickOrderElems(TArena *lhs_arena, const TCore *lhs, size_t lhs_count,
+                                            TArena *rhs_arena, const TCore *rhs, size_t rhs_count, Atom::TComparison &comp);
 
       inline bool MatchType(TArena *this_arena, const TCore &that_core, TArena *that_arena) const;
 
@@ -489,6 +502,10 @@ namespace Orly {
       /* The kind of data we're storing.  This comes after the direct storage area so that, when we store a direct string,
          this byte can double as our null terminator. */
       TTycon Tycon;
+
+      /* True iff we're a direct string or a direct scalar that orders equal to itself (not a float, whose NaN does not), so that a
+         core with the same bytes holds a value that orders equal to ours. */
+      inline bool IsSelfOrderedDirect() const;
 
       /* size of our pins */
       friend class Orly::Sabot::TSizeChecker;
@@ -997,19 +1014,7 @@ namespace Orly {
             assert(lhs_count <= static_cast<size_t>(lhs_limit - lhs_start));
             const size_t rhs_count = that_core.IndirectCoreArray.ElemCount;
             assert(rhs_count <= static_cast<size_t>(rhs_limit - rhs_start));
-            lhs_limit = lhs_start + lhs_count;
-            rhs_limit = rhs_start + rhs_count;
-            for (const TCore *lhs_core = lhs_start, *rhs_core = rhs_start; lhs_core < lhs_limit && rhs_core < rhs_limit; ++lhs_core, ++rhs_core) {
-              if (lhs_core->TryQuickOrderComparison(this_arena, *rhs_core, that_arena, comp)) {
-                if (Atom::IsLt(comp) || Atom::IsGt(comp)) {
-                  return true;
-                }
-              } else {
-                return false;
-              }
-            }
-            comp = QuickCompare(lhs_count, rhs_count);
-            return true;
+            return TryQuickOrderElems(this_arena, lhs_start, lhs_count, that_arena, rhs_start, rhs_count, comp);
           }
           default: {
             break;
@@ -1334,6 +1339,49 @@ namespace Orly {
 
       }
       return lhs_count == rhs_count ? Orly::Sabot::TMatchResult::Unifies : Orly::Sabot::TMatchResult::PrefixMatch;
+    }
+
+    inline bool TCore::TryCopyTupleElems(TArena *arena, TCore *elems, size_t max_elems, size_t &elem_count) const {
+      assert(arena);
+      assert(elems);
+      if (Tycon != TTycon::Tuple || IndirectCoreArray.ElemCount > max_elems) {
+        return false;
+      }
+      const size_t count = IndirectCoreArray.ElemCount;
+      void *pin_alloc = alloca(sizeof(TArena::TFinalPin));
+      TArena::TFinalPin::TWrapper pin(arena->Pin(IndirectCoreArray.Offset, sizeof(Atom::TCore::TNote) + (sizeof(Atom::TCore) * count), pin_alloc));
+      const TCore *start, *limit;
+      pin->GetNote()->Get(start, limit);
+      assert(count <= static_cast<size_t>(limit - start));
+      std::copy(start, start + count, elems);
+      elem_count = count;
+      return true;
+    }
+
+    inline bool TCore::TryQuickOrderElems(TArena *lhs_arena, const TCore *lhs, size_t lhs_count,
+                                          TArena *rhs_arena, const TCore *rhs, size_t rhs_count, Atom::TComparison &comp) {
+      const size_t count = std::min(lhs_count, rhs_count);
+      for (size_t i = 0; i < count; ++i) {
+        /* The leading elements of keys a merge orders against each other are mostly the same (an index's name, then the fields
+           a range binds), so try the cheap test for that first (#1018). */
+        if (lhs[i].IsSelfOrderedDirect() && std::memcmp(&lhs[i], &rhs[i], sizeof(TCore)) == 0) {
+          continue;
+        }
+        if (!lhs[i].TryQuickOrderComparison(lhs_arena, rhs[i], rhs_arena, comp)) {
+          return false;
+        }
+        if (Atom::IsLt(comp) || Atom::IsGt(comp)) {
+          return true;
+        }
+      }
+      comp = QuickCompare(lhs_count, rhs_count);
+      return true;
+    }
+
+    inline bool TCore::IsSelfOrderedDirect() const {
+      return Tycon <= TTycon::MaxDirectStr ||
+             (Tycon >= TTycon::Int8 && Tycon <= TTycon::Char) ||
+             (Tycon >= TTycon::Duration && Tycon <= TTycon::Uuid);
     }
 
     inline std::optional<uint32_t> TCore::TryGetElemCount() const {

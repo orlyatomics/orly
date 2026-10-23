@@ -1943,7 +1943,8 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
       View(view),
       Lower(View->GetLower() ? *View->GetLower() : 0UL),
       Upper(View->GetUpper() ? *View->GetUpper() : 0UL),
-      MinHeap(View->GetNumEntries() + 1UL),
+      MergeKeys(View->GetNumEntries() + 1UL),
+      MinHeap(View->GetNumEntries() + 1UL, TLayerOrder{&MergeKeys}),
       Valid(false),
       IgnoreTombstone(ignore_tombstone) {
   if (View->GetLower() && View->GetUpper()) {
@@ -1965,7 +1966,7 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
           : layer->NewPresentWalker(From, To));
       Indy::TPresentWalker &walker = *WalkerVec.back();
       if (walker) {
-        MinHeap.Insert(*walker, pos);
+        Push(pos);
       }
       ++pos;
     }
@@ -1973,7 +1974,7 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
     WalkerVec.emplace_back(View->GetCurMem()->NewPresentWalker(From, To));
     Indy::TPresentWalker &mem_walker = *WalkerVec.back();
     if (mem_walker) {
-      MinHeap.Insert(*mem_walker, pos);
+      Push(pos);
     }
     Valid = static_cast<bool>(MinHeap);
     Init();
@@ -1989,7 +1990,8 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
       View(view),
       Lower(View->GetLower() ? *View->GetLower() : 0UL),
       Upper(View->GetUpper() ? *View->GetUpper() : 0UL),
-      MinHeap(View->GetNumEntries() + 1UL),
+      MergeKeys(View->GetNumEntries() + 1UL),
+      MinHeap(View->GetNumEntries() + 1UL, TLayerOrder{&MergeKeys}),
       Valid(false),
       IgnoreTombstone(ignore_tombstone),
       ExactPoint(exact_point) {
@@ -2048,7 +2050,7 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
       assert(walker_ptr);
       Indy::TPresentWalker &walker = *walker_ptr;
       if (walker) {
-        MinHeap.Insert(*walker, pos);
+        Push(pos);
       }
       ++pos;
     }
@@ -2056,7 +2058,7 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
     WalkerVec.emplace_back(View->GetCurMem()->NewPresentWalker(From, ExactPoint));
     Indy::TPresentWalker &mem_walker = *WalkerVec.back();
     if (mem_walker) {
-      MinHeap.Insert(*mem_walker, pos);
+      Push(pos);
     }
     Valid = static_cast<bool>(MinHeap);
     Init();
