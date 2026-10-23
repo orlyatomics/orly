@@ -1165,10 +1165,12 @@ namespace Orly {
            entries alike in both, the lower WalkerVec index first, so the order is total. Keys are
            ordered through MergeKeys (#1018). */
         struct TLayerOrder {
-          [[nodiscard]] bool operator()(const TItem &lhs, size_t lhs_pos, const TItem &rhs, size_t rhs_pos) const {
+          /* Tests the comparison's value directly rather than through Atom::IsLt/IsEq, which the compiler leaves out of line
+             in this, the merge's hottest loop. */
+          [[nodiscard, gnu::always_inline]] bool operator()(const TItem &lhs, size_t lhs_pos, const TItem &rhs, size_t rhs_pos) const {
             const Atom::TComparison comp = TMergeKey::Compare(lhs, (*Keys)[lhs_pos], rhs, (*Keys)[rhs_pos]);
-            return Atom::IsLt(comp) ||
-                   (Atom::IsEq(comp) && (lhs.SequenceNumber > rhs.SequenceNumber || (lhs.SequenceNumber == rhs.SequenceNumber && lhs_pos < rhs_pos)));
+            return comp == Atom::TComparison::Lt ||
+                   (comp == Atom::TComparison::Eq && (lhs.SequenceNumber > rhs.SequenceNumber || (lhs.SequenceNumber == rhs.SequenceNumber && lhs_pos < rhs_pos)));
           }
           const std::vector<TMergeKey> *Keys;
         };

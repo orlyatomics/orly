@@ -505,7 +505,7 @@ namespace Orly {
 
       /* True iff we're a direct string or a direct scalar that orders equal to itself (not a float, whose NaN does not), so that a
          core with the same bytes holds a value that orders equal to ours. */
-      inline bool IsSelfOrderedDirect() const;
+      [[gnu::always_inline]] inline bool IsSelfOrderedDirect() const;
 
       /* size of our pins */
       friend class Orly::Sabot::TSizeChecker;
@@ -1366,6 +1366,24 @@ namespace Orly {
            a range binds), so try the cheap test for that first (#1018). */
         if (lhs[i].IsSelfOrderedDirect() && std::memcmp(&lhs[i], &rhs[i], sizeof(TCore)) == 0) {
           continue;
+        }
+        /* The scalars keys most often differ in are ordered here, as TryQuickOrderComparison orders them, without the
+           out-of-line call and its switch over every tycon. */
+        if (lhs[i].Tycon == rhs[i].Tycon) {
+          if (lhs[i].Tycon == TTycon::Int64) {
+            comp = QuickCompare(lhs[i].ForceAs<int64_t>(), rhs[i].ForceAs<int64_t>());
+            if (comp != Atom::TComparison::Eq) {
+              return true;
+            }
+            continue;
+          }
+          if (lhs[i].Tycon == TTycon::Uuid) {
+            comp = QuickCompare(lhs[i].ForceAs<Base::TUuid>(), rhs[i].ForceAs<Base::TUuid>());
+            if (comp != Atom::TComparison::Eq) {
+              return true;
+            }
+            continue;
+          }
         }
         if (!lhs[i].TryQuickOrderComparison(lhs_arena, rhs[i], rhs_arena, comp)) {
           return false;

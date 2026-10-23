@@ -53,7 +53,7 @@ namespace Orly {
       }
 
       /* Order lhs's key against rhs's exactly as lhs.CompareKeys(rhs) would, where lhs_key and rhs_key were loaded from them. */
-      [[nodiscard]] static Atom::TComparison Compare(const TPresentWalker::TItem &lhs, const TMergeKey &lhs_key,
+      [[nodiscard, gnu::always_inline]] static Atom::TComparison Compare(const TPresentWalker::TItem &lhs, const TMergeKey &lhs_key,
                                                      const TPresentWalker::TItem &rhs, const TMergeKey &rhs_key) {
         Atom::TComparison comp;
         /* CompareKeys orders keys in one arena by offset when it can, so it orders those itself. */
