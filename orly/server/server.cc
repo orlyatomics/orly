@@ -2019,7 +2019,13 @@ void TServer::Init() {
                                                    on_push ? *on_push : Indy::TManager::TPushCallback(), nullptr,
                                                    (skip && !skip->empty()) ? skip : nullptr);
         };
+        /* Where the replay's time goes, for the phase line below: the transaction records, and
+           the copies of paused repos (#963), which rebuild a repo's unpromoted updates. */
+        using TReplayClock = std::chrono::steady_clock;
+        TReplayClock::duration txn_time{}, copy_time{};
+        size_t copy_bytes = 0;
         for (const auto &rec : replay_records) {
+          const auto rec_began = TReplayClock::now();
           if (rec.Type == Indy::Disk::TWalRecordType::Txn) {
             retention->SetReplayLsn(rec.Lsn, rec.Size);
             const uint64_t rec_lsn = rec.Lsn;
@@ -2029,6 +2035,7 @@ void TServer::Init() {
                   RestoreOperation(repo_id, seq_num, meta_core, arena, rec_lsn);
                 };
             apply_wire(rec.Data, rec.Size, &on_push, &replay_plan.Skip);
+            txn_time += TReplayClock::now() - rec_began;
             continue;
           }
           auto copy = replay_plan.Copies.find(rec.Lsn);
@@ -2047,9 +2054,11 @@ void TServer::Init() {
             for (const auto &wire : part.Wires) {
               retention->SetReplayLsn(rec.Lsn, wire.size());
               apply_wire(wire.data(), wire.size(), nullptr, nullptr);
+              copy_bytes += wire.size();
             }
           }
           RepoManager->AdvanceReplayNumbering(first.RepoId, first.Next);
+          copy_time += TReplayClock::now() - rec_began;
         }
         retention->EndReplay();
         RepoManager->ClearReplaySeeds();
@@ -2057,8 +2066,13 @@ void TServer::Init() {
         for (const auto &rec : replay_records) {
           replay_bytes += rec.Size;
         }
+        const auto as_ms = [](TReplayClock::duration d) {
+          return std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(d).count());
+        };
         LogStartupPhase("replaying the WAL", std::to_string(replay_records.size()) + " records, " +
-                        std::to_string(replay_bytes / 1024UL) + " KiB");
+                        std::to_string(replay_bytes / 1024UL) + " KiB; transactions " + as_ms(txn_time) +
+                        "ms; " + std::to_string(replay_plan.Copies.size()) + " repo copies, " +
+                        std::to_string(copy_bytes / 1024UL) + " KiB applied, " + as_ms(copy_time) + "ms");
       });
       wal_recovery_jumper(FramePoolManager.get(), &BGFastRunner);
 
