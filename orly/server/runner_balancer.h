@@ -165,6 +165,29 @@ namespace Orly {
         return Charge(best, weight);
       }
 
+      /* As Acquire(), but only on a runner whose load is below 'cap'; an empty lease when every
+         runner is at or above it. For work that can as well run elsewhere, and should go here
+         only while there is room (--edit_runner=spill). Two callers at the same moment may both
+         see room on the same runner, so the cap is a hint, as the loads are. */
+      [[nodiscard]] TLease AcquireBelow(size_t cap, size_t weight = 1UL) noexcept {
+        size_t best = Next.fetch_add(1UL, std::memory_order_relaxed) % Size;
+        size_t best_load = GetLoad(best);
+        for (size_t step = 1UL, index = best; best_load && step < Size; ++step) {
+          if (++index == Size) {
+            index = 0UL;
+          }
+          const size_t load = GetLoad(index);
+          if (load < best_load) {
+            best = index;
+            best_load = load;
+          }
+        }
+        if (best_load >= cap) {
+          return TLease();
+        }
+        return Charge(best, std::max(weight, 1UL));
+      }
+
       /* A lease of the given weight on the given runner: for work that is already there, as a
          batch is once it knows its size. Weight 0 gives an empty lease. */
       [[nodiscard]] TLease Charge(size_t index, size_t weight) noexcept {

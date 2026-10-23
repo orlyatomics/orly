@@ -828,6 +828,9 @@ TMethodResult TSession::TryCore(TServer *server, const TUuid &pov_id, const vect
     }
     if (!effects.empty()) {
       had_effects = true;
+      /* The commit, from here to the end of this block, may run on a slow runner, to leave the
+         fast ones to reads (--edit_runner, #1038; see <orly/server/edit_runner.h>). */
+      TServer::TEditSwitch edit_switch(server, fast_runner_switch);
       /* Refuse the write, before it takes memory it would have to flush, while disk space is
          low; a read (no effects) is never refused (#590). */
       server->CheckWriteAdmission();
@@ -1138,6 +1141,9 @@ vector<Var::TVar> TSession::RunBatch(TServer *server, const TUuid &pov_id, const
     Package::TContext::TEffects effects = indy_context.MoveEffects();
     if (!effects.empty()) {
       had_effects = true;
+      /* The commit, from here to the end of this block, may run on a slow runner, to leave the
+         fast ones to reads (--edit_runner, #1038; see <orly/server/edit_runner.h>). */
+      TServer::TEditSwitch edit_switch(server, fast_runner_switch);
       /* Refuse the write, before it takes memory it would have to flush, while disk space is
          low; a read (no effects) is never refused (#590). */
       server->CheckWriteAdmission();

@@ -513,6 +513,20 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "as the call grows, so new statements steer around a long read. Sequence elements count "
       "as 1/64 of a row. 0 turns off both the yields and the added load. Default: 8."
   );
+  Param(
+      &TCmd::EditRunner, "edit_runner", Optional, "edit_runner\0",
+      "Where a statement that writes commits its write, once its method has run: 'fast' keeps "
+      "it on the fast runner it ran on; 'slow' moves the commit (resolving its effects, building "
+      "the update and pushing it into the repo) to the least-loaded slow runner and back, leaving "
+      "the fast cores to reads under a heavy ingest; 'spill' does the same while that slow "
+      "runner has fewer than edit_spill_load commits on it, and otherwise stays on the fast "
+      "runner. Default: fast."
+  );
+  Param(
+      &TCmd::EditSpillLoad, "edit_spill_load", Optional, "edit_spill_load\0",
+      "Under edit_runner=spill, how many commits a slow runner takes at once before the next "
+      "one stays on its fast runner. At least 1. Default: 1."
+  );
 
   /******** Object Pools ********/
 
@@ -702,6 +716,8 @@ TServer::TCmd::TCmd()
       ReadBudgetSteps(0UL),
       ReadYieldRows(8UL),
       ReadYieldUs(1000UL),
+      EditRunner("fast"),
+      EditSpillLoad(1UL),
       MaxFoldInputMB(0UL),
       DurableAcks("local"),
       WalMB(256),
@@ -1279,6 +1295,10 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
       Cmd(cmd),
       HousecleaningTimer(chrono::milliseconds(cmd.HousecleaningInterval)) {
   StartupBegan = StartupPhaseBegan = std::chrono::steady_clock::now();
+  EditRunnerMode = ParseEditRunner(Cmd.EditRunner);
+  if (!Cmd.EditSpillLoad) {
+    throw std::invalid_argument("--edit_spill_load must be at least 1");
+  }
   syslog(LOG_INFO, "TServer startup: construction began %ldms after the process started (#1031)", MsSinceProcessStart());
   /* The memory budget and the sizes it chose (#669), decided while parsing, before the log
      was open. */
@@ -1336,6 +1356,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     syslog(LOG_INFO, "SLOW RUNNER [%ld] = [%p]", i, SlowRunnerVec.back().get());
     SlowRunnerThreadVec.emplace_back(new std::thread(std::bind(launch_slow_fiber_sched, cmd.SlowCoreVec[i], SlowRunnerVec.back().get())));
   }
+  SlowRunnerBalancer.emplace(SlowRunnerVec.size());
 
   /* Run the WsRunner's thread. */
   WsThread = thread([this] { WsRunner.Run(); });
@@ -1378,6 +1399,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
     FastRunnerThreadVec.emplace_back(new std::thread(std::bind(launch_fast_fiber_sched, cmd.FastCoreVec[i], FastRunnerVec.back().get())));
   }
   FastRunnerBalancer.emplace(FastRunnerVec.size());
+  syslog(LOG_INFO, "edit_runner=%s edit_spill_load=%zu", ToString(EditRunnerMode), Cmd.EditSpillLoad);
 
   /* Launch the fast */
   auto launch_bg_fiber_sched = [this](Fiber::TRunner *runner) {

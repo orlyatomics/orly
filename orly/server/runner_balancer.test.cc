@@ -234,3 +234,24 @@ FIXTURE(Concurrent) {
     EXPECT_EQ(balancer.GetLoad(i), 0UL);
   }
 }
+
+/* AcquireBelow() takes the least-loaded runner only while its load is under the cap. */
+FIXTURE(AcquireBelowRespectsTheCap) {
+  TRunnerBalancer balancer(2UL);
+  TLease a = balancer.AcquireBelow(1UL);
+  TLease b = balancer.AcquireBelow(1UL);
+  EXPECT_TRUE(a && b);
+  EXPECT_NE(a.GetIndex(), b.GetIndex());
+  EXPECT_FALSE(balancer.AcquireBelow(1UL));
+  EXPECT_EQ(balancer.GetLoad(0UL) + balancer.GetLoad(1UL), 2UL);
+  TLease c = balancer.AcquireBelow(2UL, 3UL);
+  EXPECT_TRUE(c);
+  EXPECT_EQ(balancer.GetLoad(c.GetIndex()), 4UL);
+  c.Release();
+  const size_t freed = b.GetIndex();
+  b.Release();
+  /* The one runner back under the cap is the one it picks. */
+  TLease d = balancer.AcquireBelow(1UL);
+  EXPECT_TRUE(d);
+  EXPECT_EQ(d.GetIndex(), freed);
+}
