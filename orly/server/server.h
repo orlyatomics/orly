@@ -406,6 +406,10 @@ namespace Orly {
            ready on its fast runner (#1015); 0 means never. */
         size_t ReadYieldUs;
 
+        /* Microseconds a method call runs in all before it drops to its fast runner's
+           low-priority queue (#1015); 0 means never. */
+        size_t ReadSliceUs;
+
         /* Where a write's commit runs: fast, slow or spill (see <orly/server/edit_runner.h>). */
         std::string EditRunner;
 
@@ -582,6 +586,10 @@ namespace Orly {
 
       size_t GetReadYieldUs() const override {
         return Cmd.ReadYieldUs;
+      }
+
+      size_t GetReadSliceUs() const override {
+        return Cmd.ReadSliceUs;
       }
 
       TEditRunner GetEditRunner() const override {

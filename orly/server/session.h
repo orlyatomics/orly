@@ -155,6 +155,10 @@ namespace Orly {
            fiber ready on its fast runner (#1015; TReadQuantum). 0 means it never yields. */
         [[nodiscard]] virtual size_t GetReadYieldUs() const { return 0UL; }
 
+        /* How long, in microseconds, a call runs in all before it drops to its fast runner's
+           low-priority queue (#1015; TReadQuantum). 0 means it never does. */
+        [[nodiscard]] virtual size_t GetReadSliceUs() const { return 0UL; }
+
         /* Where a write's commit runs (--edit_runner; see <orly/server/edit_runner.h>). */
         [[nodiscard]] virtual TEditRunner GetEditRunner() const { return TEditRunner::Fast; }
 
@@ -198,13 +202,15 @@ namespace Orly {
            As the pacer of the call's reads (#1015; TContext::SetReadPacer()), it adds to that
            weight as the call walks rows, and yields the fiber once the call has run for
            --read_yield_us without a break while another fiber is ready on the same runner, so
-           that a point read doesn't wait behind a whole scan; see TReadQuantum. */
+           that a point read doesn't wait behind a whole scan; see TReadQuantum. Past
+           --read_slice_us in all, the call drops to its runner's low-priority queue. */
         class TFastRunnerSwitch final : public TReadQuantum<TFastRunnerSwitch> {
           NO_COPY(TFastRunnerSwitch);
           public:
 
           explicit TFastRunnerSwitch(TServer *server, size_t weight = 1UL)
-              : TReadQuantum(std::chrono::microseconds(server->GetReadYieldUs())),
+              : TReadQuantum(std::chrono::microseconds(server->GetReadYieldUs()),
+                             std::chrono::microseconds(server->GetReadSliceUs())),
                 Balancer(&*server->FastRunnerBalancer) {
             Indy::Fiber::TRunner *local = Indy::Fiber::TRunner::LocalRunner;
             for (size_t i = 0UL; i < server->FastRunnerVec.size(); ++i) {
@@ -242,6 +248,15 @@ namespace Orly {
           static bool OthersReady() noexcept {
             const Indy::Fiber::TRunner *runner = Indy::Fiber::TRunner::LocalRunner;
             return runner && runner->HasOtherReadyFrame();
+          }
+
+          static bool HighReady() noexcept {
+            const Indy::Fiber::TRunner *runner = Indy::Fiber::TRunner::LocalRunner;
+            return runner && runner->HasOtherHighReadyFrame();
+          }
+
+          static void GiveWayLow() {
+            Indy::Fiber::YieldLow();
           }
 
           static void GiveWay() {

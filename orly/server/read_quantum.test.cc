@@ -37,8 +37,8 @@ namespace {
     NO_COPY(TFakePacer);
     public:
 
-    explicit TFakePacer(microseconds quantum)
-        : TReadQuantum(quantum) {}
+    explicit TFakePacer(microseconds quantum, microseconds slice = {})
+        : TReadQuantum(quantum, slice) {}
 
     /* Pace as a call that has walked this many rows. */
     void Rows(size_t rows) {
@@ -56,6 +56,12 @@ namespace {
 
     bool Ready = false;
 
+    /* Is a fiber ready at normal priority? Implies Ready. */
+    bool High = false;
+
+    /* How many of the yields went to the low-priority queue. */
+    size_t LowYields = 0UL;
+
     /* What Weigh() was told, in order. */
     vector<size_t> Weighed;
 
@@ -70,7 +76,16 @@ namespace {
     }
 
     bool OthersReady() const {
-      return Ready;
+      return Ready || High;
+    }
+
+    bool HighReady() const {
+      return High;
+    }
+
+    void GiveWayLow() {
+      ++LowYields;
+      SwitchedOut();
     }
 
     /* As YieldSlow() does, the runner switches to something else and back. */
@@ -176,6 +191,8 @@ FIXTURE(SliceRestartsOnAnotherRunner) {
     TPlace Where() const { return {&Runners[Runner], 7UL}; }
     bool OthersReady() const { return true; }
     void GiveWay() { ++Runner; }
+    bool HighReady() const { return true; }
+    void GiveWayLow() { ++Runner; }
     void Weigh(size_t) {}
     int Runners[4] = {};
     friend class TReadQuantum<TMover>;
@@ -244,4 +261,70 @@ FIXTURE(PacedByBudget) {
   }
   /* 100 looks 10 us apart: slices start at the first look and after each yield. */
   EXPECT_EQ(pacer.GetYields(), 1UL);
+}
+
+/* With a slice, a call drops to low priority once it has run that long in all, not counting time
+   switched out, and from then on yields to a fiber ready at normal priority after each slice it
+   runs (#1015). */
+FIXTURE(DropsToLowAfterSlice) {
+  TFakePacer pacer(1000us, 200us);
+  pacer.Rows(8);
+  pacer.Clock += 150us;
+  pacer.Rows(16);
+  EXPECT_FALSE(pacer.IsLow());
+  /* Switched out for a long while (a disk wait): that isn't run time. */
+  pacer.SwitchedOut();
+  pacer.Clock += 5000us;
+  pacer.Rows(24);
+  pacer.Clock += 40us;
+  pacer.Rows(32);
+  EXPECT_FALSE(pacer.IsLow());
+  pacer.Clock += 10us;
+  pacer.Rows(40);
+  EXPECT_TRUE(pacer.IsLow());
+  /* Nothing ready: it runs on. */
+  EXPECT_EQ(pacer.GetYields(), 0UL);
+  /* A fiber ready at normal priority: it yields once it has run a slice since it was switched
+     in, without waiting a quantum. */
+  pacer.High = true;
+  pacer.Clock += 1us;
+  pacer.Rows(48);
+  EXPECT_EQ(pacer.LowYields, 0UL);
+  /* The slice began at the look after the switch: 50 us before High was set. */
+  pacer.Clock += 148us;
+  pacer.Rows(50);
+  EXPECT_EQ(pacer.LowYields, 0UL);
+  pacer.Clock += 1us;
+  pacer.Rows(52);
+  EXPECT_EQ(pacer.LowYields, 1UL);
+  pacer.High = false;
+  /* Only other low-priority calls ready: they take turns of a quantum. */
+  pacer.Ready = true;
+  pacer.Rows(56);
+  pacer.Clock += 999us;
+  pacer.Rows(64);
+  EXPECT_EQ(pacer.LowYields, 1UL);
+  pacer.Clock += 1us;
+  pacer.Rows(72);
+  EXPECT_EQ(pacer.LowYields, 2UL);
+  EXPECT_EQ(pacer.GetYields(), 2UL);
+}
+
+/* A call shorter than the slice stays at normal priority, and a slice of 0 never drops. */
+FIXTURE(ShortCallStaysHigh) {
+  TFakePacer pacer(1000us, 200us);
+  pacer.High = true;
+  pacer.Rows(8);
+  pacer.Clock += 199us;
+  pacer.Rows(16);
+  EXPECT_FALSE(pacer.IsLow());
+  EXPECT_EQ(pacer.GetYields(), 0UL);
+  TFakePacer single(1000us);
+  single.High = true;
+  single.Rows(8);
+  single.Clock += 5000us;
+  single.Rows(16);
+  EXPECT_FALSE(single.IsLow());
+  EXPECT_EQ(single.LowYields, 0UL);
+  EXPECT_EQ(single.GetYields(), 1UL);
 }

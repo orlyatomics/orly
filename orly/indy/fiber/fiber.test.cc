@@ -1298,3 +1298,98 @@ FIXTURE(SwitchCountAndOtherReadyFrame) {
   EXPECT_TRUE(moved_on_slow_yield);
   EXPECT_TRUE(alone_again);
 }
+
+/* A frame that yields to the low-priority queue runs again only once no other frame is ready, but
+   runs again at once when none is, so the runner never idles while it has low-priority work
+   (#1015). Frames at normal priority see it as ready, but not as ready at normal priority. */
+FIXTURE(YieldLowRunsAfterNormalFrames) {
+  /* Latched onto the runner; runs once. */
+  class TFiber
+      : public TRunnable {
+    NO_COPY(TFiber);
+    public:
+
+    TFiber(TRunner *runner, std::function<void ()> body)
+        : Body(std::move(body)) {
+      Frame = TFrame::LocalFramePool->Alloc();
+      try {
+        Frame->Latch(runner, this, static_cast<TRunnable::TFunc>(&TFiber::Run));
+      } catch (...) {
+        TFrame::LocalFramePool->Free(Frame);
+        throw;
+      }
+    }
+
+    ~TFiber() {
+      TFrame::LocalFramePool->Free(Frame);
+    }
+
+    void Run() {
+      Body();
+      Done.store(true);
+    }
+
+    std::atomic<bool> Done{false};
+
+    private:
+
+    TFrame *Frame;
+
+    std::function<void ()> Body;
+
+  };
+  TRunner::TRunnerCons runner_cons(1UL);
+  TRunner runner(runner_cons);
+  TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *> frame_pool_manager(2UL, 1024UL * 1024UL, &runner);
+  TFrame::LocalFramePool = new TThreadLocalGlobalPoolManager<TFrame, size_t, TRunner *>::TThreadLocalPool(&frame_pool_manager);
+  bool back_alone = false, sees_high = false, high_ran_first = false, other_sees_low = false, other_sees_no_high = false;
+  try {
+    std::atomic<bool> want_other(false), other_latched(false), other_ran(false);
+    thread runner_thread([&] { runner.Run(); });
+    unique_ptr<TFiber> other;
+    TFiber probe(&runner, [&] {
+      TRunner *const local = TRunner::LocalRunner;
+      /* Nothing else to run: back at once. */
+      const uint64_t before = local->GetSwitchCount();
+      YieldLow();
+      back_alone = local->GetSwitchCount() != before && !local->HasOtherReadyFrame();
+      want_other.store(true);
+      while (!other_latched.load()) {
+        std::this_thread::yield();
+      }
+      sees_high = local->HasOtherHighReadyFrame();
+      YieldLow();
+      high_ran_first = other_ran.load();
+    });
+    while (!want_other.load()) {
+      std::this_thread::yield();
+    }
+    other = make_unique<TFiber>(&runner, [&] {
+      TRunner *const local = TRunner::LocalRunner;
+      other_sees_low = local->HasOtherReadyFrame();
+      other_sees_no_high = !local->HasOtherHighReadyFrame();
+      other_ran.store(true);
+    });
+    other_latched.store(true);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while ((!probe.Done.load() || !other->Done.load()) && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const bool finished = probe.Done.load() && other->Done.load();
+    runner.ShutDown();
+    runner_thread.join();
+    EXPECT_TRUE(finished);
+    other.reset();
+  } catch (...) {
+    delete TFrame::LocalFramePool;
+    TFrame::LocalFramePool = nullptr;
+    throw;
+  }
+  delete TFrame::LocalFramePool;
+  TFrame::LocalFramePool = nullptr;
+  EXPECT_TRUE(back_alone);
+  EXPECT_TRUE(sees_high);
+  EXPECT_TRUE(high_ran_first);
+  EXPECT_TRUE(other_sees_low);
+  EXPECT_TRUE(other_sees_no_high);
+}

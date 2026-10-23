@@ -118,7 +118,8 @@ void TRunner::Run() {
        system calls; past it, an idle runner blocks instead of polling (#764). */
     const size_t laps_before_park = 100UL;
     size_t laps_without_work = 0UL;
-    for (; likely(KeepRunning.load());) {
+    /* Frames queued at low priority still run to the end at shutdown. */
+    for (; likely(KeepRunning.load()) || LowQueueHead;) {
       assert(!ReadyToRunQueue);
       /* check for inbound frames */ {
         /* Drain the handoff slots our peers push for us. The slots live in
@@ -144,6 +145,17 @@ void TRunner::Run() {
           }
         }
         DrainInboundQueue(InboundFrameQueue);
+      }
+      if (!ReadyToRunQueue && LowQueueHead) {
+        /* Nothing at normal priority is ready: run the oldest low-priority frame, and look
+           again for normal work once it gives way (#1015). */
+        TFrame *frame = LowQueueHead;
+        LowQueueHead = frame->InboundQueueNextFrame;
+        if (!LowQueueHead) {
+          LowQueueTail = nullptr;
+        }
+        frame->InboundQueueNextFrame = nullptr;
+        ReadyToRunQueue = frame;
       }
       if (ReadyToRunQueue) {
         laps_without_work = 0UL;
