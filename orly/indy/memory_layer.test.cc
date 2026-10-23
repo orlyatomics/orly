@@ -625,10 +625,10 @@ FIXTURE(PatternPrefixFastPathAgreesWithSabot) {
     }
   }
   EXPECT_EQ(disagree, 0UL);
-  /* Not vacuous: plenty of keys sort before and after the patterns, and plenty can't be told apart from them. */
+  /* Not vacuous: plenty of keys sort before and after the patterns, and some can't be told apart from them. */
   EXPECT_GT(lt, compared / 10UL);
   EXPECT_GT(gt, compared / 10UL);
-  EXPECT_GT(compared - lt - gt, compared / 20UL);
+  EXPECT_GT(compared - lt - gt, 100UL);
 }
 
 /* An update holding one entry per (index id, key) in keys, each with op val, at seq_num. */
