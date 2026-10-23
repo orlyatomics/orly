@@ -191,6 +191,8 @@ FIXTURE(SliceRestartsOnAnotherRunner) {
     TPlace Where() const { return {&Runners[Runner], 7UL}; }
     bool OthersReady() const { return true; }
     void GiveWay() { ++Runner; }
+    bool HighReady() const { return true; }
+    void GiveWayLow() { ++Runner; }
     void Weigh(size_t) {}
     int Runners[4] = {};
     friend class TReadQuantum<TMover>;
