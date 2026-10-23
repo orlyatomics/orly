@@ -718,6 +718,19 @@ namespace Orly {
             return ret;
           }
 
+          /* A lock-free hint that the page sits in its main slot and is loaded or being loaded. It takes no
+             pin, so the answer can be stale the moment it returns; use it only where a wrong answer costs a
+             missed or redundant prefetch, never correctness. A page in a chained slot reads as false. */
+          inline bool LooksLoadedOrLoading(size_t page_id) const {
+            const TSlot &slot = SlotArray[page_id % NumSlots];
+            if (std::atomic_load(&slot.PageId) != page_id) {
+              return false;
+            }
+            const size_t val = std::atomic_load(&slot.BufAddr);
+            /* Re-read the id so a slot handed to another page between the two loads reads as a miss. */
+            return (val & (HighestBit | SecondHighestBit)) != 0UL && std::atomic_load(&slot.PageId) == page_id;
+          }
+
           inline void AsyncMultiGet(const Base::TCodeLocation &code_location,
                                     DiskPriority priority,
                                     TCache *cache,
@@ -727,6 +740,22 @@ namespace Orly {
                                     size_t num_consec_pages,
                                     bool can_release,
                                     TCompletionTrigger &async_trigger) {
+            /* A prefetch that may release its pages again does not need a pin on a page that is already
+               loaded or loading: it would take one only to drop it, and each Get/Release pair costs two
+               slot-lock CASes plus an LRU remove and insert. Trim such pages off both ends of the run
+               without touching the slot (#1046). */
+            if (can_release) {
+              while (num_consec_pages > 0UL && LooksLoadedOrLoading(page_id)) {
+                ++page_id;
+                --num_consec_pages;
+              }
+              while (num_consec_pages > 0UL && LooksLoadedOrLoading(page_id + num_consec_pages - 1UL)) {
+                --num_consec_pages;
+              }
+              if (num_consec_pages == 0UL) {
+                return;
+              }
+            }
             TSlot *main_slots[num_consec_pages];
             TSlot *data_slots[num_consec_pages];
             TSlot **main_slots_ptr = main_slots;

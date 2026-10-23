@@ -363,6 +363,62 @@ FIXTURE(PrefetchWindow) {
   });
 }
 
+/* #1046: a prefetch that may release its pages skips the ones at either end of its run that are already
+   loaded, without pinning them, and still loads the rest. No page is left pinned either way. */
+FIXTURE(PrefetchSkipsResidentEnds) {
+  Orly::Indy::Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Orly::Indy::Fiber::TRunner::TRunnerCons &) {
+    TStreamEnv env(false);
+    const TReportingMemoryDevice &device = env.GetDevice();
+    TMyInFile in_file(env.GetBlockVec());
+    TPageCache *const cache = env.GetCache();
+    const size_t first = in_file.FindPageIdOfByte(0UL);
+    auto prefetch = [&](size_t from, size_t num) {
+      TCompletionTrigger trigger;
+      cache->AsyncMultiGet(HERE, RealTime, cache, CheckedPage, 0UL, first + from, num, true, trigger);
+      trigger.Wait();
+    };
+    for (size_t i = 0; i < 8UL; ++i) {
+      EXPECT_FALSE(cache->LooksLoadedOrLoading(first + i));
+    }
+    /* Pages 2 and 3. */
+    prefetch(2UL, 2UL);
+    EXPECT_EQ(device.GetNumAsyncPages(), 2UL);
+    EXPECT_TRUE(cache->LooksLoadedOrLoading(first + 2UL));
+    EXPECT_TRUE(cache->LooksLoadedOrLoading(first + 3UL));
+    EXPECT_FALSE(cache->LooksLoadedOrLoading(first + 4UL));
+    /* Leading pages resident: only 4 and 5 are read. */
+    prefetch(2UL, 4UL);
+    EXPECT_EQ(device.GetNumAsyncPages(), 4UL);
+    /* Trailing pages resident: only 0 and 1 are read. */
+    prefetch(0UL, 4UL);
+    EXPECT_EQ(device.GetNumAsyncPages(), 6UL);
+    /* All resident: nothing is read. Resident in the middle: only the ends are read. */
+    prefetch(0UL, 6UL);
+    EXPECT_EQ(device.GetNumAsyncPages(), 6UL);
+    prefetch(6UL, 2UL);
+    EXPECT_EQ(device.GetNumAsyncPages(), 8UL);
+    for (size_t i = 0; i < 8UL; ++i) {
+      EXPECT_TRUE(cache->LooksLoadedOrLoading(first + i));
+      EXPECT_EQ(cache->CountReferences(first + i), 0UL);
+    }
+    /* The data read through the skipping path is the data written, and the stream finds it cached. */ {
+      TDataInStream in_stream(HERE, 0UL, RealTime, &in_file, cache, 0UL);
+      size_t in_val;
+      for (size_t i = 0; i < 8UL * TStreamEnv::ValsPerPage; ++i) {
+        in_stream.Read(in_val);
+        EXPECT_EQ(in_val, i);
+      }
+    }
+    EXPECT_EQ(device.GetNumSyncPages(), 0UL);
+    for (size_t i = 0; i < 8UL; ++i) {
+      EXPECT_EQ(cache->CountReferences(first + i), 0UL);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 /* A memory device whose writes start failing to submit after the first few, as they do when the
    disk event pool runs dry: TPersistentDevice::Write() throws bad_alloc before submitting. */
 class TFailingWriteMemoryDevice
