@@ -523,10 +523,22 @@ namespace Orly {
             EndRank = lo;
           }
 
-          /* The first rank in [lo, hi) whose key does not order before `bound`, or hi. */
+          /* The first rank in [lo, hi) whose key does not order before `bound`, or hi. It gallops out from `lo` and then
+             halves, so it reads about twice the log of the distance to the answer: where other layers' keys interleave with
+             this file's, the stretches it passes are short, and a search over the whole range would cost far more than the
+             few steps it saves. */
           size_t LowerBound(const TItem &bound, size_t lo, size_t hi) const {
             TItem probe;
             probe.KeyArena = IndexArena.get();
+            for (size_t step = 1UL; lo < hi; step *= 2UL) {
+              const size_t at = std::min(lo + step - 1UL, hi - 1UL);
+              probe.Key = GetKeyAt(at);
+              if (!Atom::IsLt(probe.CompareKeys(bound))) {
+                hi = at;
+                break;
+              }
+              lo = at + 1UL;
+            }
             while (lo < hi) {
               const size_t mid = lo + ((hi - lo) / 2UL);
               probe.Key = GetKeyAt(mid);

@@ -1,14 +1,15 @@
 #!/bin/bash
 # Keyset-paging smoke (#735). `keys (T) @ <[...]> after <[last]> take n` seeks to the previous
-# page's last key, so a page costs the rows it returns wherever it starts; `skip s take n` walks
-# and throws away the s rows before the page, so page k costs k pages.
+# page's last key, so a page costs the rows it returns wherever it starts; `skip s take n` passes
+# over the s rows before the page, by rank where one disk file alone holds them (#1045), but the
+# read budget charges it all s of them.
 #   0. Build the orly TS client (clients/ts).
 #   1. Compile keyset_paging.orly with orlyc.
 #   2. Start orlyi with --read_budget_rows=$ROW_LIMIT and run keyset_paging.mjs, which writes
 #      $ROWS edges and then
 #        - times page 1 and a page $DEPTH rows in, both ways, and prints METRIC lines for
 #          tools/maint/ab_bench.py: a keyset page that deep must cost about what page 1 does,
-#          while the skip page grows with its depth;
+#          and so must the skip page, whose rows are settled in one disk file;
 #        - requires a skip page past $ROW_LIMIT rows to be refused as read_too_large while the
 #          keyset page at the same place answers;
 #        - pages through every edge with Client.pages and checks each comes back once, in order;

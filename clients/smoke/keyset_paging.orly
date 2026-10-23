@@ -3,8 +3,8 @@
    Package for the keyset-paging smoke (#735): one group's edges, paged two
    ways. `page` seeks to the last key of the previous page with
    `keys ... after`, so every page costs the rows it returns; `page_skip`
-   walks and discards every row before the page with `skip`, so page k costs
-   k pages.
+   passes over every row before the page with `skip`, and the read budget
+   charges page k for k pages.
 
    Copyright 2010-2026 Atomic Kismet Company
 

@@ -85,9 +85,10 @@ row = (<{.e: k.2, .w: *k::(int)}>) where {
 - The bound is a whole key with the pattern's shape: the same member types,
   `desc` members included. Any other type is a compile error that names both.
 - The walk seeks to the bound, so a page costs the rows it reads wherever it
-  starts. `skip s take n` costs `s + n`: it reads and throws away every row
-  before the page, and a deep enough page is refused by the per-read budget
-  (`read_too_large`) where the keyset page answers.
+  starts. `skip s take n` is charged `s + n` rows: it passes over every row
+  before the page (counting off by rank the stretches one disk file alone
+  holds, and walking the rest), and a deep enough page is refused by the
+  per-read budget (`read_too_large`) where the keyset page answers.
 - The bound binds tighter than the operators after it, so
   `keys ... after b take n`, `... if <pred>`, `reverse_of`, `sorted_by` and the
   rest apply to the bounded walk.

@@ -111,13 +111,15 @@ console.log(`METRIC skip_deep_over_keyset_deep ${(skipDeep / keysetDeep).toFixed
   if (a.last !== DEPTH + PAGE - 1) fail(`page ${DEPTH} rows in: last ${a.last}`);
 }
 /* A page $DEPTH rows in costs about what page 1 does by keyset (the bound allows for noise on a
-   shared runner); by skip it walks $DEPTH rows first, so it costs many times more. */
+   shared runner). By skip it passes over $DEPTH rows first; here they sit in one disk file that
+   no other layer touches, so it counts them off by rank rather than walking them (#1045), and the
+   page costs about what the keyset page does. The budget still charges it every row it skips. */
 if (keysetDeep > 3 * keysetFirst + 2) {
   fail(`a keyset page ${DEPTH} rows in took ${keysetDeep.toFixed(2)} ms, page 1 ${keysetFirst.toFixed(2)} ms`);
 }
-if (skipDeep < 3 * keysetDeep) {
+if (skipDeep > 3 * keysetDeep + 2) {
   fail(`a skip page ${DEPTH} rows in took ${skipDeep.toFixed(2)} ms, the keyset page ${keysetDeep.toFixed(2)} ms: ` +
-       "the measurement can't tell them apart");
+       "the skip walked the rows it passed over");
 }
 console.log(`cost ok: ${DEPTH} rows in, keyset ${keysetDeep.toFixed(2)} ms (page 1 ${keysetFirst.toFixed(2)}), ` +
             `skip ${skipDeep.toFixed(2)} ms (page 1 ${skipFirst.toFixed(2)})`);
