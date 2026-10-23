@@ -290,7 +290,8 @@ FIXTURE(DropsToLowAfterSlice) {
   pacer.Clock += 1us;
   pacer.Rows(48);
   EXPECT_EQ(pacer.LowYields, 0UL);
-  pacer.Clock += 149us;
+  /* The slice began at the look after the switch: 50 us before High was set. */
+  pacer.Clock += 148us;
   pacer.Rows(50);
   EXPECT_EQ(pacer.LowYields, 0UL);
   pacer.Clock += 1us;
