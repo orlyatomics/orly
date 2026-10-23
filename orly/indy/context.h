@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <limits>
 #include <optional>
 #include <unordered_set>
 
@@ -153,21 +154,34 @@ namespace Orly {
 
         TKeyCursor &operator++() override;
 
+        /* Pass over the next n keys without yielding them (a sequence's `skip`). Before the walk has started, the
+           stretches of keys that only one disk file holds are passed over by rank, as a count does (#749), and the walk
+           then starts at the first key not skipped; otherwise it steps, without building the keys it passes. Charges
+           the read budget exactly as stepping would. */
+        int64_t Skip(int64_t n) override;
+
         [[nodiscard]] const TContext::TPresentWalker::TItem &GetVal() const noexcept;
 
         private:
 
         void Refresh() const;
 
+        /* The walk, which starts the first time it is needed, so a Skip() before it can start at the first key not
+           skipped. */
+        TPresentWalker &GetCsr() const;
+
         Indy::TIndexKey Key;
 
         Indy::TIndexKey To;
+
+        /* True for the range form, which walks [Key, To]; else Key is a pattern. */
+        bool IsRange = false;
 
         mutable bool Valid = true;
 
         mutable bool Cached = false;
 
-        mutable TPresentWalker Csr;
+        mutable std::optional<TPresentWalker> Csr;
 
         mutable Indy::TKey Item;
 
@@ -379,8 +393,12 @@ namespace Orly {
 
       /* The count CountKeys would return, passing over by rank each stretch of keys that only
          one disk file holds (#749); or nothing, leaving the count to the walk, when nothing
-         here could be ranked. `to` is null for the pattern form. */
-      std::optional<int64_t> TryCountByRank(const Indy::TIndexKey &from, const Indy::TIndexKey *to);
+         here could be ranked. `to` is null for the pattern form. With `resume`, the count stops
+         at `limit` keys, and `resume` gets the first key not counted (copied into the context's
+         arena), or stays empty if the walk has no more: a skip then starts the walk there. */
+      std::optional<int64_t> TryCountByRank(const Indy::TIndexKey &from, const Indy::TIndexKey *to,
+                                            int64_t limit = std::numeric_limits<int64_t>::max(),
+                                            std::optional<Indy::TKey> *resume = nullptr);
 
       /* Count n rows against the budget at once, refusing exactly when charging them one at a
          time would have. */

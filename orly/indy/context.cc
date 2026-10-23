@@ -245,7 +245,9 @@ namespace {
 
 }  // namespace
 
-std::optional<int64_t> TContext::TryCountByRank(const Indy::TIndexKey &from, const Indy::TIndexKey *to) {
+std::optional<int64_t> TContext::TryCountByRank(const Indy::TIndexKey &from, const Indy::TIndexKey *to, int64_t limit,
+                                                std::optional<Indy::TKey> *resume) {
+  assert(limit >= 0);
   CheckViewsHeld();
   /* Ranks count a file's current keys, which are not the keys as of a version (#745). */
   if (At || !RankCounts || !IsRankable(to ? to->GetKey() : from.GetKey())) {
@@ -335,6 +337,15 @@ std::optional<int64_t> TContext::TryCountByRank(const Indy::TIndexKey &from, con
   };
   std::vector<size_t> holders;
   while (heap) {
+    if (count == limit) {
+      /* A skip has passed over all it was to. The walk starts at the next key in the merge. */
+      assert(resume);
+      size_t next_pos;
+      const Indy::TPresentWalker::TItem &next = heap.Peek(next_pos);
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      resume->emplace(Arena, state_alloc, Indy::TKey(next.Key, next.KeyArena));
+      break;
+    }
     size_t pos;
     const Indy::TPresentWalker::TItem top = heap.Pop(pos);
     TSource &source = sources[pos];
@@ -346,7 +357,8 @@ std::optional<int64_t> TContext::TryCountByRank(const Indy::TIndexKey &from, con
       if (!source.Counts) {
         source.Counts = source.Layer->GetTombstoneCounts(from.GetIndexId(), source.File->GetNumRanks());
       }
-      const auto [keys, tombstones] = source.File->SkipBelow(heap ? &heap.Peek(next_pos) : nullptr, *source.Counts);
+      const auto [keys, tombstones] = source.File->SkipBelow(heap ? &heap.Peek(next_pos) : nullptr, *source.Counts,
+                                                             static_cast<size_t>(limit - count));
       assert(tombstones <= keys);
       RowsCountedByRank += keys - tombstones;
       add_to_count(keys - tombstones);
@@ -586,9 +598,9 @@ void TContext::TPresentWalker::ApplyDeferredFold() {
 TContext::TKeyCursor::TKeyCursor(TContext *context, const Indy::TIndexKey &pattern)
     : Orly::TKeyCursor(context->Arena),
       Key(pattern),
-      Csr(context, context->RepoTree, Key),
       ContextMembership(this),
       Owner(context) {
+  context->CheckViewsHeld();
   ++(context->WalkerCount);
   ++(context->OpenCursorCount);
 }
@@ -597,9 +609,10 @@ TContext::TKeyCursor::TKeyCursor(TContext *context, const Indy::TIndexKey &from,
     : Orly::TKeyCursor(context->Arena),
       Key(from),
       To(to),
-      Csr(context, context->RepoTree, Key, To),
+      IsRange(true),
       ContextMembership(this),
       Owner(context) {
+  context->CheckViewsHeld();
   ++(context->WalkerCount);
   ++(context->OpenCursorCount);
 }
@@ -632,23 +645,67 @@ const Indy::TKey *TContext::TKeyCursor::operator->() const {
 TContext::TKeyCursor &TContext::TKeyCursor::operator++() {
   assert(Valid);
   Cached = false;
-  ++Csr;
+  ++GetCsr();
   ContextMembership.Remove();
   Refresh();
   return *this;
 }
 
+int64_t TContext::TKeyCursor::Skip(int64_t n) {
+  if (n <= 0 || !Valid) {
+    return 0;
+  }
+  Cached = false;
+  ContextMembership.Remove();
+  int64_t skipped = 0;
+  if (!Csr) {
+    /* The walk hasn't started, so it can start wherever the skip ends. */
+    std::optional<Indy::TKey> resume;
+    if (const auto counted = Owner->TryCountByRank(Key, IsRange ? &To : nullptr, n, &resume)) {
+      skipped = *counted;
+      if (!resume) {
+        /* The skip took every key. */
+        Valid = false;
+        return skipped;
+      }
+      assert(skipped == n);
+      const Indy::TIndexKey from(Key.GetIndexId(), *resume);
+      Csr.emplace(Owner, Owner->RepoTree, from, IsRange ? To : Key);
+      Refresh();
+      return skipped;
+    }
+  }
+  /* Step, building no key for the rows passed over. */
+  TPresentWalker &csr = GetCsr();
+  for (; skipped < n && csr; ++skipped) {
+    ++csr;
+  }
+  Refresh();
+  return skipped;
+}
+
+TContext::TPresentWalker &TContext::TKeyCursor::GetCsr() const {
+  if (!Csr) {
+    if (IsRange) {
+      Csr.emplace(Owner, Owner->RepoTree, Key, To);
+    } else {
+      Csr.emplace(Owner, Owner->RepoTree, Key);
+    }
+  }
+  return *Csr;
+}
+
 const TContext::TPresentWalker::TItem &TContext::TKeyCursor::GetVal() const noexcept {
   assert(Valid);
-  assert(Csr);
-  return *Csr;
+  assert(Csr && *Csr);
+  return **Csr;
 }
 
 void TContext::TKeyCursor::Refresh() const {
   if (Valid && !Cached) {
     Cached = true;
-    if (Csr) {
-      Item = Indy::TKey((*Csr).Key, (*Csr).KeyArena);
+    if (const TPresentWalker &csr = GetCsr()) {
+      Item = Indy::TKey((*csr).Key, (*csr).KeyArena);
       /* insert ourselves into the thread local key cursor collection */
       ContextMembership.Insert(&(KeyCursorCollector->KeyCursorCollection));
     } else {

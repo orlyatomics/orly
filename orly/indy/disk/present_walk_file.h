@@ -326,14 +326,32 @@ namespace Orly {
 
           /* Pass over the current key and every later one in the walk's range that orders before `bound` (every later one
              when `bound` is null), and return how many keys that was and how many of them were tombstones. `bound` must order
-             after the current key. The walk then stands on the first key not passed over, if any. */
-          std::pair<size_t, size_t> SkipBelow(const TItem *bound, const TTombstoneCounts &counts) {
+             after the current key. With `max_present`, stop sooner, just past the max_present-th key that isn't a tombstone,
+             so a skip passes over exactly as many live keys as it has left to skip. The walk then stands on the first key not
+             passed over, if any. */
+          std::pair<size_t, size_t> SkipBelow(const TItem *bound, const TTombstoneCounts &counts,
+                                              size_t max_present = static_cast<size_t>(-1)) {
             assert(Valid);
             assert(counts.GetNumKeys() == GetNumRanks());
+            const auto scan = [this](size_t begin, size_t limit) { return CountTombstones(begin, limit); };
             const size_t rank = GetRank();
             const size_t end = GetEndRank(rank);
-            const size_t target = bound ? LowerBound(*bound, rank + 1UL, end) : end;
-            const size_t tombstones = counts.Count(rank, target, [this](size_t begin, size_t limit) { return CountTombstones(begin, limit); });
+            size_t target = bound ? LowerBound(*bound, rank + 1UL, end) : end;
+            size_t tombstones = counts.Count(rank, target, scan);
+            if ((target - rank) - tombstones > max_present) {
+              /* Find the least rank with max_present live keys before it. Every key is at most one live key, so a stop
+                 short by d live keys is at least d ranks short; step up by the shortfall until there is none. */
+              target = rank + max_present;
+              for (;;) {
+                tombstones = counts.Count(rank, target, scan);
+                const size_t present = (target - rank) - tombstones;
+                assert(present <= max_present);
+                if (present == max_present) {
+                  break;
+                }
+                target += max_present - present;
+              }
+            }
             ResetHistory();
             if (target < end) {
               Stream.GoTo(IndexFile->GetByteOffsetOfKeyIndex() + (target * TData::KeyEntrySize));
@@ -997,8 +1015,9 @@ namespace Orly {
           File->NextKey();
         }
 
-        std::pair<size_t, size_t> SkipBelow(const TItem *bound, const TTombstoneCounts &counts) {
-          return File->SkipBelow(bound, counts);
+        std::pair<size_t, size_t> SkipBelow(const TItem *bound, const TTombstoneCounts &counts,
+                                            size_t max_present = static_cast<size_t>(-1)) {
+          return File->SkipBelow(bound, counts, max_present);
         }
 
         private:

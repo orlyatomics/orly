@@ -737,6 +737,74 @@ FIXTURE(RangeCountsByRankMatchTheWalk) {
           EXPECT_EQ(walked.first < 0, max_rows < expected);
         }
       }
+      /* A skip passes over the same keys by rank as by stepping, and the cursor then yields the same keys and values: a skip of
+         none, of a few keys or of a stretch across files with deletes in it, of every key, and past the end. Each charges the same
+         rows, and gives up at the same row under a budget. */ {
+        /* The keys and values after skipping `n`, the count Skip() returned, and the rows charged. */
+        struct TSkipped {
+          vector<pair<int64_t, int64_t>> Rest;
+          vector<int64_t> Vals;
+          int64_t Skipped = -1;
+          size_t Rows = 0UL;
+          bool TooLarge = false;
+          bool operator==(const TSkipped &) const = default;
+        };
+        size_t skipped_by_rank = 0UL;
+        const auto skip_then_walk = [&](const L0::TManager::TPtr<TRepo> &repo, const TQuery &query, int64_t n, bool by_rank,
+                                        size_t max_rows) {
+          TSuprena ctx_arena;
+          TContext context(repo, &ctx_arena);
+          context.SetRankCounts(by_rank);
+          if (max_rows) {
+            context.SetReadBudget(max_rows, 0, nullptr, 0);
+          }
+          const size_t before = context.GetRowsCountedByRank();
+          TSkipped out;
+          try {
+            unique_ptr<TContext::TKeyCursor> csr(query.To ? new TContext::TKeyCursor(&context, query.From, *query.To) : new TContext::TKeyCursor(&context, query.From));
+            out.Skipped = csr->Skip(n);
+            for (; *csr; ++*csr) {
+              const auto [g, k] = Sabot::AsNative<tuple<int64_t, int64_t>>(*Sabot::State::TAny::TWrapper((*csr)->GetCore().NewState((*csr)->GetArena(), state)));
+              out.Rest.emplace_back(g, k);
+              out.Vals.push_back(Sabot::AsNative<int64_t>(*Sabot::State::TAny::TWrapper(csr->GetVal().Op.NewState(csr->GetVal().OpArena, state))));
+            }
+          } catch (const Orly::Server::TReadTooLarge &) {
+            out.TooLarge = true;
+          }
+          out.Rows = context.GetRowsWalked();
+          skipped_by_rank += context.GetRowsCountedByRank() - before;
+          return out;
+        };
+        for (int i = 0; i < 150; ++i) {
+          const TQuery query = random_query();
+          for (const auto *repo : {&child, &root}) {
+            const TSkipped all = skip_then_walk(*repo, query, 0, false, 0UL);
+            EXPECT_EQ(all.Skipped, 0);
+            const int64_t total = static_cast<int64_t>(all.Rest.size());
+            const int64_t some = std::uniform_int_distribution<int64_t>(0L, total + 1L)(rng);
+            for (const int64_t n : {0L, 1L, some, total / 2L, total, total + 3L}) {
+              const TSkipped stepped = skip_then_walk(*repo, query, n, false, 0UL);
+              const TSkipped ranked = skip_then_walk(*repo, query, n, true, 0UL);
+              EXPECT_TRUE(ranked == stepped);
+              EXPECT_EQ(stepped.Skipped, std::min(n, total));
+              const size_t from = static_cast<size_t>(std::min(n, total));
+              EXPECT_TRUE((stepped.Rest == vector<pair<int64_t, int64_t>>(all.Rest.begin() + from, all.Rest.end())));
+              EXPECT_TRUE(stepped.Vals == vector<int64_t>(all.Vals.begin() + from, all.Vals.end()));
+            }
+            /* Under a budget, both give up at the same row, or neither does. */
+            const size_t max_rows = std::uniform_int_distribution<size_t>(1UL, static_cast<size_t>(total) + 2UL)(rng);
+            const TSkipped stepped = skip_then_walk(*repo, query, some, false, max_rows);
+            const TSkipped ranked = skip_then_walk(*repo, query, some, true, max_rows);
+            EXPECT_EQ(ranked.TooLarge, stepped.TooLarge);
+            EXPECT_EQ(ranked.Rows, stepped.Rows);
+            if (!stepped.TooLarge) {
+              EXPECT_TRUE(ranked == stepped);
+            }
+          }
+        }
+        /* Most of group 1's keys were passed over by rank. */
+        EXPECT_GT(skipped_by_rank, 10000UL);
+      }
       /* A context whose views were released refuses to count either way. */ {
         TSuprena ctx_arena;
         TContext context(child, &ctx_arena);
