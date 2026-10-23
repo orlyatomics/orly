@@ -22,6 +22,7 @@
 #include <orly/sabot/to_native.h>
 
 #include <algorithm>
+#include <array>
 
 using namespace std;
 using namespace Base;
@@ -59,7 +60,7 @@ namespace {
      decide at that member by type alone, whatever the values before it. Every key of the index
      agrees on how many members that is, so the keys it calls Lt are a head of the index's run and
      the ones it calls Gt a tail, and none of either can unify with the pattern. */
-  [[nodiscard]] Orly::Atom::TComparison ComparePatternPrefix(const TIndexKey &key, const TIndexKey &pattern) {
+  [[nodiscard]] Orly::Atom::TComparison ComparePatternPrefixBySabot(const TIndexKey &key, const TIndexKey &pattern) {
     if (key.GetIndexId() != pattern.GetIndexId()) {
       return key.GetIndexId() < pattern.GetIndexId() ? Orly::Atom::TComparison::Lt : Orly::Atom::TComparison::Gt;
     }
@@ -96,7 +97,74 @@ namespace {
     return Orly::Atom::TComparison::Eq;
   }
 
+  /* ComparePatternPrefixBySabot against one pattern, without the Sabot states, dynamic casts and type objects it builds for
+     every key. The pattern's members are copied out once; each key's are copied out per comparison and ordered core to core
+     while both are simple scalars or the pattern's is a free (TCore::TryQuickOrderPatternMember). A key or pattern of another
+     shape, or a member with no quick order, goes to Sabot, so the answer is always Sabot's. */
+  class TPatternPrefix {
+    public:
+
+    /* Patterns and keys with more members than this always go to Sabot. */
+    static constexpr size_t MaxElems = 8UL;
+
+    explicit TPatternPrefix(const TIndexKey &pattern)
+        : Pattern(pattern),
+          Quick(pattern.GetKey().GetCore().TryCopyTupleElems(pattern.GetKey().GetArena(), Elems.data(), MaxElems, Count)) {}
+
+    [[nodiscard]] Orly::Atom::TComparison Compare(const TIndexKey &key) const {
+      if (key.GetIndexId() != Pattern.GetIndexId()) {
+        return key.GetIndexId() < Pattern.GetIndexId() ? Orly::Atom::TComparison::Lt : Orly::Atom::TComparison::Gt;
+      }
+      if (Quick) {
+        std::array<Orly::Atom::TCore, MaxElems> key_elems;
+        size_t key_count = 0UL;
+        Orly::Atom::TCore::TArena *const key_arena = key.GetKey().GetArena();
+        if (key.GetKey().GetCore().TryCopyTupleElems(key_arena, key_elems.data(), MaxElems, key_count)) {
+          const size_t count = std::min(key_count, Count);
+          size_t elem_idx = 0UL;
+          for (; elem_idx < count; ++elem_idx) {
+            bool same_type = false;
+            Orly::Atom::TComparison comp = Orly::Atom::TComparison::Eq;
+            if (!key_elems[elem_idx].TryQuickOrderPatternMember(key_arena, Elems[elem_idx], Pattern.GetKey().GetArena(), same_type, comp)) {
+              break;
+            }
+            if (!same_type) {
+              return Orly::Atom::TComparison::Eq;
+            }
+            if (!Orly::Atom::IsEq(comp)) {
+              return comp;
+            }
+          }
+          if (elem_idx == count) {
+            return Orly::Atom::TComparison::Eq;
+          }
+        }
+      }
+      return ComparePatternPrefixBySabot(key, Pattern);
+    }
+
+    private:
+
+    const TIndexKey &Pattern;
+
+    /* The pattern's members, when Quick. */
+    std::array<Orly::Atom::TCore, MaxElems> Elems;
+
+    size_t Count = 0UL;
+
+    /* True when the pattern is a tuple of at most MaxElems members, copied into Elems. */
+    bool Quick;
+  };
+
 }  // namespace
+
+Orly::Atom::TComparison TMemoryLayer::ComparePatternPrefix(const TIndexKey &key, const TIndexKey &pattern) {
+  return TPatternPrefix(pattern).Compare(key);
+}
+
+Orly::Atom::TComparison TMemoryLayer::ComparePatternPrefixBySabot(const TIndexKey &key, const TIndexKey &pattern) {
+  return ::ComparePatternPrefixBySabot(key, pattern);
+}
 
 TMemoryLayer::TMemoryLayer(L0::TManager *manager)
     : TDataLayer(manager),
@@ -209,8 +277,9 @@ TMemoryLayer::TEntryCollection::TCursor TMemoryLayer::SeekRun(const TIndexKey &k
 }
 
 TMemoryLayer::TEntryCollection::TCursor TMemoryLayer::SeekPattern(const TIndexKey &pattern) const {
-  return SeekPast([&pattern](const TUpdate::TEntry &entry) {
-    return Atom::IsLt(ComparePatternPrefix(entry.GetIndexKey(), pattern));
+  const TPatternPrefix prefix(pattern);
+  return SeekPast([&prefix](const TUpdate::TEntry &entry) {
+    return Atom::IsLt(prefix.Compare(entry.GetIndexKey()));
   });
 }
 

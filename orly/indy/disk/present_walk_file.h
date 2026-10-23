@@ -232,7 +232,7 @@ namespace Orly {
           void Init(const TKey &from, std::optional<TSequenceNumber> at = std::nullopt) {
             SearchKind = Match;
             ResetHistory();
-            EndRank = NoRank;
+            ResetEnd();
             At = at;
             if (IndexFile) {
               From = from;
@@ -256,7 +256,7 @@ namespace Orly {
           void Init(const TKey &from, const TKey &to, std::optional<TSequenceNumber> at = std::nullopt) {
             SearchKind = Range;
             ResetHistory();
-            EndRank = NoRank;
+            ResetEnd();
             At = at;
             /* Walkers are pooled (TLoaderObj), so clear what a previous walk left behind: when neither search below finds a
                start, the walk must come up empty rather than resume wherever the last one stopped (#735). */
@@ -434,7 +434,7 @@ namespace Orly {
              it: a count ranks only a pattern of defined members followed by free ones, whose matches are one run of the index. */
           size_t GetEndRank(size_t rank) const {
             if (EndRank == NoRank) {
-              EndRank = FindEndRank(rank + 1UL);
+              EndRank = FindEndRank(std::max(rank + 1UL, InBound));
             }
             assert(EndRank > rank);
             return EndRank;
@@ -463,6 +463,46 @@ namespace Orly {
               }
             }
             return lo;
+          }
+
+          /* Forget where the last walk's range ended. Walkers are pooled (TLoaderObj), so every Init calls this. */
+          void ResetEnd() {
+            EndRank = NoRank;
+            InBound = 0UL;
+            EndStep = 1UL;
+          }
+
+          /* Learn whether the Range walk's range ends at or before `rank`, the current row's, where every rank below `rank` is
+             in it: probe one key a doubling stride ahead, and on finding one past the range halve back to where it ends. The
+             probes are the ones FindEndRank gallops through, made one at a time as the walk reaches them, so a walk that stops
+             after a few rows of a long range never pays to find the far end of it, and one that runs to
+             the end reads no more keys than FindEndRank would. */
+          void ExtendEnd(size_t rank) const {
+            assert(EndRank == NoRank && rank >= InBound);
+            const size_t num_ranks = GetNumRanks();
+            if (rank >= num_ranks) {
+              EndRank = num_ranks;
+              return;
+            }
+            const size_t probe = std::min(rank + EndStep - 1UL, num_ranks - 1UL);
+            if (Place(GetKeyAt(probe)) != TPlace::Past) {
+              InBound = probe + 1UL;
+              EndStep *= 2UL;
+              if (InBound == num_ranks) {
+                EndRank = num_ranks;
+              }
+              return;
+            }
+            size_t lo = rank, hi = probe;
+            while (lo < hi) {
+              const size_t mid = lo + ((hi - lo) / 2UL);
+              if (Place(GetKeyAt(mid)) == TPlace::Past) {
+                hi = mid;
+              } else {
+                lo = mid + 1UL;
+              }
+            }
+            EndRank = lo;
           }
 
           /* The first rank in [lo, hi) whose key does not order before `bound`, or hi. */
@@ -527,14 +567,14 @@ namespace Orly {
             HistCursor.reset();
             for (;Stream.GetOffset() < IndexFile->GetByteOffsetOfHistoryIndex();) {
               assert(Valid);
-              /* A Range walk finds where its range ends in this file once, by rank, rather than ordering every row's key
-                 against To (#1018). */
+              /* A Range walk finds where its range ends in this file by rank, rather than ordering every row's key against To
+                 (#1018), and only as far as the walk goes (ExtendEnd). */
               if (SearchKind == Range) {
                 const size_t offset = Stream.GetOffset() - IndexFile->GetByteOffsetOfKeyIndex();
                 assert(offset % TData::KeyEntrySize == 0UL);
                 const size_t rank = offset / TData::KeyEntrySize;
-                if (EndRank == NoRank) {
-                  EndRank = FindEndRank(rank);
+                if (EndRank == NoRank && rank >= InBound) {
+                  ExtendEnd(rank);
                 }
                 if (rank >= EndRank) {
                   Cached = true;
@@ -700,8 +740,13 @@ namespace Orly {
           mutable std::unique_ptr<typename TMyReadFile::TIndexFile::THistoryKeyCursor> HistCursor;
           mutable size_t HistRemaining = 0UL;
 
-          /* The rank of the first key past the walk's range, once a count has needed it; NoRank until then (#749). */
+          /* The rank of the first key past the walk's range, once a count or a Range walk has needed it; NoRank until then (#749). */
           mutable size_t EndRank = NoRank;
+
+          /* While EndRank is NoRank: every rank below InBound is known to be in the walk's range, and ExtendEnd's next probe
+             reaches EndStep keys ahead. */
+          mutable size_t InBound = 0UL;
+          mutable size_t EndStep = 1UL;
 
           /* When set, the walk reads the file as of this sequence number: each key yields its newest entry at or below
              it, and keys with none are passed over (#745). */

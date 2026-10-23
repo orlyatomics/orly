@@ -557,6 +557,80 @@ FIXTURE(PatternSeek) {
   EXPECT_TRUE(checked >= idxs.size() * (1 + strs.size() * 4));
 }
 
+/* SeekPattern orders keys against a pattern core to core where it can, and through Sabot otherwise; the two must always agree.
+   Order every key of a layer -- (string, int, bool, desc int, double) over two indexes, strings short and too long to sit
+   directly in a core -- against patterns bound on none, some or all of their members, with values the layer holds and ones
+   it does not, members of a type the keys' are not, and fewer or more members than the keys. */
+FIXTURE(PatternPrefixFastPathAgreesWithSabot) {
+  using D = TDesc<int64_t>;
+  const string long_str = "a string well past direct storage in a core, which is held in the arena";
+  const vector<string> strs = { "", "b", "d", long_str };
+  const vector<int64_t> ints = { -3, 0, 7 };
+  TMemoryLayer mem_layer(nullptr);
+  const vector<Base::TUuid> idxs = { Base::TUuid(Base::TUuid::Twister), Base::TUuid(Base::TUuid::Twister) };
+  TSuprena arena;
+  void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+  TSequenceNumber seq_num = 0UL;
+  for (const Base::TUuid &idx : idxs) {
+    for (const string &str : strs) {
+      for (int64_t i : ints) {
+        for (bool b : {false, true}) {
+          Insert(mem_layer, ++seq_num, idx, int64_t(0), str, i, b, D(i), double(i) / 2.0);
+        }
+      }
+    }
+  }
+  const Native::TFree<string> free_str;
+  const Native::TFree<int64_t> free_int;
+  const Native::TFree<bool> free_bool;
+  const Native::TFree<D> free_desc;
+  const Native::TFree<double> free_double;
+  const vector<string> pattern_strs = { "", "a", "b", "c", long_str, long_str + "!" };
+  const vector<int64_t> pattern_ints = { -4, -3, 0, 5, 7, 9 };
+  vector<TIndexKey> patterns;
+  for (const Base::TUuid &idx : idxs) {
+    auto add = [&](const auto &tuple) {
+      patterns.emplace_back(idx, TKey(tuple, &arena, state_alloc));
+    };
+    add(make_tuple(free_str, free_int, free_bool, free_desc, free_double));
+    add(make_tuple(int64_t(1), free_int));               // a first member of another type
+    add(make_tuple(int32_t(1), free_int));               // another integer type
+    add(make_tuple(string("b")));                        // fewer members
+    add(make_tuple(string("b"), int64_t(0), true, D(0), 0.0, int64_t(1)));  // more members
+    for (const string &str : pattern_strs) {
+      add(make_tuple(str, free_int, free_bool, free_desc, free_double));
+      add(make_tuple(str, int32_t(0), free_bool, free_desc, free_double));
+      for (int64_t i : pattern_ints) {
+        add(make_tuple(str, i, free_bool, free_desc, free_double));
+        for (bool b : {false, true}) {
+          add(make_tuple(str, i, b, free_desc, free_double));
+          add(make_tuple(str, i, b, D(i), free_double));
+          add(make_tuple(str, i, b, D(i), double(i) / 2.0));
+          add(make_tuple(str, i, b, D(-i), double(i)));
+        }
+      }
+    }
+  }
+  size_t compared = 0UL, lt = 0UL, gt = 0UL, disagree = 0UL;
+  for (const TIndexKey &pattern : patterns) {
+    for (TMemoryLayer::TEntryCollection::TCursor csr(mem_layer.GetEntryCollection()); csr; ++csr) {
+      const Atom::TComparison fast = TMemoryLayer::ComparePatternPrefix(csr->GetIndexKey(), pattern);
+      const Atom::TComparison slow = TMemoryLayer::ComparePatternPrefixBySabot(csr->GetIndexKey(), pattern);
+      if (fast != slow) {
+        ++disagree;
+      }
+      lt += Atom::IsLt(slow) ? 1UL : 0UL;
+      gt += Atom::IsGt(slow) ? 1UL : 0UL;
+      ++compared;
+    }
+  }
+  EXPECT_EQ(disagree, 0UL);
+  /* Not vacuous: plenty of keys sort before and after the patterns, and some can't be told apart from them. */
+  EXPECT_GT(lt, compared / 10UL);
+  EXPECT_GT(gt, compared / 10UL);
+  EXPECT_GT(compared - lt - gt, 100UL);
+}
+
 /* An update holding one entry per (index id, key) in keys, each with op val, at seq_num. */
 static TUpdate *MakeUpdate(TSequenceNumber seq_num, const vector<pair<Base::TUuid, int64_t>> &keys, int64_t val) {
   Atom::TSuprena arena;

@@ -19,6 +19,9 @@
 #include <orly/indy/disk/present_walk_file.h>
 
 #include <memory>
+#include <random>
+#include <tuple>
+#include <vector>
 
 #include <base/scheduler.h>
 #include <orly/indy/disk/data_file.h>
@@ -27,6 +30,7 @@
 #include <orly/indy/disk/read_file.h>
 #include <orly/indy/disk/sim/mem_engine.h>
 #include <orly/indy/fiber/fiber_test_runner.h>
+#include <orly/sabot/to_native.h>
 
 #include <base/test/kit.h>
 
@@ -704,6 +708,119 @@ FIXTURE(KeyFilter) {
       EXPECT_TRUE(MakeFilter(engine, data_file_id, data_gen_id, int_int_idx, 3UL) == nullptr);
       EXPECT_TRUE(MakeFilter(engine, data_file_id, data_gen_id, int_int_idx, 2UL, 1UL) == nullptr);
     }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+    GracefullShutdown();
+  });
+}
+
+/* A pooled walker learns where its range ends only as far as it walks, so the next walk to take it from the pool must not
+   inherit what the last one learned. Walk random ranges over one file with one pooled walker, stopping each walk after a
+   random number of rows, and check every walk surfaces exactly the keys of its range, in order, up to where it stopped.
+   Then release the file, as a merge does once it replaces it, and check a walk of the file that replaced it, and of the
+   released one, builds a fresh walker and reads right. */
+FIXTURE(PooledRangeWalkerReuse) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    TRAIITest required_thread_locals;
+    const TScheduler::TPolicy scheduler_policy(10, 10, milliseconds(10));
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+
+    Sim::TMemEngine mem_engine(&scheduler,
+                               256 /* disk space: 256MB */,
+                               256,
+                               16384 /* page cache slots: 64MB */,
+                               1 /* num page lru */,
+                               1024 /* block cache slots: 64MB */,
+                               1 /* num block lru */);
+    TEngine *engine = mem_engine.GetEngine();
+
+    TSuprena arena;
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    void *key_state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    TSequenceNumber seq_num = 0U;
+    const Base::TUuid int_idx(Base::TUuid::Twister);
+    const Base::TUuid old_file_id(TUuid::TimeAndMAC), new_file_id(TUuid::TimeAndMAC);
+    const size_t old_gen_id = 1UL, new_gen_id = 2UL;
+    /* The released file holds the even keys 0 through 198; the one that replaces it, the multiples of 3 from 0 through 297. */
+    std::vector<int64_t> old_keys, new_keys;
+    for (int64_t i = 0; i < 200; i += 2) {
+      old_keys.push_back(i);
+    }
+    for (int64_t i = 0; i < 300; i += 3) {
+      new_keys.push_back(i);
+    }
+    auto write_file = [&](const Base::TUuid &file_id, size_t gen_id, const std::vector<int64_t> &keys) {
+      TMockMem mem_layer;
+      for (int64_t key : keys) {
+        Insert(mem_layer, ++seq_num, int_idx, static_cast<int64_t>(rand()), key);
+      }
+      TDataFile data_file(engine, TVolume::TDesc::Fast, &mem_layer, file_id, gen_id, 20UL, 0U, RealTime);
+    };
+    write_file(old_file_id, old_gen_id, old_keys);
+    Disk::TLocalWalkerCache *cache = Disk::TLocalWalkerCache::Cache.Get();
+    cache->SetTrimInterval(hours(24));
+    /* Walk [from, to] of a file, stopping after `stop` rows, and check what it surfaced against `keys`. */
+    auto check_walk = [&](const Base::TUuid &file_id, size_t gen_id, const std::vector<int64_t> &keys, int64_t from, int64_t to, size_t stop) {
+      std::vector<int64_t> want;
+      for (int64_t key : keys) {
+        if (key >= from && key <= to && want.size() < stop) {
+          want.push_back(key);
+        }
+      }
+      std::vector<int64_t> got;
+      TPresentWalkFileWrapper walker(engine, file_id, gen_id, int_idx, TKey(make_tuple(from), &arena, state_alloc), TKey(make_tuple(to), &arena, state_alloc));
+      for (; walker && got.size() < stop; ++walker) {
+        got.push_back(std::get<0>(Sabot::AsNative<std::tuple<int64_t>>(*Sabot::State::TAny::TWrapper((*walker).Key.NewState((*walker).KeyArena, key_state_alloc)))));
+      }
+      if (got.size() < stop) {
+        EXPECT_FALSE(walker);
+      }
+      EXPECT_TRUE(got == want);
+      return got == want;
+    };
+    /* A short walk of a long range, then walks of ranges that end before, at and after where it stopped. */
+    EXPECT_TRUE(check_walk(old_file_id, old_gen_id, old_keys, 0, 198, 3));
+    EXPECT_EQ(cache->GetNumPooled(), 1UL);
+    EXPECT_TRUE(check_walk(old_file_id, old_gen_id, old_keys, 0, 2, 1000));
+    EXPECT_TRUE(check_walk(old_file_id, old_gen_id, old_keys, 0, 5, 1000));
+    EXPECT_TRUE(check_walk(old_file_id, old_gen_id, old_keys, 100, 120, 1000));
+    EXPECT_TRUE(check_walk(old_file_id, old_gen_id, old_keys, -1, 1000, 1000));
+    EXPECT_TRUE(check_walk(old_file_id, old_gen_id, old_keys, 50, 51, 1000));
+    EXPECT_TRUE(check_walk(old_file_id, old_gen_id, old_keys, 199, 199, 1000));
+    EXPECT_TRUE(check_walk(old_file_id, old_gen_id, old_keys, -5, -1, 1000));
+    EXPECT_TRUE(check_walk(old_file_id, old_gen_id, old_keys, 198, 198, 1000));
+    /* Random ranges and stops, all through the one pooled walker. */ {
+      std::mt19937_64 rng(1018);
+      size_t bad = 0UL;
+      for (size_t walk = 0UL; walk < 400UL; ++walk) {
+        const int64_t from = static_cast<int64_t>(rng() % 206UL) - 3;
+        const int64_t to = from + static_cast<int64_t>(rng() % 60UL);
+        const size_t stop = rng() % 4UL ? rng() % 8UL : 1000UL;
+        if (!check_walk(old_file_id, old_gen_id, old_keys, from, to, stop)) {
+          ++bad;
+        }
+      }
+      EXPECT_EQ(bad, 0UL);
+    }
+    EXPECT_EQ(cache->GetNumPooled(), 1UL);
+    /* The file is merged away: the walkers cache lets its walkers go, and the file that replaced it gets walkers of its own. */
+    write_file(new_file_id, new_gen_id, new_keys);
+    Disk::TLocalWalkerCache::Cache->Clear(old_file_id, old_gen_id);
+    TRAIITest::TLocalReadFileCache::Cache->Clear(old_file_id, old_gen_id);
+    EXPECT_EQ(cache->GetNumPooled(), 0UL);
+    EXPECT_TRUE(check_walk(new_file_id, new_gen_id, new_keys, 0, 297, 3));
+    EXPECT_TRUE(check_walk(new_file_id, new_gen_id, new_keys, 10, 40, 1000));
+    EXPECT_TRUE(check_walk(new_file_id, new_gen_id, new_keys, -1, 1000, 1000));
+    EXPECT_EQ(cache->GetNumPooled(), 1UL);
+    /* A reader still holding the released file's generation builds a fresh walker for it, which reads it right. */
+    EXPECT_TRUE(check_walk(old_file_id, old_gen_id, old_keys, 7, 31, 1000));
+    EXPECT_EQ(cache->GetNumPooled(), 2UL);
+    Disk::TLocalWalkerCache::Cache->Clear(old_file_id, old_gen_id);
+    Disk::TLocalWalkerCache::Cache->Clear(new_file_id, new_gen_id);
+    TRAIITest::TLocalReadFileCache::Cache->Clear(old_file_id, old_gen_id);
+    TRAIITest::TLocalReadFileCache::Cache->Clear(new_file_id, new_gen_id);
     std::lock_guard<std::mutex> lock(mut);
     fin = true;
     cond.notify_one();

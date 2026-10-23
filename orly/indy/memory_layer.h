@@ -115,6 +115,12 @@ namespace Orly {
          entry it lands on need not unify -- the caller still matches. */
       [[nodiscard]] TEntryCollection::TCursor SeekPattern(const TIndexKey &pattern) const;
 
+      /* Where key sorts relative to the keys that unify with pattern, in level-0 order: Lt if before all of them, Gt if after
+         all of them, Eq if it can't say (see memory_layer.cc). Orders simple members core to core and asks Sabot about the
+         rest; ComparePatternPrefixBySabot always asks Sabot, and the two must agree. */
+      [[nodiscard]] static Atom::TComparison ComparePatternPrefix(const TIndexKey &key, const TIndexKey &pattern);
+      [[nodiscard]] static Atom::TComparison ComparePatternPrefixBySabot(const TIndexKey &key, const TIndexKey &pattern);
+
       [[nodiscard]] inline TUpdateCollection *GetUpdateCollection() const noexcept;
 
       [[nodiscard]] inline bool IsEmpty() const noexcept;
