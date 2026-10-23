@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <memory>
 #include <optional>
 
 #include <base/class_traits.h>
@@ -30,6 +31,7 @@
 #include <base/uuid.h>
 #include <base/inv_con/unordered_list.h>
 #include <base/inv_con/unordered_multimap.h>
+#include <orly/indy/disk/key_filter.h>
 #include <orly/indy/disk/util/engine.h>
 #include <orly/indy/disk/utilization_reporter.h>
 #include <orly/indy/fiber/fiber.h>
@@ -637,6 +639,10 @@ namespace Orly {
                                                                              std::optional<TSequenceNumber> at = std::nullopt) const;
 
           virtual std::unique_ptr<Indy::TUpdateWalker> NewUpdateWalkerFile(size_t gen_id, TSequenceNumber from) const;
+
+          /* A filter that rules out keys file gen_id cannot hold in the index: those whose num_defined defined members
+             hash to a value its hash table for that many has no entry for. Null when the file may hold any such key. */
+          virtual std::unique_ptr<const Disk::TKeyFilter> MakeKeyFilter(size_t gen_id, const Base::TUuid &index_id, size_t num_defined) const;
 
           inline void EnqueueMergeMem();
 

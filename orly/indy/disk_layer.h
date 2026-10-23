@@ -16,7 +16,9 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
+#include <cstdint>
 #include <cassert>
 #include <memory>
 #include <mutex>
@@ -26,6 +28,7 @@
 #include <base/class_traits.h>
 #include <base/inv_con/ordered_list.h>
 #include <base/uuid.h>
+#include <orly/indy/disk/key_filter.h>
 #include <orly/indy/disk/tombstone_counts.h>
 #include <orly/indy/manager_base.h>
 #include <orly/indy/update.h>
@@ -81,6 +84,19 @@ namespace Orly {
          life (#749). Reads nothing from disk: the counts fill in as counts read the file. */
       [[nodiscard]] std::shared_ptr<const Disk::TTombstoneCounts> GetTombstoneCounts(const Base::TUuid &index_id, size_t num_keys) const;
 
+      /* False when this file holds no key in the index whose first num_defined members hash to `hash` (TKey::GetHash of a
+         key, or of a pattern whose free members trail num_defined defined ones), so a read for such a key or pattern can
+         pass over the file without building a walker for it. A walker would find nothing there: its first step is
+         FindInHash in the same table. True when the file may hold one.
+
+         The first call for an index and a num_defined reads that hash table once, with no lock held, and keeps a filter
+         over it (Disk::TKeyFilter, 1.5 bytes per entry) for the file's life. Calls that come while it is being made, or
+         for more than MaxKeyFilters pairs, or for a table bigger than TSafeRepo::MaxKeyFilterSlots, say true. */
+      [[nodiscard]] bool MayContain(const Base::TUuid &index_id, size_t num_defined, uint64_t hash) const;
+
+      /* The (index, num_defined) pairs one file keeps filters for. */
+      static constexpr size_t MaxKeyFilters = 8UL;
+
       private:
 
       /* The tombstone counts by index. Made on first use, so a file no count passes over pays
@@ -91,6 +107,22 @@ namespace Orly {
       };
 
       mutable std::atomic<TTombstoneCache *> TombstoneCache = nullptr;
+
+      /* The filters for MayContain. Made on first use, so a file no read checks pays one pointer for it. An entry is
+         claimed under Mutex and published by NumEntries; its filter is made after, with no lock held, and published by
+         Ready. A null filter that is ready means the file may hold anything. */
+      struct TKeyFilterCache {
+        struct TEntry {
+          Base::TUuid IndexId;
+          size_t NumDefined = 0UL;
+          std::unique_ptr<const Disk::TKeyFilter> Filter;
+          std::atomic<bool> Ready = false;
+        };
+        std::mutex Mutex;
+        std::atomic<size_t> NumEntries = 0UL;
+        std::array<TEntry, MaxKeyFilters> Entries;
+      };
+      mutable std::atomic<TKeyFilterCache *> KeyFilterCache = nullptr;
 
       L0::TManager::TRepo *Repo;
 

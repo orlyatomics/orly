@@ -1953,10 +1953,11 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
     if (From.GetKey().GetArena()) {
       From.GetKey().GetHash();
     }
+    const TLayerSkip skip = TLayerSkip::ForRange(From, To);
     size_t pos = 0UL;
     for (TMapping::TEntryCollection::TCursor mapping_csr(View->GetMapping()->GetEntryCollection()); mapping_csr; ++mapping_csr) {
       const TDataLayer *layer = mapping_csr->GetLayer();
-      if (!Reads(layer)) {
+      if (!Reads(layer) || skip.Skips(layer)) {
         continue;
       }
       /* Reading at a version (#745), a disk file seeks each key's entry as of the version; the window filter drops
@@ -2008,10 +2009,11 @@ TRepo::TPresentWalker::TPresentWalker(const unique_ptr<TView> &view,
        here instead, so an empty frame pool slows a read down rather than
        failing it (#762). Every started task is waited for before anything
        unwinds: the preps point into this object and this stack frame. */
+    const TLayerSkip skip = TLayerSkip::ForMatch(From);
     vector<TDataLayer *> layers;
     layers.reserve(View->GetNumEntries());
     for (TMapping::TEntryCollection::TCursor mapping_csr(View->GetMapping()->GetEntryCollection()); mapping_csr; ++mapping_csr) {
-      if (Reads(mapping_csr->GetLayer())) {
+      if (Reads(mapping_csr->GetLayer()) && !skip.Skips(mapping_csr->GetLayer())) {
         layers.push_back(mapping_csr->GetLayer());
       }
     }
@@ -2072,6 +2074,62 @@ void TRepo::TPresentWalker::BuildLayerWalkers(const vector<TDataLayer *> &layers
         ? static_cast<const TDiskLayer *>(layers[i])->NewPresentWalkerAt(From, *View->GetAt())
         : layers[i]->NewPresentWalker(From, ExactPoint);
   }
+}
+
+TRepo::TPresentWalker::TLayerSkip TRepo::TPresentWalker::TLayerSkip::ForMatch(const TIndexKey &key) {
+  TLayerSkip skip;
+  if (key.GetKey().GetArena()) {
+    skip.IndexId = key.GetIndexId();
+    skip.NumDefined = key.GetKey().GetNumDefined();
+    if (skip.NumDefined) {
+      skip.Hash = key.GetKey().GetHash();
+    }
+  }
+  return skip;
+}
+
+TRepo::TPresentWalker::TLayerSkip TRepo::TPresentWalker::TLayerSkip::ForRange(const TIndexKey &from, const TIndexKey &to) {
+  /* A file's walk for the range yields keys from `from` on that order at or before `to` or unify with it (TPresentWalkFile
+     Place()). When `from` has `to`'s defined members, k of them, as its first k, every such key does too: one that differs
+     from them first at some member orders after `from` only by being greater there, and so orders after `to` (whose
+     member there is defined) and doesn't unify with it. So a file with no key of that k-prefix yields nothing. */
+  const TKey &from_key = from.GetKey();
+  const TKey &to_key = to.GetKey();
+  if (!from_key.GetArena() || !to_key.GetArena()) {
+    return {};
+  }
+  const size_t num_defined = to_key.GetNumDefined();
+  if (!num_defined || from_key.GetNumDefined() < num_defined ||
+      to_key.GetCore().PrefixMatch(to_key.GetArena(), from_key.GetCore(), from_key.GetArena()) != Sabot::TMatchResult::Unifies) {
+    return {};
+  }
+  /* `from`'s first num_defined members, hashed the way a data file hashes the prefixes it keeps (TIndexFile::PushKey). A
+     defined member of `to` with a free nested in it unifies with values other than `from`'s, so such a range is not
+     confined to `from`'s prefix; its hash differs from the prefix's, and that is how it is left out. */
+  const std::optional<uint32_t> from_count = from_key.GetCore().TryGetElemCount();
+  if (!from_count) {
+    return {};
+  }
+  Atom::TCore prefix_core = from_key.GetCore();
+  for (size_t count = *from_count; count > num_defined; --count) {
+    if (!prefix_core.TryTruncateTuple()) {
+      return {};
+    }
+  }
+  const size_t prefix_hash = TKey(prefix_core, from_key.GetArena()).GetHash();
+  if (prefix_hash != to_key.GetHash()) {
+    return {};
+  }
+  TLayerSkip skip;
+  skip.IndexId = to.GetIndexId();
+  skip.NumDefined = num_defined;
+  skip.Hash = prefix_hash;
+  return skip;
+}
+
+bool TRepo::TPresentWalker::TLayerSkip::Skips(const TDataLayer *layer) const {
+  return NumDefined && layer->GetKind() == TDataLayer::Disk &&
+      !static_cast<const TDiskLayer *>(layer)->MayContain(IndexId, NumDefined, Hash);
 }
 
 bool TRepo::TPresentWalker::Reads(const TDataLayer *layer) const noexcept {
@@ -3095,6 +3153,12 @@ std::unique_ptr<Orly::Indy::TPresentWalker> TSafeRepo::NewPresentWalkerFile(size
                                                                             std::optional<TSequenceNumber> at) const {
   return make_unique<Disk::TPresentWalkFileWrapper>(
       Manager->GetEngine(), GetId(), gen_id, index_key.GetIndexId(), index_key.GetKey(), at);
+}
+
+std::unique_ptr<const Disk::TKeyFilter> TSafeRepo::MakeKeyFilter(size_t gen_id, const TUuid &index_id, size_t num_defined) const {
+  std::unique_ptr<Disk::TLocalWalkerCache::TPresentWalkFile, Disk::TLocalWalkerCache::TPresentWalkFile::TDeleter> file(
+      Disk::TLocalWalkerCache::Cache->Get(Manager->GetEngine(), GetId(), gen_id, index_id));
+  return file->MakeKeyFilter(num_defined, MaxKeyFilterSlots);
 }
 
 std::unique_ptr<Orly::Indy::TUpdateWalker> TSafeRepo::NewUpdateWalkerFile(size_t gen_id, TSequenceNumber from) const {

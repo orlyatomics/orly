@@ -1002,6 +1002,24 @@ namespace Orly {
            cannot contribute and is passed over (#745). */
         [[nodiscard]] bool Reads(const TDataLayer *layer) const noexcept;
 
+        /* Which disk layers a walk can pass over without building a sub-walker: those whose filter (TDiskLayer::MayContain)
+           rules out every key the walk could yield there. NumDefined is 0 when the walk can't rule any out. */
+        struct TLayerSkip {
+          Base::TUuid IndexId;
+          size_t NumDefined = 0UL;
+          uint64_t Hash = 0UL;
+
+          /* A walk for one key, or for a pattern whose free members trail: a file yields something only if it holds the
+             key's prefix of its defined members. */
+          [[nodiscard]] static TLayerSkip ForMatch(const TIndexKey &key);
+
+          /* A walk from a full key to a key or pattern. It skips only when every key the range can hold shares `to`'s
+             prefix of its defined members. */
+          [[nodiscard]] static TLayerSkip ForRange(const TIndexKey &from, const TIndexKey &to);
+
+          [[nodiscard]] bool Skips(const TDataLayer *layer) const;
+        };
+
         /* A fiber task that builds some layers' sub-walkers (see
            BuildLayerWalkers) on a frame from the local frame pool, and signals
            the shared TSync barrier on completion -- lets the single-key ctor
@@ -1527,6 +1545,11 @@ namespace Orly {
 
       /* Open an update-walker over a single on-disk generation file. */
       std::unique_ptr<Orly::Indy::TUpdateWalker> NewUpdateWalkerFile(size_t /*gen_id*/, TSequenceNumber /*from*/) const override;
+
+      /* See TManager::TRepo. Files with more hash slots than this get no filter, which bounds a filter at about 380 KB. */
+      static constexpr size_t MaxKeyFilterSlots = 1UL << 18;
+
+      std::unique_ptr<const Disk::TKeyFilter> MakeKeyFilter(size_t gen_id, const Base::TUuid &index_id, size_t num_defined) const override;
 
       /* The monotonic generation-id counter (seeded from the highest existing
          file generation at construction). */

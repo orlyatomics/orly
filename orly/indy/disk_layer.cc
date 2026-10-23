@@ -20,6 +20,8 @@
 
 #include <syslog.h>
 
+#include <optional>
+
 #include <orly/indy/memory_layer.h>
 
 using namespace std;
@@ -46,6 +48,7 @@ TDiskLayer::TDiskLayer(L0::TManager *manager,
 
 TDiskLayer::~TDiskLayer() {
   delete TombstoneCache.load(memory_order_acquire);
+  delete KeyFilterCache.load(memory_order_acquire);
   if (GetMarkedForDelete()) {
     assert(Repo->IsSafeRepo());
     try {
@@ -94,6 +97,61 @@ shared_ptr<const Disk::TTombstoneCounts> TDiskLayer::GetTombstoneCounts(const TU
   }
   cache->ByIndex.emplace_back(index_id, make_shared<const Disk::TTombstoneCounts>(num_keys));
   return cache->ByIndex.back().second;
+}
+
+bool TDiskLayer::MayContain(const TUuid &index_id, size_t num_defined, uint64_t hash) const {
+  if (num_defined == 0UL) {
+    return true;
+  }
+  TKeyFilterCache *cache = KeyFilterCache.load(memory_order_acquire);
+  if (!cache) {
+    auto made = make_unique<TKeyFilterCache>();
+    if (KeyFilterCache.compare_exchange_strong(cache, made.get(), memory_order_acq_rel)) {
+      cache = made.release();
+    }
+  }
+  const auto try_entry = [&](const TKeyFilterCache::TEntry &entry) -> optional<bool> {
+    if (entry.NumDefined != num_defined || entry.IndexId != index_id) {
+      return nullopt;
+    }
+    if (!entry.Ready.load(memory_order_acquire)) {
+      return true;
+    }
+    return !entry.Filter || entry.Filter->MayContain(hash);
+  };
+  const size_t num_entries = cache->NumEntries.load(memory_order_acquire);
+  for (size_t i = 0; i < num_entries; ++i) {
+    if (const optional<bool> answer = try_entry(cache->Entries[i])) {
+      return *answer;
+    }
+  }
+  TKeyFilterCache::TEntry *mine = nullptr;
+  {
+    /* Held only to claim an entry; the filter is made after it is released, since making it reads the file. */
+    lock_guard<mutex> lock(cache->Mutex);
+    const size_t now = cache->NumEntries.load(memory_order_relaxed);
+    for (size_t i = num_entries; i < now; ++i) {
+      if (const optional<bool> answer = try_entry(cache->Entries[i])) {
+        return *answer;
+      }
+    }
+    if (now == MaxKeyFilters) {
+      return true;
+    }
+    mine = &cache->Entries[now];
+    mine->IndexId = index_id;
+    mine->NumDefined = num_defined;
+    cache->NumEntries.store(now + 1UL, memory_order_release);
+  }
+  try {
+    mine->Filter = Repo->MakeKeyFilter(GenId, index_id, num_defined);
+  } catch (...) {
+    /* Leave the entry saying "may hold anything" and fail this read as building its walker would have. */
+    mine->Ready.store(true, memory_order_release);
+    throw;
+  }
+  mine->Ready.store(true, memory_order_release);
+  return !mine->Filter || mine->Filter->MayContain(hash);
 }
 
 unique_ptr<TPresentWalker> TDiskLayer::NewPresentWalker(const TIndexKey &from,
