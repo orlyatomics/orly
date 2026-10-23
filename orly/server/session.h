@@ -221,6 +221,12 @@ namespace Orly {
             Switcher.emplace(server->FastRunnerVec[Index].get());
           }
 
+          /* Take the statement off its fast runner's load while it runs elsewhere: a write
+             committing on a slow runner (TEditSwitch). Pacing, if it weighs again, charges anew. */
+          void Lighten() noexcept {
+            Lease.Release();
+          }
+
           private:
 
           /* The hooks TReadQuantum paces with. */
@@ -242,12 +248,6 @@ namespace Orly {
             /* Slow, so that the frames handed to this runner since its last lap get in first:
                a plain Yield() would requeue us ahead of them (#584). */
             Indy::Fiber::YieldSlow();
-          }
-
-          /* Take the statement off its fast runner's load while it runs elsewhere: a write
-             committing on a slow runner (TEditSwitch). Pacing, if it weighs again, charges anew. */
-          void Lighten() noexcept {
-            Lease.Release();
           }
 
           void Weigh(size_t more) noexcept {
