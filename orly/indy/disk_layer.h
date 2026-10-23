@@ -91,11 +91,17 @@ namespace Orly {
 
          The first call for an index and a num_defined reads that hash table once, with no lock held, and keeps a filter
          over it (Disk::TKeyFilter, 1.5 bytes per entry) for the file's life. Calls that come while it is being made, or
-         for more than MaxKeyFilters pairs, or for a table bigger than TSafeRepo::MaxKeyFilterSlots, say true. */
+         for more than MaxKeyFilters pairs, or for a table bigger than TSafeRepo::MaxKeyFilterSlots, or once the file's
+         filters take MaxKeyFilterBytes, say true. Once the pairs are all claimed, a call for another takes no lock. */
       [[nodiscard]] bool MayContain(const Base::TUuid &index_id, size_t num_defined, uint64_t hash) const;
 
-      /* The (index, num_defined) pairs one file keeps filters for. */
-      static constexpr size_t MaxKeyFilters = 8UL;
+      /* The (index, num_defined) pairs one file keeps filters for. A read checks each claimed pair until it finds its own,
+         so this also bounds what a read pays per file. */
+      static constexpr size_t MaxKeyFilters = 32UL;
+
+      /* The bytes one file's filters may hold between them. A filter that would take the total past this is dropped, and
+         its pair says true from then on. */
+      static constexpr size_t MaxKeyFilterBytes = 1UL << 20;
 
       private:
 
@@ -120,6 +126,7 @@ namespace Orly {
         };
         std::mutex Mutex;
         std::atomic<size_t> NumEntries = 0UL;
+        std::atomic<size_t> NumBytes = 0UL;
         std::array<TEntry, MaxKeyFilters> Entries;
       };
       mutable std::atomic<TKeyFilterCache *> KeyFilterCache = nullptr;

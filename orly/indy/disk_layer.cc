@@ -125,6 +125,9 @@ bool TDiskLayer::MayContain(const TUuid &index_id, size_t num_defined, uint64_t 
       return *answer;
     }
   }
+  if (num_entries == MaxKeyFilters) {
+    return true;
+  }
   TKeyFilterCache::TEntry *mine = nullptr;
   {
     /* Held only to claim an entry; the filter is made after it is released, since making it reads the file. */
@@ -144,7 +147,15 @@ bool TDiskLayer::MayContain(const TUuid &index_id, size_t num_defined, uint64_t 
     cache->NumEntries.store(now + 1UL, memory_order_release);
   }
   try {
-    mine->Filter = Repo->MakeKeyFilter(GenId, index_id, num_defined);
+    unique_ptr<const Disk::TKeyFilter> filter = Repo->MakeKeyFilter(GenId, index_id, num_defined);
+    if (filter) {
+      const size_t num_bytes = filter->GetNumBytes();
+      if (cache->NumBytes.fetch_add(num_bytes, memory_order_relaxed) + num_bytes > MaxKeyFilterBytes) {
+        cache->NumBytes.fetch_sub(num_bytes, memory_order_relaxed);
+        filter.reset();
+      }
+    }
+    mine->Filter = std::move(filter);
   } catch (...) {
     /* Leave the entry saying "may hold anything" and fail this read as building its walker would have. */
     mine->Ready.store(true, memory_order_release);
