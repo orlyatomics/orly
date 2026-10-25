@@ -15,13 +15,18 @@ RELEASE_OUT=../out_orly/release/
 ORLY_APPS=orly/orlyc orly/orly_lsp orly/server/orlyi orly/client/orly_client orly/indy/disk/util/orly_dm orly/core_import
 ORLY_DATASET_GEN=beer complete_graph game_of_thrones money_laundering belgian_beer friends_of_friends matrix shakespeare social_graph twitter twitter_ego twitter_live
 JHM_CMD=jhm $(JHM_FLAGS)
-.PHONY: apps debug release bootstrap nycr test test_lang clean install version
+.PHONY: apps debug release release-pgo bootstrap nycr test test_lang clean install version
 
 debug: bootstrap version
 	$(JHM_CMD)
 
 release: bootstrap version
 	$(JHM_CMD) -c release
+
+# Profile-guided release (tools/pgo/pgo_build.sh, docs/pgo.md): builds, trains on the smokes, rebuilds.
+# PGO_FLAGS=--march=x86-64-v3 also targets Haswell and later.
+release-pgo: bootstrap version
+	tools/pgo/pgo_build.sh $(PGO_FLAGS)
 
 # Generate orly/build_version.h (gitignored) from git describe so binaries can
 # report the SCM version (#353). Write-if-changed via temp+rename: no spurious
