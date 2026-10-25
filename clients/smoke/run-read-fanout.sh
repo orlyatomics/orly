@@ -56,7 +56,7 @@ touch "$WORK/packages/__orly__"
 cp "$WORK/sample.1.so" "$WORK/packages/"
 
 "$ORLYI" --mem_sim --mem_sim_mb=${MEM_SIM_MB:-512} --mem_sim_slow_mb=64 --create=true \
-         --port_number=$PORT --slave_port_number=$SLAVE_PORT \
+         --port_number=$PORT --replica_port_number=$SLAVE_PORT \
          --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
          --connection_backlog=256 \
          --instance_name=orly_read_fanout \

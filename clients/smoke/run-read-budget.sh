@@ -50,7 +50,7 @@ cp "$WORK/read_budget.1.so" "$WORK/packages/"
 
 start_orlyi() {
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-           --port_number=19780 --slave_port_number=19781 \
+           --port_number=19780 --replica_port_number=19781 \
            --ws_port_number=$WS_PORT --reporting_port_number=19783 \
            --connection_backlog=10 \
            --instance_name=orly_read_budget_smoke \

@@ -130,18 +130,18 @@ TJoinVerdict Orly::Auth::ChallengeSlave(
     Util::WriteExactly(fd, ReplicationChallenge, sizeof(ReplicationChallenge), timeout);
     char intro[sizeof(ReplicationChallenge)];
     if (!Util::TryReadExactly(fd, intro, sizeof(intro), timeout)) {
-      why = "the slave hung up without answering the replication challenge; is it started with the replication token?";
+      why = "the replica hung up without answering the replication challenge; is it started with the replication token?";
       return TJoinVerdict::NoAnswer;
     }
     if (memcmp(intro, ReplicationChallenge, sizeof(intro)) != 0) {
-      why = "the slave did not answer the replication challenge; is it started with the replication token?";
+      why = "the replica did not answer the replication challenge; is it started with the replication token?";
       return TJoinVerdict::NoAnswer;
     }
     uint16_t nbo_size;
     Util::ReadExactly(fd, &nbo_size, sizeof(nbo_size), timeout);
     const size_t size = ntohs(nbo_size);
     if (size > MaxTokenSize) {
-      why = "the slave's replication token is longer than any this server accepts";
+      why = "the replica's replication token is longer than any this server accepts";
       Util::TryWriteExactly(fd, &ReplicationRefused, 1, timeout);
       return TJoinVerdict::Refused;
     }
@@ -150,7 +150,7 @@ TJoinVerdict Orly::Auth::ChallengeSlave(
       Util::ReadExactly(fd, presented.data(), size, timeout);
     }
     if (!TokensEqual(presented, token)) {
-      why = "the slave presented a different replication token";
+      why = "the replica presented a different replication token";
       Util::TryWriteExactly(fd, &ReplicationRefused, 1, timeout);
       return TJoinVerdict::Refused;
     }
@@ -158,7 +158,7 @@ TJoinVerdict Orly::Auth::ChallengeSlave(
     return TJoinVerdict::Accepted;
   } catch (const system_error &err) {
     if (err.code().value() == ETIMEDOUT) {
-      why = "the slave did not answer the replication challenge within " + to_string(timeout.count()) +
+      why = "the replica did not answer the replication challenge within " + to_string(timeout.count()) +
             " ms; is it started with the replication token?";
       return TJoinVerdict::NoAnswer;
     }
@@ -180,11 +180,11 @@ bool Orly::Auth::AnswerMaster(int fd, string_view token) {
       if (errno == EINTR) {
         continue;
       }
-      throw system_error(errno, system_category(), "peeking at the master's first bytes");
+      throw system_error(errno, system_category(), "peeking at the primary's first bytes");
     }
     if (got == 0) {
       throw TReplicationRefused(
-          "the master closed the connection before replication started; check its log, and that "
+          "the primary closed the connection before replication started; check its log, and that "
           "both sides have the same replication token");
     }
     if (memcmp(intro, ReplicationChallenge, static_cast<size_t>(got)) != 0) {
@@ -207,13 +207,13 @@ bool Orly::Auth::AnswerMaster(int fd, string_view token) {
   Util::WriteExactly(fd, answer.data(), answer.size());
   char verdict = 0;
   if (!Util::TryReadExactly(fd, &verdict, 1)) {
-    throw TReplicationRefused("the master hung up after the replication challenge without a verdict");
+    throw TReplicationRefused("the primary hung up after the replication challenge without a verdict");
   }
   if (verdict == ReplicationRefused) {
-    throw TReplicationRefused("the master refused this slave's replication token");
+    throw TReplicationRefused("the primary refused this replica's replication token");
   }
   if (verdict != ReplicationAccepted) {
-    throw TReplicationRefused("the master answered the replication challenge with an unknown verdict");
+    throw TReplicationRefused("the primary answered the replication challenge with an unknown verdict");
   }
   return true;
 }

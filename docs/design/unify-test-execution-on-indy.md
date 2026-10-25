@@ -76,7 +76,7 @@ threaded, no-network reality. This is the heaviest new code.
 Run `lang_test.py` against **both** engines and diff: identical pass/fail across
 all 158 cases is the gate. Any divergence is a semantic-parity bug to fix in P1.
 
-**P4 — Flip default to indy.** Bake on master / the nightly. Keep SPA reachable
+**P4 — Flip default to indy.** Bake on primary / the nightly. Keep SPA reachable
 via the flag for one cycle as an escape hatch.
 
 **P5 — Delete SPA.** Remove `orly/spa/flux_capacitor/`, the SPA `TService` /

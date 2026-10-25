@@ -41,7 +41,7 @@ touch "$WORK/packages/__orly__"
 cp "$WORK/pov_own_writes.1.so" "$WORK/packages/"
 
 "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-         --port_number=$PORT_BASE --slave_port_number=$((PORT_BASE + 1)) \
+         --port_number=$PORT_BASE --replica_port_number=$((PORT_BASE + 1)) \
          --ws_port_number=$WS_PORT --reporting_port_number=$((PORT_BASE + 3)) \
          --connection_backlog=10 \
          --instance_name=orly_pov_own_writes_smoke \

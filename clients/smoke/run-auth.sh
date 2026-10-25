@@ -74,7 +74,7 @@ LOG_FLAGS=(--le --log_info --log_notice --log_warning)
 start_master() {
   local log="$WORK/$1.log"; shift
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-           --port_number=$PORT --slave_port_number=$SLAVE_PORT \
+           --port_number=$PORT --replica_port_number=$SLAVE_PORT \
            --ws_port_number=$WS_PORT --reporting_port_number=$REPORTING_PORT \
            --connection_backlog=10 --instance_name=orly_auth_smoke \
            --starting_state=SOLO --package_dir="$WORK/packages" \
@@ -92,10 +92,10 @@ start_master() {
 start_slave() {
   local log="$WORK/$1.log"; shift
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-           --port_number=$S_PORT --slave_port_number=$S_SLAVE_PORT \
+           --port_number=$S_PORT --replica_port_number=$S_SLAVE_PORT \
            --ws_port_number=$S_WS_PORT --reporting_port_number=$S_REPORTING_PORT \
            --connection_backlog=10 --instance_name=orly_auth_smoke_slave \
-           --starting_state=SLAVE --address_of_master=127.0.0.1:$SLAVE_PORT \
+           --starting_state=REPLICA --address_of_primary=127.0.0.1:$SLAVE_PORT \
            --package_dir="$WORK/packages" \
            "${LOG_FLAGS[@]}" "$@" > "$log" 2>&1 &
   SLAVE_PID=$!
@@ -204,9 +204,9 @@ start_master master --auth_token_file="$WORK/token"
 grep -qF "replication listener bound to 0.0.0.0:$SLAVE_PORT; token required" "$WORK/master.log" \
   || fail "the replication token did not default to the client token"
 start_slave wrong_slave --replication_token_file="$WORK/other"
-wait_log master "refused a slave from 127.0.0.1" 30 || fail "the master did not refuse the wrong-token slave"
-grep -qF "the slave presented a different replication token" "$WORK/master.log" || fail "the master's refusal doesn't say why"
-wait_log wrong_slave "the master refused this slave's replication token" 30 || fail "the slave did not log the refusal"
+wait_log master "refused a replica from 127.0.0.1" 30 || fail "the master did not refuse the wrong-token slave"
+grep -qF "the replica presented a different replication token" "$WORK/master.log" || fail "the master's refusal doesn't say why"
+wait_log wrong_slave "the primary refused this replica's replication token" 30 || fail "the slave did not log the refusal"
 for _ in $(seq 1 30); do kill -0 "$SLAVE_PID" 2>/dev/null || break; sleep 1; done
 kill -0 "$SLAVE_PID" 2>/dev/null && fail "the refused slave is still running"
 echo "  ok   wrong token: refused, logged on both sides, the slave exited"
@@ -214,19 +214,19 @@ grep -h "replication: " "$WORK/master.log" "$WORK/wrong_slave.log" | sed 's/^/  
 stop SLAVE_PID
 start_slave bare_slave
 for _ in $(seq 1 30); do
-  [ "$(grep -c "refused a slave from" "$WORK/master.log")" -ge 2 ] && break
+  [ "$(grep -c "refused a replica from" "$WORK/master.log")" -ge 2 ] && break
   sleep 1
 done
-[ "$(grep -c "refused a slave from" "$WORK/master.log")" -ge 2 ] || fail "the master did not refuse a slave with no token"
-grep -E "refused a slave from .*(did not answer|hung up)" "$WORK/master.log" > /dev/null \
+[ "$(grep -c "refused a replica from" "$WORK/master.log")" -ge 2 ] || fail "the master did not refuse a slave with no token"
+grep -E "refused a replica from .*(did not answer|hung up)" "$WORK/master.log" > /dev/null \
   || fail "the master's refusal of a tokenless slave doesn't say it had no token"
 grep -q "to \[Slave\]" "$WORK/bare_slave.log" && fail "a slave with no token joined"
 echo "  ok   no token: refused by the master"
-grep -h "refused a slave from" "$WORK/master.log" | tail -1 | sed 's/^/         /'
+grep -h "refused a replica from" "$WORK/master.log" | tail -1 | sed 's/^/         /'
 stop SLAVE_PID
 ORLY_REPLICATION_TOKEN="$TOKEN" start_slave right_slave
 wait_log right_slave "to [Slave]" 120 || fail "the slave with the right token did not join"
-grep -qF "accepted this slave's replication token" "$WORK/right_slave.log" || fail "the slave did not log the acceptance"
+grep -qF "accepted this replica's replication token" "$WORK/right_slave.log" || fail "the slave did not log the acceptance"
 grep -qF "presented the replication token" "$WORK/master.log" || fail "the master did not log the acceptance"
 kill -0 "$MASTER_PID" 2>/dev/null || fail "the master died"
 echo "  ok   right token: the slave joined"

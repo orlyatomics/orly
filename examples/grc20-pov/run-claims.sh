@@ -44,7 +44,7 @@ cp "$WORK/claims.1.so" "$WORK/packages/"
 echo "[2/4] start fresh orlyi on ws port $WS_PORT (logs -> $WORK/orlyi.log)"
 # shellcheck disable=SC2086
 "$ORLYI" --mem_sim --create=true \
-         --port_number=$((WS_PORT + 11300)) --slave_port_number=$((WS_PORT + 11301)) \
+         --port_number=$((WS_PORT + 11300)) --replica_port_number=$((WS_PORT + 11301)) \
          --reporting_port_number=$((WS_PORT + 11302)) --ws_port_number="$WS_PORT" \
          --connection_backlog=10 \
          --instance_name=grc20_claims_demo \

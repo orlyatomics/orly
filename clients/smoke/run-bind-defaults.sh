@@ -71,7 +71,7 @@ wait_ports_free() {
 start_orlyi() {
   wait_ports_free
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-           --port_number=$PORT --slave_port_number=$SLAVE_PORT \
+           --port_number=$PORT --replica_port_number=$SLAVE_PORT \
            --ws_port_number=$WS_PORT --reporting_port_number=$REPORTING_PORT \
            --connection_backlog=10 \
            --instance_name=orly_bind_defaults_smoke \

@@ -242,7 +242,7 @@ What each flag does:
 | Flag | Purpose |
 |---|---|
 | `--instance_name=hello` | Required. Names this instance; used for log lines and on-disk paths if you weren't in mem_sim mode |
-| `--starting_state=SOLO` | Required. SOLO means no replication; the alternative is SLAVE for follower mode |
+| `--starting_state=SOLO` | Required. SOLO means no replication; the alternative is REPLICA for follower mode |
 | `--create` | Required (yes, even in mem_sim). Says "create a fresh state" rather than "load existing" |
 | `--mem_sim` | Run entirely from memory, no disk volumes needed |
 | `--no_realtime` | Don't try to acquire SCHED_FIFO priority. Required when running as a non-root user |

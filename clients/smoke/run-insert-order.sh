@@ -48,7 +48,7 @@ for mode in $MODES; do
   echo "[2/2] $mode keys against a fresh orlyi (logs -> $WORK/orlyi.$mode.log)"
   "$ORLYI" --mem_sim --mem_sim_mb=1024 --mem_sim_slow_mb=256 --create=true \
            --update_pool_size=1000000 --update_entry_pool_size=1000000 \
-           --port_number=19756 --slave_port_number=19757 \
+           --port_number=19756 --replica_port_number=19757 \
            --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
            --instance_name=orly_insert_order_smoke \
            --starting_state=SOLO \

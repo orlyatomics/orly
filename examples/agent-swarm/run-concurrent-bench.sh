@@ -38,7 +38,7 @@ sleep 1
 
 echo "[3/5] start fresh orlyi  (extra flags: ${ORLYI_EXTRA_FLAGS:-none})"
 "$ORLYI" --mem_sim --create=true \
-         --port_number=19410 --slave_port_number=19411 \
+         --port_number=19410 --replica_port_number=19411 \
          --connection_backlog=64 \
          --instance_name=agent_swarm_cbench \
          --starting_state=SOLO \

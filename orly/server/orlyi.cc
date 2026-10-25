@@ -23,7 +23,9 @@
 #include <functional>
 #include <iostream>
 #include <span>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <thread>
 #include <unistd.h>
 

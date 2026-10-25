@@ -44,7 +44,7 @@ cp "$WORK/scan_yield.1.so" "$WORK/packages/"
 
 # shellcheck disable=SC2086
 "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-         --port_number=$PORT --slave_port_number=$SLAVE_PORT \
+         --port_number=$PORT --replica_port_number=$SLAVE_PORT \
          --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
          --connection_backlog=32 \
          --instance_name=orly_scan_yield_smoke_$WS_PORT \

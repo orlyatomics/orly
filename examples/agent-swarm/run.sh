@@ -34,7 +34,7 @@ echo "[3/5] start fresh orlyi"
 # The fiber pool needs headroom for per-layer Fiber::TSync parallelism
 # during reads under many concurrent agents.
 "$ORLYI" --mem_sim --create=true \
-         --port_number=19400 --slave_port_number=19401 \
+         --port_number=19400 --replica_port_number=19401 \
          --connection_backlog=10 \
          --instance_name=agent_swarm_demo \
          --starting_state=SOLO \

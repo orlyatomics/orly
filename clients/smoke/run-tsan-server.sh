@@ -85,7 +85,7 @@ run_smoke() {
   mkdir -p "$dir"
   env "$@" TSAN_OPTIONS="halt_on_error=0 exitcode=0 history_size=4 suppressions=$SUPP log_path=$dir/tsan" \
     setarch "$ARCH" -R "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-           --port_number=19760 --slave_port_number=19761 \
+           --port_number=19760 --replica_port_number=19761 \
            --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
            --connection_backlog=32 \
            --instance_name=orly_tsan_server_smoke \

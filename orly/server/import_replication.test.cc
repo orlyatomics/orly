@@ -585,7 +585,7 @@ vector<string> MakeServerArgs(const string &orlyi_path,
       "--instance_name=" + instance_name,
       "--starting_state=" + starting_state,
       "--port_number=" + to_string(port),
-      "--slave_port_number=" + to_string(slave_port),
+      "--replica_port_number=" + to_string(slave_port),
       "--ws_port_number=" + to_string(ProbeFreePort()),
       "--reporting_port_number=" + to_string(ProbeFreePort()),
       "--connection_backlog=10",
@@ -597,8 +597,8 @@ vector<string> MakeServerArgs(const string &orlyi_path,
       "--log_info",
       "--log_notice",
       "--log_warning"};
-  if (starting_state == "SLAVE") {
-    args.push_back("--address_of_master=127.0.0.1:" + to_string(master_slave_port));
+  if (starting_state == "REPLICA") {
+    args.push_back("--address_of_primary=127.0.0.1:" + to_string(master_slave_port));
   }
   args.insert(args.end(), extra_args.begin(), extra_args.end());
   return args;
@@ -908,7 +908,7 @@ FIXTURE(ImportReplication) {
   log_dumper.Add(slave_1_log);
   TChildServer slave_1(
       MakeServerArgs(orlyi_path, "import_repl_slave_1", pkg_dir, slave_1_port,
-                     ProbeFreePort(), "SLAVE", master_slave_port),
+                     ProbeFreePort(), "REPLICA", master_slave_port),
       slave_1_log);
   if (!WaitForPort(slave_1_port, seconds(240))) {
     throw runtime_error("slave 1 never came up; see " + slave_1_log);
@@ -982,7 +982,7 @@ FIXTURE(ImportReplication) {
   log_dumper.Add(slave_2_log);
   TChildServer slave_2(
       MakeServerArgs(orlyi_path, "import_repl_slave_2", pkg_dir, slave_2_port,
-                     ProbeFreePort(), "SLAVE", master_slave_port),
+                     ProbeFreePort(), "REPLICA", master_slave_port),
       slave_2_log);
   if (!WaitForPort(slave_2_port, seconds(240))) {
     throw runtime_error("slave 2 never came up; see " + slave_2_log);
@@ -1082,7 +1082,7 @@ FIXTURE(PrunedJoinWithoutFileSync) {
   log_dumper.Add(slave_log);
   TChildServer slave(
       MakeServerArgs(orlyi_path, "pruned_join_slave", pkg_dir, slave_port,
-                     ProbeFreePort(), "SLAVE", master_slave_port, {"--allow_file_sync=false"}),
+                     ProbeFreePort(), "REPLICA", master_slave_port, {"--allow_file_sync=false"}),
       slave_log);
   if (!WaitForPort(slave_port, seconds(240))) {
     throw runtime_error("slave never came up; see " + slave_log);
@@ -1166,7 +1166,7 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
   log_dumper.Add(slave_log);
   TChildServer slave(
       MakeServerArgs(orlyi_path, "graceful_slave", pkg_dir, slave_port,
-                     ProbeFreePort(), "SLAVE", master_slave_port),
+                     ProbeFreePort(), "REPLICA", master_slave_port),
       slave_log);
   if (!WaitForLog(slave_log, "to [Slave]", seconds(240))) {
     throw runtime_error("slave never reached Slave state; see " + slave_log);
@@ -1331,7 +1331,7 @@ FIXTURE(PauseEmptyPovReplicates) {
   log_dumper.Add(slave_log);
   TChildServer slave(
       MakeServerArgs(orlyi_path, "pause_empty_slave", pkg_dir, slave_port,
-                     ProbeFreePort(), "SLAVE", master_slave_port),
+                     ProbeFreePort(), "REPLICA", master_slave_port),
       slave_log);
   if (!WaitForLog(slave_log, "to [Slave]", seconds(240))) {
     throw runtime_error("slave never reached Slave state; see " + slave_log);
@@ -1409,7 +1409,7 @@ FIXTURE(WriteToPovCreatedWhilePaired) {
   log_dumper.Add(slave_log);
   TChildServer slave(
       MakeServerArgs(orlyi_path, "paired_pov_slave", pkg_dir, slave_port,
-                     ProbeFreePort(), "SLAVE", master_slave_port),
+                     ProbeFreePort(), "REPLICA", master_slave_port),
       slave_log);
   if (!WaitForPort(slave_port, seconds(240))) {
     throw runtime_error("slave never came up; see " + slave_log);
@@ -1476,7 +1476,7 @@ struct TPairedServers {
       before_join(MasterAddr());
     }
     Slave = make_unique<TChildServer>(
-        MakeServerArgs(GetOrlyiPath(), name + "_slave", PkgDir, SlavePort, ProbeFreePort(), "SLAVE", MasterSlavePort, slave_args),
+        MakeServerArgs(GetOrlyiPath(), name + "_slave", PkgDir, SlavePort, ProbeFreePort(), "REPLICA", MasterSlavePort, slave_args),
         SlaveLog);
     if (!WaitForPort(SlavePort, seconds(240)) || !WaitForLog(SlaveLog, "to [Slave]", seconds(120))) {
       throw runtime_error("slave never reached Slave state; see " + SlaveLog);
@@ -1680,7 +1680,7 @@ FIXTURE(ExpiredPovNotInventoried) {
   log_dumper.Add(slave_log);
   TChildServer slave(
       MakeServerArgs(orlyi_path, "expired_pov_slave", pkg_dir, slave_port,
-                     ProbeFreePort(), "SLAVE", master_slave_port),
+                     ProbeFreePort(), "REPLICA", master_slave_port),
       slave_log);
   if (!WaitForLog(slave_log, "to [Slave]", seconds(240))) {
     throw runtime_error("slave never reached Slave state; see " + slave_log);

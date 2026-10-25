@@ -91,7 +91,7 @@ echo "[2/2] release orlyi: write through every POV flavour, $RUNS fresh servers"
 for i in $(seq 1 "$RUNS"); do
   STARTED_AT="$(cut -d" " -f1 /proc/uptime)"
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-           --port_number=19720 --slave_port_number=19721 \
+           --port_number=19720 --replica_port_number=19721 \
            --ws_port_number=$WS_PORT --connection_backlog=10 \
            --instance_name=orly_arm_release_smoke --starting_state=SOLO \
            --package_dir="$WORK/packages" --le --log_info \

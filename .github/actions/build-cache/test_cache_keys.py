@@ -38,6 +38,13 @@ class CacheKeysTest(unittest.TestCase):
             ):
                 self.assertFalse(cache_keys.trusted_writer(dict(context, **{field: value}), config))
 
+    def test_default_branch_names(self):
+        # Both spellings write while the default branch is renamed (#1034).
+        for ref in ("refs/heads/master", "refs/heads/main"):
+            for (arch, config), job in cache_keys.WRITERS.items():
+                context = dict(self.context, RUNNER_ARCH=arch, GITHUB_JOB=job, GITHUB_REF=ref)
+                self.assertTrue(cache_keys.trusted_writer(context, config))
+
     def test_namespace_isolation(self):
         baseline = cache_keys.namespace("Linux", "X64", "gcc13-abc", "debug")
         for args in (

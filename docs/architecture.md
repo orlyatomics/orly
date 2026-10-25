@@ -221,8 +221,8 @@ reads, `keys` ranges and folds all see one consistent state across keys.
 - **Cost.** Current reads cost what they did. An old point read is a binary search of the
   key's history run, roughly 10-25% more; an old range walk 55-75% more where every key
   changed since. Retained history costs disk and merge bandwidth in proportion to the window.
-- **Replication.** A slave holds the same sequence numbers as its master, the master ships
-  its retention horizon, and a slave never drops a version at or above it, so versions
+- **Replication.** A replica holds the same sequence numbers as its primary, the primary ships
+  its retention horizon, and a replica never drops a version at or above it, so versions
   survive a failover.
 - **Store format.** Retention records are persisted, which makes the store **format
   version 2** the first time a retention flag is used. Older binaries that check the format

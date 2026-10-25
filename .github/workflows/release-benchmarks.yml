@@ -37,7 +37,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/checkout@v6
         with:
-          ref: master
+          ref: ${{ github.event.repository.default_branch }}
           path: history/orly
 
       - name: Resolve release and previous published measurement
@@ -190,7 +190,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: master
+          ref: ${{ github.event.repository.default_branch }}
       - uses: actions/download-artifact@v4
         with:
           name: release-benchmark-output
@@ -252,6 +252,6 @@ jobs:
               "**Door:** two-way; data and Markdown only.\n"
               "**Blast radius:** the public benchmark tables and the next release's comparison baseline.\n")
           PY
-          gh pr create --repo "$GITHUB_REPOSITORY" --base master --head "$branch" \
+          gh pr create --repo "$GITHUB_REPOSITORY" --base "${{ github.event.repository.default_branch }}" --head "$branch" \
             --title "benchmarks: publish $VERSION measurements" \
             --body-file .release-benchmark-output/pr-body.md

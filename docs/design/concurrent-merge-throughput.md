@@ -179,7 +179,7 @@ a cross-shard story for multi-key updates. Only pursue if A proves insufficient.
 ## 7. Provenance
 
 Findings verified 2026-06-27 (post #231/#232) by read-only investigation +
-one throwaway spike (master left clean). Measurements: `--mem_sim`, 12 cores,
+one throwaway spike (primary left clean). Measurements: `--mem_sim`, 12 cores,
 `examples/agent-swarm/graph.orly` workload (`add_cooccur`, all commutative).
 
 ## 8. Implementation addendum (implemented)
@@ -198,7 +198,7 @@ Tracing the metadata path killed it:
   (`orly/indy/update.h`, `TEntry::GetMetadata` → `UpdateMembership.TryGetCollector()->Metadata`).
   There is no per-entry metadata. Merging K children therefore collapses K
   distinct session-ids into one.
-- That session-id is **load-bearing for one path**: slave-side *"Replicated"*
+- That session-id is **load-bearing for one path**: replica-side *"Replicated"*
   notification routing (`orly/indy/manager.cc` extracts the session-id from the
   promoted update's metadata and routes the notification to it). Reads,
   replication *apply*, and recovery treat the metadata as opaque pass-through —
@@ -329,7 +329,7 @@ it adds no new race.** Two corrections to the original plan fell out:
   session/connection code). Gating the default flip on "clean full-orlyi tsan"
   would require a separate engine-wide cleanup unrelated to #234.
 - The pre-existing `AppendUpdate` vs `GetLowestUpdate` memory-layer race is real
-  and tracked as its own engine issue (#237) — it exists on master, flag off,
+  and tracked as its own engine issue (#237) — it exists on primary, flag off,
   and is orthogonal to this change.
 
 ### 8.6 Remaining before S2 (flip default on) — ADDRESSED; flip declined
@@ -489,7 +489,7 @@ The flag-ON-vs-OFF TSan diff in §8.5 isolated the only fast-lane-amplified race
 `TRepo::GetLowestUpdate` (the Tetris-merge peek) walked a repo's in-memory update
 ordered-list holding **no lock**, while a concurrent client write committing via
 `~TPusher → TRepo::AppendUpdate` mutates that same linkage under `DataLock`. A real
-data race on the list; pre-existing on master, but the fast-lane samples the window
+data race on the list; pre-existing on primary, but the fast-lane samples the window
 far more often (it completes the full bench workload, and promotes many children
 per round).
 

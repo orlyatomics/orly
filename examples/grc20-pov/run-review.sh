@@ -38,7 +38,7 @@ cp "$WORK/grc20.1.so" "$WORK/packages/"
 
 echo "[3/5] start fresh orlyi (logs -> $WORK/orlyi.log)"
 "$ORLYI" --mem_sim --create=true \
-         --port_number=$PORT_BASE --slave_port_number=$((PORT_BASE + 1)) \
+         --port_number=$PORT_BASE --replica_port_number=$((PORT_BASE + 1)) \
          --ws_port_number=$WS_PORT --reporting_port_number=$((PORT_BASE + 3)) \
          --connection_backlog=10 \
          --instance_name=grc20_pov_review \

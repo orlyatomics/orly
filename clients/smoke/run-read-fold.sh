@@ -41,7 +41,7 @@ touch "$WORK/packages/__orly__"
 cp "$WORK/read_fold.1.so" "$WORK/packages/"
 
 "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-         --port_number=19750 --slave_port_number=19751 \
+         --port_number=19750 --replica_port_number=19751 \
          --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
          --connection_backlog=32 \
          --instance_name=orly_read_fold_smoke \
