@@ -41,7 +41,7 @@ touch "$WORK/packages/__orly__"
 cp "$WORK/string_escapes.1.so" "$WORK/packages/"
 
 "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-         --port_number=19800 --slave_port_number=19801 \
+         --port_number=19800 --replica_port_number=19801 \
          --ws_port_number=$WS_PORT \
          --connection_backlog=10 \
          --instance_name=orly_string_escapes_smoke \

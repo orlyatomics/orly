@@ -17,7 +17,7 @@ plus the changes since.
 **What the engine already has.** Most of the machinery exists and is unused:
 
 - Every write to the global POV gets a **global sequence number**. It is durable, it is in every
-  data file, and replication pushes it unchanged, so a slave has the same numbers and they
+  data file, and replication pushes it unchanged, so a replica has the same numbers and they
   survive a failover.
 - Every read already goes through a pinned **view** with a sequence-number window
   (`TRepo::TView`), and the repo walker already drops entries outside it.
@@ -112,9 +112,9 @@ Defer B until a workload needs it; the version core and API don't change when it
   update has a different sequence number in every repo it passes through, and only the number in
   the global POV is permanent. The update keeps its `UpdateId` (a UUID) throughout, which is what
   the read-time `+=` dedup in `context.cc` uses during the promotion window.
-- **Replication.** The master ships each transaction's replica; the slave pushes it with
-  `ensure_or_discard` set to the master's sequence number (`transaction_base.cc`), so a slave's
-  numbers equal the master's for every repo it holds. A slave join copies whole data files
+- **Replication.** The primary ships each transaction's replica; the replica pushes it with
+  `ensure_or_discard` set to the primary's sequence number (`transaction_base.cc`), so a replica's
+  numbers equal the primary's for every repo it holds. A replica join copies whole data files
   (`SyncFile`) and pulls the gaps by sequence range. **Global sequence numbers survive failover.**
 - **Time.** Each update's metadata (`TMetaRecord`) records `RunTimestamp`, the time it committed
   in the POV it was written to, and the data file's update index keeps that metadata per update.
@@ -173,8 +173,8 @@ entry with sequence number ≤ V, with commutative chains folded. It is:
 
 - **total and consistent:** one number orders every committed transaction; a read at V sees each
   transaction wholly or not at all, because a transaction's entries share its number;
-- **the same on every replica** (`ensure_or_discard`), so a version handed out by a master is valid
-  on the slave that replaces it;
+- **the same on every replica** (`ensure_or_discard`), so a version handed out by a primary is valid
+  on the replica that replaces it;
 - **cheap to name:** the current version is `HighestSeqNum`, already in every view.
 
 A version is exposed as an **opaque, increasing 64-bit number**. Clients may compare two versions
@@ -182,7 +182,7 @@ of the same POV and nothing else (no arithmetic: a version need not have a succe
 because merges drop whole updates and the update walkers already accept gaps).
 
 **Time → version.** `at time T` resolves to the global version that was current at T on the
-master's clock. Update metadata can't answer that (§3.1: its timestamps are when each write
+primary's clock. Update metadata can't answer that (§3.1: its timestamps are when each write
 committed in its own POV), so the global POV records a (time, version) sample at each memory merge
 and keeps the samples with the retention metadata; that is a 40 ms resolution. The resolved version,
 not the time, is what a continuation or a save point stores.
@@ -233,7 +233,7 @@ because there are two kinds of reader:
   memory: the merge simply keeps the versions it covers. Each page of a paged read opens a fresh
   view and reads at the leased version. A lease has a TTL (default 10 minutes, renewed by use) so
   an abandoned continuation can't hold history forever; the server logs and reports the oldest
-  lease. Leases are in memory on the master only: after a failover, a version still inside the
+  lease. Leases are in memory on the primary only: after a failover, a version still inside the
   policy horizon stays readable, and one held only by a lease becomes `version_unavailable`.
 - **A snapshot handle** (any POV): the `TContext`'s views themselves, kept open between
   statements. This is the only way to hold a child POV's unpromoted state still, and it is
@@ -333,7 +333,7 @@ the target precisely.
 **Costs.** A superseded version is written once to history and then only when partitions merge;
 main-file merges stay the size of live data. Current reads unchanged. Old reads probe more files.
 New code: a file kind, a writer, a walker, a partition manager, the file map and reload
-(`ReConstructFromDisk`) must know the new kind, slave join must ship it, and the fault-injection
+(`ReConstructFromDisk`) must know the new kind, replica join must ship it, and the fault-injection
 harness must cover it.
 
 **Risks.** It is a new subsystem in the storage engine that has had most of 2026's integrity bugs
@@ -564,12 +564,12 @@ is what makes that read correct: it never compares two repos' numbers.
 
 ### 9.3 Replication and failover
 
-- Versions are equal on master and slave (§3.1).
-- **The horizon must be equal too**, or a version could be readable on the master and gone on the
-  promoted slave. A time-based horizon depends on clocks, so the master decides: it ships a
-  "horizon advanced to H" record in the replication stream, and slaves prune to the shipped H, never
+- Versions are equal on primary and replica (§3.1).
+- **The horizon must be equal too**, or a version could be readable on the primary and gone on the
+  promoted replica. A time-based horizon depends on clocks, so the primary decides: it ships a
+  "horizon advanced to H" record in the replication stream, and replicas prune to the shipped H, never
   further. Save points travel the same way.
-- A slave join copies files, which carry their retained history, plus the retention metadata.
+- A replica join copies files, which carry their retained history, plus the retention metadata.
 - Leases are not replicated (§4.4).
 
 ### 9.4 The durable manager
@@ -702,7 +702,7 @@ writes today under `--prune_merge_history=false`; keyframes are ordinary `Assign
   versions are `version_unavailable`, and nothing needs rewriting.
 
 What A adds is **metadata**: the policy, the horizon, save points and the (time, version) samples, per
-repo. It needs a home that survives restart and is shipped to slaves; the durable manager is one, a
+repo. It needs a home that survives restart and is shipped to replicas; the durable manager is one, a
 small metadata file per repo is another.
 
 **#755 is different:** a log file kind that recovery must replay. A 0.2.x binary opening a 0.3 store
@@ -734,7 +734,7 @@ Bundle A's metadata, the format version and #755's log into that one change.
   metadata. The disk walker stops replaying a `+=` chain at its first `Assign`.
 - Policies: the last N versions, a time window, save points and leases. The default stays #602's.
   No "everything" under A.
-- The master decides the horizon and replicates it.
+- The primary decides the horizon and replicates it.
 - One format bump, shared with #755.
 
 **Option B, later, for unbounded retention.** Do it when a workload needs "keep everything" on
@@ -748,7 +748,7 @@ with generations sized by bytes, current reads visit more files (+31% point, +81
 issue's first cost target is that current reads cost what they do today.
 
 **Why not B now:** it is the largest and riskiest piece (a new file kind, a second merge output, a
-partition manager, reload and slave-join support, fault-injection coverage), and it is a hard one-way
+partition manager, reload and replica-join support, fault-injection coverage), and it is a hard one-way
 format change. Bounded windows cover paging, diffs, review save points and "what did this say last
 week". Unbounded history can follow once someone needs it.
 
@@ -771,7 +771,7 @@ retained history.
 2. **Bounded retention in the merge (two-way on disk).** The retention rule in `TMergeDataFileImpl`
    (H = min(policy, oldest lease)), keyframes and kept metadata in the fold, the walker that stops a
    `+=` replay at its first `Assign`, in-memory leases for continuations, and the policy as server
-   flags (`--retention_versions`, `--retention_seconds`) that master and slaves must share. Tests: the
+   flags (`--retention_versions`, `--retention_seconds`) that primary and replicas must share. Tests: the
    merge differential test with a horizon; `+=` at every retained version across merges and folds;
    power loss mid-merge with retained history (fault-injection harness); the kill campaign with
    retention on; a 0.2.x binary reading the store's current values; write volume and layer count
@@ -786,10 +786,10 @@ retained history.
    store format version, and #755's log in the same bump. Tests: failover keeps every version inside
    the horizon; a restart keeps save points; an older binary refuses the store.
 
-   As built: each root POV has two durable records, its own (never replicated) and the one its master
+   As built: each root POV has two durable records, its own (never replicated) and the one its primary
    ships (`TRepo::GetRetentionRecordId`). A merge's retain-from is held to the horizon of the newest
    own record known to be on disk, so a crash can only find history kept, never promised and gone; a
-   restart lowers the horizon from the newest version on disk to the record's. A slave also holds to
+   restart lowers the horizon from the newest version on disk to the record's. A replica also holds to
    the shipped horizon, and keeps everything until one arrives. Format version 2 is set only on a
    start with a retention flag (decision 3: an upgrade never grows the disk on its own). Save points
    are made through `TRepo::SetSavePoint`; their protocol surface is stage 4's (#889). #755's log is

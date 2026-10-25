@@ -53,7 +53,7 @@ sleep 1
 
 echo "[3/5] start fresh orlyi (logs -> $WORK/orlyi.log)"
 "$ORLYI" --mem_sim --create=true \
-         --port_number=19600 --slave_port_number=19601 \
+         --port_number=19600 --replica_port_number=19601 \
          --connection_backlog=10 \
          --instance_name=recursive_variants_demo \
          --starting_state=SOLO \

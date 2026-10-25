@@ -37,7 +37,7 @@ echo "[3/5] start fresh orlyi"
 # TRepo::TPresentWalker (orly/indy/repo.cc:732) under concurrent reads.
 # Caches are trimmed to give the larger fiber pool headroom.
 "$ORLYI" --mem_sim --create=true \
-         --port_number=19400 --slave_port_number=19401 \
+         --port_number=19400 --replica_port_number=19401 \
          --connection_backlog=10 \
          --instance_name=wiki_pageviews_demo \
          --starting_state=SOLO \

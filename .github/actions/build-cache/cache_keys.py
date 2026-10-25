@@ -12,6 +12,9 @@ import subprocess
 import time
 
 
+# The default branch is being renamed master -> main (#1034); a push to either writes the cache.
+TRUSTED_REFS = ("refs/heads/master", "refs/heads/main")
+
 WRITERS = {
     ("X64", "debug"): "debug-and-test",
     ("X64", "release"): "release-build",
@@ -63,7 +66,7 @@ def trusted_writer(context, config):
         expected_job is not None
         and context.get("GITHUB_REPOSITORY") == "orlyatomics/orly"
         and context.get("GITHUB_EVENT_NAME") == "push"
-        and context.get("GITHUB_REF") == "refs/heads/master"
+        and context.get("GITHUB_REF") in TRUSTED_REFS
         and context.get("GITHUB_JOB") == expected_job
     )
 

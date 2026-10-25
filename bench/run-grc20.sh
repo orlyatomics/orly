@@ -23,7 +23,7 @@ cp "$WORK/grc20.1.so" "$WORK/packages/"
 
 "$ORLY_OUT/orly/server/orlyi" \
   --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-  --port_number=19900 --slave_port_number=19901 \
+  --port_number=19900 --replica_port_number=19901 \
   --ws_port_number=19902 --reporting_port_number=19903 \
   --connection_backlog=32 --instance_name="release_grc20_$$" \
   --starting_state=SOLO --package_dir="$WORK/packages" --memory_budget_mb=1024 \

@@ -260,7 +260,7 @@ class Server:
         p = self.args.port
         cmd = [os.path.join(self.args.orly_out, 'orly/server/orlyi'),
                f'--create={"true" if create else "false"}', f'--instance_name={self.instance}',
-               '--starting_state=SOLO', f'--port_number={p}', f'--slave_port_number={p + 1}',
+               '--starting_state=SOLO', f'--port_number={p}', f'--replica_port_number={p + 1}',
                f'--ws_port_number={p + 2}', f'--reporting_port_number={p + 3}',
                '--connection_backlog=32', f'--package_dir={self.work}/packages',
                '--max_parallel_frames=4000', '--page_cache_size=256', '--block_cache_size=64',

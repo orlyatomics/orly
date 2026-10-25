@@ -585,7 +585,7 @@ vector<string> MakeServerArgs(const string &orlyi_path,
       "--instance_name=" + instance_name,
       "--starting_state=" + starting_state,
       "--port_number=" + to_string(port),
-      "--slave_port_number=" + to_string(slave_port),
+      "--replica_port_number=" + to_string(slave_port),
       "--ws_port_number=" + to_string(ProbeFreePort()),
       "--reporting_port_number=" + to_string(ProbeFreePort()),
       "--connection_backlog=10",
@@ -597,8 +597,8 @@ vector<string> MakeServerArgs(const string &orlyi_path,
       "--log_info",
       "--log_notice",
       "--log_warning"};
-  if (starting_state == "SLAVE") {
-    args.push_back("--address_of_master=127.0.0.1:" + to_string(master_slave_port));
+  if (starting_state == "REPLICA") {
+    args.push_back("--address_of_primary=127.0.0.1:" + to_string(master_slave_port));
   }
   args.insert(args.end(), extra_args.begin(), extra_args.end());
   return args;

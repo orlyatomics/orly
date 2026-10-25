@@ -34,7 +34,7 @@ sleep 1
 
 echo "[3/5] start fresh orlyi"
 "$ORLYI" --mem_sim --create=true \
-         --port_number=19400 --slave_port_number=19401 \
+         --port_number=19400 --replica_port_number=19401 \
          --connection_backlog=10 \
          --instance_name=agent_swarm_bench \
          --starting_state=SOLO \

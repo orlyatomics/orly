@@ -79,7 +79,7 @@ sudo "$ORLY_OUT/orly/indy/disk/util/orly_dm" --create-volume --device-speed=fast
 start_server() {  # $1 = create true|false, $2 = log tag
   sudo "$ORLY_OUT/orly/server/orlyi" \
     --create="$1" --instance_name="$INSTANCE" --starting_state=SOLO \
-    --port_number=19600 --slave_port_number=19601 --ws_port_number=19602 \
+    --port_number=19600 --replica_port_number=19601 --ws_port_number=19602 \
     --reporting_port_number=19603 --connection_backlog=10 \
     --package_dir="$WORK/packages" --max_parallel_frames=4000 \
     --page_cache_size=256 --block_cache_size=64 --do_fsync --no_realtime \
@@ -239,7 +239,7 @@ echo "[8/9] offline check of the stopped store (--check_only, #748)"
 rc=0
 sudo "$ORLY_OUT/orly/server/orlyi" \
     --create=false --check_only --instance_name="$INSTANCE" --starting_state=SOLO \
-    --port_number=19600 --slave_port_number=19601 --ws_port_number=19602 \
+    --port_number=19600 --replica_port_number=19601 --ws_port_number=19602 \
     --reporting_port_number=19603 --connection_backlog=10 \
     --package_dir="$WORK/packages" --max_parallel_frames=4000 \
     --page_cache_size=256 --block_cache_size=64 --do_fsync --no_realtime \

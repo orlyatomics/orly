@@ -158,8 +158,8 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "The port on which the server listens for websocket clients."
   );
   Param(
-      &TCmd::SlavePortNumber, "slave_port_number", Optional, "slave_port_number\0spn\0",
-      "The port on which the server listens for a slave."
+      &TCmd::SlavePortNumber, "replica_port_number", Optional, "replica_port_number\0slave_port_number\0spn\0rpn\0",
+      "The port on which the server listens for a replica. Deprecated alias: --slave_port_number."
   );
   Param(
       &TCmd::BindAddress, "bind_address", Optional, "bind_address\0",
@@ -167,9 +167,10 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "Orly has no authentication: pass 0.0.0.0 to listen on every interface only on a trusted network."
   );
   Param(
-      &TCmd::SlaveBindAddress, "slave_bind_address", Optional, "slave_bind_address\0",
-      "The IP address the replication (slave) listener binds (default 0.0.0.0, every interface, so a slave on another "
-      "host can reach it). Replication is unauthenticated: set this to a private network's address."
+      &TCmd::SlaveBindAddress, "replica_bind_address", Optional, "replica_bind_address\0slave_bind_address\0",
+      "The IP address the replication listener binds (default 0.0.0.0, every interface, so a replica on another "
+      "host can reach it). Replication is unauthenticated: set this to a private network's address. "
+      "Deprecated alias: --slave_bind_address."
   );
   Param(
       &TCmd::AllowRemoteCompile, "allow_remote_compile", Optional, "allow_remote_compile\0",
@@ -187,7 +188,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
   Param(
       &TCmd::ReplicationTokenFileFlag, "replication_token_file", Optional, "replication_token_file\0",
-      "A file holding the shared secret a slave must present to join this master, and that this server presents when "
+      "A file holding the shared secret a replica must present to join its primary, and that this server presents when "
       "it joins one (#710). Also ORLY_REPLICATION_TOKEN_FILE or ORLY_REPLICATION_TOKEN. Default: the client token."
   );
   Param(
@@ -260,7 +261,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
   Param(
       &TCmd::ReplicationSyncBufMB, "replication_sync_buf_mb", Optional, "replication_sync_buf_mb\0",
-      "The buffer used by the slave while synchronizing replication updates. This only stores live transactions, seperate from the large background sync."
+      "The buffer used by the replica while synchronizing replication updates. This only stores live transactions, seperate from the large background sync."
   );
   Param(
       &TCmd::MergeMemInterval, "mem_interval", Optional, "mem_interval\0",
@@ -272,7 +273,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
   Param(
       &TCmd::ReplicationInterval, "replication_interval", Optional, "replication_interval\0",
-      "The minimum number of milliseconds between replication batches sent to the slave."
+      "The minimum number of milliseconds between replication batches sent to the replica."
   );
   Param(
       &TCmd::DurableWriteInterval, "durable_write_interval", Optional, "durable_write_interval\0",
@@ -284,7 +285,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
   Param(
       &TCmd::StartingState, "starting_state", Required, "starting_state\0",
-      "The starting state of this server. Either SOLO or SLAVE."
+      "The starting state of this server. Either SOLO or REPLICA (SLAVE is a deprecated alias for REPLICA)."
   );
   Param(
       &TCmd::NumMemMergeThreads, "num_mem_threads", Optional, "num_mem_threads\0",
@@ -337,8 +338,9 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "The cores which will be pinned by the disk mergers."
   );
   Param(
-      &TCmd::AddressOfMaster, "address_of_master", Optional, "address_of_master\0",
-      "The IP address of the master to which this slave should try to connect."
+      &TCmd::AddressOfMaster, "address_of_primary", Optional, "address_of_primary\0address_of_master\0",
+      "The IP address of the primary to which this replica should try to connect. Deprecated alias: "
+      "--address_of_master."
   );
   Param(
       &TCmd::PackageDirectory, "package_dir", Optional, "package_dir\0",
@@ -389,14 +391,14 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   Param(
       &TCmd::RetentionVersions, "retention_versions", Optional, "retention_versions\0",
       "Keep the history reads at a version need for the newest N versions of the global pov (#745). 0, the default, "
-      "keeps only the current state, as before. Kept in memory: a restart starts the window afresh. A master and its "
-      "slaves must be started with the same value; it is not checked."
+      "keeps only the current state, as before. Kept in memory: a restart starts the window afresh. A primary and its "
+      "replicas must be started with the same value; it is not checked."
   );
   Param(
       &TCmd::RetentionSeconds, "retention_seconds", Optional, "retention_seconds\0",
       "Keep the history reads at a version need for every version of the global pov that was newest within the last "
       "N seconds (#745). 0, the default, is off. At most 4000000000; a larger value is refused at startup (#1007). With "
-      "retention_versions as well, both windows are kept. A master and its slaves must be started with the same "
+      "retention_versions as well, both windows are kept. A primary and its replicas must be started with the same "
       "value; it is not checked."
   );
   Param(
@@ -847,7 +849,7 @@ bool TServer::TCmd::CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) {
     return false;
   }
   for (const auto &[flag, host]: {pair<const char *, const string &>{"bind_address", BindAddress},
-                                  pair<const char *, const string &>{"slave_bind_address", SlaveBindAddress}}) {
+                                  pair<const char *, const string &>{"replica_bind_address", SlaveBindAddress}}) {
     try {
       MakeBindAddress(host, 0);
     } catch (const invalid_argument &ex) {
@@ -1507,7 +1509,7 @@ void TServer::Init() {
     TFd starting_sock;
     if (Cmd.StartingState == "SOLO") {
       RepoState = Orly::Indy::TManager::Solo;
-    } else if (Cmd.StartingState == "SLAVE") {
+    } else if (Cmd.StartingState == "REPLICA" || Cmd.StartingState == "SLAVE") {
       RepoState = Orly::Indy::TManager::SyncSlave;
       /* The writes before this reach a slave in the synced data, not through the apply path that
          reads their operation ids, so once promoted it can't tell a retry of one from a new write;
@@ -1525,18 +1527,18 @@ void TServer::Init() {
         const string master = AsStr(Cmd.AddressOfMaster);
         try {
           if (Orly::Auth::AnswerMaster(starting_sock, *Cmd.ReplicationToken)) {
-            syslog(LOG_INFO, "replication: master %s accepted this slave's replication token", master.c_str());
+            syslog(LOG_INFO, "replication: primary %s accepted this replica's replication token", master.c_str());
           } else {
-            syslog(LOG_WARNING, "replication: master %s did not ask for a replication token; joining without one",
+            syslog(LOG_WARNING, "replication: primary %s did not ask for a replication token; joining without one",
                    master.c_str());
           }
         } catch (const exception &ex) {
-          syslog(LOG_ERR, "replication: cannot join master %s: %s", master.c_str(), ex.what());
+          syslog(LOG_ERR, "replication: cannot join primary %s: %s", master.c_str(), ex.what());
           throw;
         }
       }
     } else {
-      throw runtime_error("Server must start as SOLO or SLAVE");
+      throw runtime_error("Server must start as SOLO or REPLICA");
     }
     ScheduleRunnerHost(&WaitForSlaveRunner);
     auto slave_bind_cb = [this](const shared_ptr<function<void (const TFd &)>> &cb) {
@@ -4541,7 +4543,7 @@ void TServer::WaitForSlave() {
         if (err.code().value() != EADDRINUSE || ShutdownCalled) {
           throw;
         }
-        syslog(LOG_INFO, "slave port [%d] still in use; retrying", static_cast<int>(Cmd.SlavePortNumber));
+        syslog(LOG_INFO, "replica port [%d] still in use; retrying", static_cast<int>(Cmd.SlavePortNumber));
         sleep(1);
       }
     }
@@ -4558,13 +4560,13 @@ void TServer::WaitForSlave() {
       }
       SlaveSocket = std::move(listener);
     }
-    syslog(LOG_INFO, "waiting for slave to connect");
+    syslog(LOG_INFO, "waiting for replica to connect");
     TFd slave_fd;
     for (;;) {
       sockaddr_storage peer_storage{};
       socklen_t peer_len = sizeof(peer_storage);
       slave_fd = TFd(accept(SlaveSocket, reinterpret_cast<sockaddr *>(&peer_storage), &peer_len));
-      syslog(LOG_INFO, "slave has connected");
+      syslog(LOG_INFO, "replica has connected");
       if (!Cmd.ReplicationToken) {
         break;
       }
@@ -4575,10 +4577,10 @@ void TServer::WaitForSlave() {
       const auto verdict = Orly::Auth::ChallengeSlave(
           slave_fd, *Cmd.ReplicationToken, Orly::Auth::ReplicationAnswerTimeout, why);
       if (verdict == Orly::Auth::TJoinVerdict::Accepted) {
-        syslog(LOG_INFO, "replication: slave from %s presented the replication token", peer.c_str());
+        syslog(LOG_INFO, "replication: replica from %s presented the replication token", peer.c_str());
         break;
       }
-      syslog(LOG_ERR, "replication: refused a slave from %s: %s", peer.c_str(), why.c_str());
+      syslog(LOG_ERR, "replication: refused a replica from %s: %s", peer.c_str(), why.c_str());
       slave_fd.Reset();
       if (ShutdownCalled) {
         syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
@@ -4625,7 +4627,7 @@ void TServer::WaitForSlave() {
       syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
       return;
     }
-    syslog(LOG_ERR, "failed to wait for slave: %s", ex.what());
+    syslog(LOG_ERR, "failed to wait for replica: %s", ex.what());
     throw;
   }
   DEBUG_LOG("TServer::WaitForSlave() exiting");

@@ -71,7 +71,7 @@ class GitDiffTest(unittest.TestCase):
         self.repo = Path.cwd() / ".ci-checks" / f"scope-fixture-{uuid.uuid4().hex}"
         self.repo.mkdir(parents=True)
         self.addCleanup(shutil.rmtree, self.repo)
-        self.git("init", "-q", "-b", "master")
+        self.git("init", "-q", "-b", "main")
         self.git("config", "user.name", "Patrick O'Reilly")
         self.git("config", "user.email", "p@ovpl.co")
         self.git("config", "commit.gpgsign", "false")
@@ -90,7 +90,7 @@ class GitDiffTest(unittest.TestCase):
         self.git("commit", "-qm", "scope validation fixture")
 
     def merge(self):
-        self.git("checkout", "-q", "master")
+        self.git("checkout", "-q", "main")
         self.git("merge", "-q", "--no-ff", "--no-edit", "ohohoreilly/scope-fixture")
         return self.git("rev-parse", "HEAD")
 

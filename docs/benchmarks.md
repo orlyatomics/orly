@@ -3,11 +3,11 @@
 The [`release-benchmarks`](../.github/workflows/release-benchmarks.yml) workflow
 runs on `vMAJOR.MINOR.PATCH[-PRERELEASE]` tags and on demand. Complete
 measurements are committed as `bench/results/<version>.json` and rendered below
-by a results PR. Merge that PR to publish the page on `master` and make the
+by a results PR. Merge that PR to publish the page on the default branch and make the
 release available as the next comparison baseline. No Pages site or additional
 secret is required: publication uses the repository's normal workflow token.
 It needs contents/PR write permission and permission for workflows to open PRs.
-It never pushes to `master` or merges its own PR.
+It never pushes to the default branch or merges its own PR.
 
 ## What is measured
 
@@ -74,7 +74,7 @@ than silently reporting green. The release-image workflow remains independent.
 
 ## On demand and dry-run
 
-After the workflow is available on `master`, exercise the whole measurement
+After the workflow is available on the default branch, exercise the whole measurement
 path on a branch without publication:
 
 ```sh

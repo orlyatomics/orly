@@ -49,7 +49,7 @@ pkill -9 -f 'instance_name=mcp_agent_duet' 2>/dev/null || true
 sleep 1
 
 "$ORLYI" --mem_sim --create=true \
-         --port_number=19800 --slave_port_number=19801 \
+         --port_number=19800 --replica_port_number=19801 \
          --ws_port_number=$WS_PORT \
          --connection_backlog=10 \
          --instance_name=mcp_agent_duet \

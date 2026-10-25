@@ -1,5 +1,5 @@
 name: Build cache
-description: Restore build-profile snapshots and save only from trusted master jobs
+description: Restore build-profile snapshots and save only from trusted default-branch jobs
 inputs:
   config:
     description: jhm configuration

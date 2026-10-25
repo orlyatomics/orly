@@ -4,7 +4,7 @@
 # it enforces the TODO convention (no bare /* TODO */ stubs; every TODO
 # references a tracked issue as TODO(#nnn) -- see CONTRIBUTING.md).
 #
-# Four jobs run on every push to master and every pull_request:
+# Four jobs run on every push to the default branch (master or main) and every pull_request:
 #   1. debug-and-test     -- make debug + make test (188 binaries)
 #   2. release-build      -- jhm -c release direct + --help smoke on each binary,
 #                            plus the storage and merge unit tests in release (#666),
@@ -53,7 +53,7 @@ name: ci
 
 on:
   push:
-    branches: [master]
+    branches: [master, main]
   pull_request:
   schedule:
     # Daily at 05:17 UTC -- off-peak, avoids the top-of-hour scheduler rush.
@@ -602,6 +602,12 @@ jobs:
       - name: Listeners bind loopback and refuse remote compile by default
         if: matrix.group == 'disk'
         run: bash clients/smoke/run-bind-defaults.sh
+
+      # #1034: the replication flags renamed to replica/primary still work
+      # under their old names and warn; the new names do not warn.
+      - name: Old replication flag names still work
+        if: matrix.group == 'disk'
+        run: bash clients/smoke/run-deprecated-flags.sh
 
       # #710: with a token (--auth_token_file and friends), WebSocket and binary
       # clients without it, or with a wrong one, are refused with a typed status

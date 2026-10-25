@@ -77,7 +77,7 @@ keys the POV changed relative to its parent, in key order:
 parent again: `{"discarded_updates": 40, "discarded_entries": 4000}`. It pauses the POV while it
 works (which waits for a promotion under way to land) and restores its status after, pops each
 update without promoting it, and queues the memory merge that frees them; the update pools fall
-back within moments. The pops replicate, so a slave drops the writes too. Only the session that
+back within moments. The pops replicate, so a replica drops the writes too. Only the session that
 made a private POV may discard it (a shared POV holds other sessions' writes), and a failed POV
 stays failed. A POV that tracks conflicts is re-forked: what its parent changed before the discard
 is its new starting point.
@@ -118,8 +118,8 @@ its parent, and so on up to the global POV.
   parent grows with the distinct keys the parent changes. Past a million keys the tracker stops
   recording and reports `"overflowed": true`; from then on every overwrite or delete counts as a
   conflict, because it can no longer tell. The last 10,000 conflicts are kept.
-- **Limits.** The tracker lives in the master's memory, like the POV itself (POVs don't survive a
-  restart, #439); a slave doesn't keep one, so after a failover the POV promotes unwatched.
+- **Limits.** The tracker lives in the primary's memory, like the POV itself (POVs don't survive a
+  restart, #439); a replica doesn't keep one, so after a failover the POV promotes unwatched.
   Tracking needs no change to anything on disk.
 
 ## Save points
@@ -140,5 +140,5 @@ conflict tracker (`orly/indy/fork_watch.h`) is where a POV's versions would be k
 - `orly/indy/fork_watch.test`: the tracker's rules, refusing and forcing, re-forking, overflow,
   and concurrent appends (in the TSan set).
 - `orly/server/import_replication.test` `PovReviewOverBinaryProtocol`: the calls over the binary
-  protocol on a master with a slave; the slave applies a discard to its paused copy, and after a
+  protocol on a primary with a replica; the replica applies a discard to its paused copy, and after a
   failover that copy no longer holds the writes.

@@ -44,7 +44,7 @@ pkill -9 -f 'instance_name=orly_new_pov_smoke' 2>/dev/null || true
 sleep 1
 
 "$ORLYI" --mem_sim --create=true \
-         --port_number=19710 --slave_port_number=19711 \
+         --port_number=19710 --replica_port_number=19711 \
          --ws_port_number=$WS_PORT \
          --connection_backlog=10 \
          --instance_name=orly_new_pov_smoke \

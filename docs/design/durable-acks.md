@@ -28,7 +28,7 @@ cost. Fast POVs keep memory-speed acknowledgments with a stated loss bound.
   acknowledged when its group is synced and sealed. Fast POVs are not logged.
 - One sync covers a whole group; while one group syncs the next one forms, and a group's seal
   rides on the next group's write, so under load each group costs one sync.
-- Recovery replays the log from the last checkpoint through the slave's apply path, which already
+- Recovery replays the log from the last checkpoint through the replica's apply path, which already
   discards what the data files hold (`ensure_or_discard`). A safe POV comes back with its id,
   parent, sequence numbers and unpromoted backlog, so a receipt's version is still valid after a
   restart.
@@ -85,8 +85,8 @@ cost. Fast POVs keep memory-speed acknowledgments with a stated loss bound.
    fast parent. I recommend refusing `local` and `logged` on such a POV (typed
    `durability_unavailable`) rather than silently downgrading.
 6. **Replication in v1.** I recommend `local` only: an acknowledgment survives a crash and restart of
-   the master, not a failover to a slave that hadn't received it yet. A `replica` level (wait for
-   the slave) comes later ([§8.4](#84-replication)).
+   the primary, not a failover to a replica that hadn't received it yet. A `replica` level (wait for
+   the replica) comes later ([§8.4](#84-replication)).
 7. **Format.** One store format change, shared with #745 stage 3, and a 0.2.x patch release that
    refuses the new format before it ships ([§9](#9-format-and-compatibility)).
 8. **A real NVMe number before stage 2.** The VM and CI disks are virtualised. I'd like approval to
@@ -132,7 +132,7 @@ From the issue and its review comments:
    the transaction's `TReplica` (its pushes, pops and status changes, each with its repo id and
    sequence number) is enqueued for the replication stream. All user transactions are enqueued,
    fast POVs' included. So there is already **one place where every committed transaction passes
-   in commit order, already serialised** (`TReplicationStreamer` encodes it for slaves).
+   in commit order, already serialised** (`TReplicationStreamer` encodes it for replicas).
 3. **Promotion.** Tetris moves a POV's updates to its parent one transaction at a time: push into
    the parent, pop from the child, one transaction (and one replica).
 4. **Flush.** Only the global POV writes data. Its memory merge (`TRepo::StepMergeMem`, every
@@ -163,7 +163,7 @@ From the issue and its review comments:
 |---|---|
 | A total commit order across repos | the replication queue lock in `~TTransaction` |
 | A record of a transaction's effects, with sequence numbers | `TTransaction::TReplica`, encoded by `TReplicationStreamer` |
-| Idempotent re-application against what's on disk | the slave's `TManager::TSlave::ApplyCoreVectorTransactions` with `ensure_or_discard`; it already skips mutations on repos that aren't live |
+| Idempotent re-application against what's on disk | the replica's `TManager::TSlave::ApplyCoreVectorTransactions` with `ensure_or_discard`; it already skips mutations on repos that aren't live |
 | A POV's identity on disk | `TPov` is a durable object (id, parent, policy, audience, TTL) saved by the durable manager every 40 ms; #439 refuses it after restart |
 | A repo's creation in the stream | `TRepoReplication` (id, safe, TTL, parent) |
 | "This update reached a data file" | `TUpdate::TPersistenceNotification` |
@@ -179,7 +179,7 @@ From the issue and its review comments:
 
 - a safe POV's own write (a push into its repo);
 - a promotion into a safe parent, including the global POV (push into the parent, pop from the
-  child; when the child is fast its pop is not logged, and replay skips it as the slave does);
+  child; when the child is fast its pop is not logged, and replay skips it as the replica does);
 - pause, unpause, fail and expiry of a safe repo;
 - a safe POV's creation (its `TRepoReplication` and `TPov` fields) and its close;
 - the exactly-once operation record, inside the write's update metadata ([§8.2](#82-exactly-once-733)).
@@ -222,7 +222,7 @@ acknowledged (the same group, or an earlier one). After a restart the POV exists
 parent, policy, audience, sequence numbers and TTL remaining, and its unpromoted backlog is back in
 its repo; Tetris resumes promoting it. Most of the hook exists: a `TPov` reloaded from the durable
 manager already attaches to its repo if one is live (`TPov::GetRepo`'s `Reloaded` path, written for
-a promoted slave, where replication built the repo) and refuses only when there is none. Replay
+a promoted replica, where replication built the repo) and refuses only when there is none. Replay
 builds the repo, so the reloaded POV attaches. The `POV` record covers the one gap: the durable
 manager saves objects every 40 ms, so a POV created and written in less than that has no saved
 `TPov` yet, and recovery recreates it from the record. #439's refusal remains for fast POVs (and for
@@ -245,7 +245,7 @@ exactly; option A′ below avoids it at a cost.
 parent as seq p" without the update body, and rebuild the parent's update from the child's logged
 write at replay. It halves log bytes for safe POVs, but couples the two records' lifetimes (the
 child's record can't be recycled while the parent's reference needs it) and makes the replay path
-differ from the slave's. Not for v1; measure log bandwidth first.
+differ from the replica's. Not for v1; measure log bandwidth first.
 
 ### 4.2 Option B: log only writes that go straight to the global POV
 
@@ -538,7 +538,7 @@ On start, after the file service has loaded the file map and before any session 
      acknowledged as durable.
 6. **Restore safe POVs** from the checkpoint and the `POV` records after it: create each repo with
    its parent, policy and TTL, at its recorded sequence numbers.
-7. **Replay** every `TXN` record from the head through k-1, in LSN order, through the slave's apply
+7. **Replay** every `TXN` record from the head through k-1, in LSN order, through the replica's apply
    path (`ApplyCoreVectorTransactions`): pushes use `ensure_or_discard` with their logged sequence
    numbers, so a global push at or below `G_disk` is discarded and everything else lands at exactly
    its original number; pops and status changes are applied; mutations on repos that don't exist
@@ -553,10 +553,10 @@ Recovery never repairs from the middle of the log and never truncates anything s
 **Idempotence.** Recovery itself can crash at any step. Steps 1–7 write nothing; step 8 writes the
 inactive checkpoint slot. Replaying the same log again gives the same state.
 
-**Divergence after failover.** A master that lost its role and comes back must not replay its log
-as authoritative: the new master may lack its last records. It rejoins as a slave (today's file copy)
+**Divergence after failover.** A primary that lost its role and comes back must not replay its log
+as authoritative: the new primary may lack its last records. It rejoins as a replica (today's file copy)
 and discards its log. Its system block records the replication epoch it last served, and recovery
-refuses to replay a log from an older epoch while a newer master exists ([§8.4](#84-replication)).
+refuses to replay a log from an older epoch while a newer primary exists ([§8.4](#84-replication)).
 
 ## 7. API
 
@@ -567,7 +567,7 @@ refuses to replay a log from an older epoch while a newer master exists ([§8.4]
 | `memory` | no | committed in memory (today) | today's: up to `--update_pool_size` transactions, no time bound | fast POVs |
 | `logged` | yes | committed and in the log's next group, not waited for | the last one or two groups: a few ms of writes | — (per call or per POV) |
 | `local` | yes | in a synced, sealed group on this server's disk | none, short of the device losing synced data (detected, [§6](#6-recovery)) | **safe POVs** |
-| `replica` | yes | `local` plus received by the slave | survives failover too | — (later, [§8.4](#84-replication)) |
+| `replica` | yes | `local` plus received by the replica | survives failover too | — (later, [§8.4](#84-replication)) |
 
 `logged` is PostgreSQL's `synchronous_commit = off`: memory-speed replies, durable within
 milliseconds, and the whole log order and POV identity of `local`. It is the cheap middle that
@@ -763,7 +763,7 @@ so the parent never gains an entry the client did not send. Entries expire at re
 count and age rules.
 
 **Not covered.** `try_multi` has no options and no commit information (it is excluded from receipts
-for the same reason), so it takes no operation id. Replication (#755 stage 5) has the slave rebuild
+for the same reason), so it takes no operation id. Replication (#755 stage 5) has the replica rebuild
 the table from the same replicated records, so it needs nothing beyond this.
 
 ### 8.3 Admission (#590, #607, #721)
@@ -784,11 +784,11 @@ the table from the same replicated records, so it needs nothing beyond this.
   is more than half that eighth is refused with `write_too_large` instead (not retryable): its
   promotion, a record about as big, could have only the headroom to land in, so it could be
   accepted and never promoted. The Tetris player retries a refused promotion round, backing off
-  from 100 µs up to 5 ms. A slave applying replicated records (and its System-repo writes) never
-  refuses for want of room: the master's replication `Sync` has no timeout, so the slave's apply
+  from 100 µs up to 5 ms. A replica applying replicated records (and its System-repo writes) never
+  refuses for want of room: the primary's replication `Sync` has no timeout, so the replica's apply
   waits until a checkpoint frees room, yielding its fiber, and gives up only when replication or
-  the server is stopping; the master then waits on the slave, which is the backpressure. A slave's
-  `--wal_mb` should be at least the master's. Because an unretired record is a write that isn't in
+  the server is stopping; the primary then waits on the replica, which is the backpressure. A replica's
+  `--wal_mb` should be at least the primary's. Because an unretired record is a write that isn't in
   a data file yet, and every such write holds Update pool memory, sizing the ring to the pools'
   bytes means memory admission refuses first in practice; the log check is the backstop.
   **Known gap:** with several children of one parent, promotions are ordered per player by
@@ -806,17 +806,17 @@ the table from the same replicated records, so it needs nothing beyond this.
 
 ### 8.4 Replication
 
-- Today the master ships each transaction's replica every `--replication_interval` (100 ms). The
-  log records are the same encoding, so the slave can append what it applies to its own log and
+- Today the primary ships each transaction's replica every `--replication_interval` (100 ms). The
+  log records are the same encoding, so the replica can append what it applies to its own log and
   make its copy durable on its own disk with no new format.
 - **Contract in v1 (`local`):** an acknowledged safe write survives a crash and restart of the
-  master. It does not necessarily survive a **failover**: the slave may not have received the last
+  primary. It does not necessarily survive a **failover**: the replica may not have received the last
   replication interval's writes when it takes over. With replication on, that loss bound is the
   replication lag (at least one interval, 100 ms by default), and `docs/durability.md` must say so.
-- **`replica` (later):** acknowledge after the slave has received the transaction (PostgreSQL's
+- **`replica` (later):** acknowledge after the replica has received the transaction (PostgreSQL's
   `remote_write`) or logged it (`on` with a synchronous standby). That costs a network round trip
-  plus the slave's group, and it requires shipping the stream per group instead of per interval.
-- After a failover the old master's log may hold records the new master never got; [§6](#6-recovery)
+  plus the replica's group, and it requires shipping the stream per group instead of per interval.
+- After a failover the old primary's log may hold records the new primary never got; [§6](#6-recovery)
   says what happens to them.
 
 ### 8.5 Shutdown (#744, #758, #769)
@@ -835,7 +835,7 @@ under heavy load is then bounded by the flush, not by Tetris's promotion rate.
   sequential read speed is a fraction of a second on any SSD) and replaying it. The unretired part
   of the log is the writes that aren't in a data file yet, which is bounded by the Update pool, the
   same bound as today's loss; copy-forward keeps a paused POV from stretching it.
-- **Not measured yet:** the replay rate of the slave apply path for small transactions. If it were
+- **Not measured yet:** the replay rate of the replica apply path for small transactions. If it were
   as slow as 50,000 transactions/s, a full default pool (sized from RAM; 100,000 in the kill
   campaign) would replay in 2 s. Stage 1 measures it and sets `--wal_mb`'s default so a full log
   replays in under 5 s on the CI runner.
@@ -863,7 +863,7 @@ TigerBeetle states the same storage fault model (torn, misdirected and lost writ
 errors) and tests it in its deterministic simulator (the VOPR); its recovery distinguishes "never
 written" from "written then damaged" the same way, using its redundant header ring and, in a
 cluster, repair from replicas ("Protocol-Aware Recovery for Consensus-Based Storage", FAST '18). A
-single Orly server can only detect and refuse; a slave is the repair.
+single Orly server can only detect and refuse; a replica is the repair.
 
 **Create, rename, truncate.** ALICE ("All File Systems Are Not Created Equal", OSDI '14) found most
 crash-consistency bugs in missing directory syncs after create or rename and in assumed write
@@ -943,7 +943,7 @@ optional in stage 1.
 ### 9.2 Bundled with #745
 
 Stage 3 of #745 needs a store format version for persisted retention metadata, save points and
-(time, version) samples, and a home for them that survives restart and reaches slaves. This design
+(time, version) samples, and a home for them that survives restart and reaches replicas. This design
 supplies both: the format version is the same slot, and the metadata goes in the checkpoint, with
 each change logged as a `META` record (and so replicated). One bump, one approval, one migration.
 The #745 design's §11 already asked for exactly this bundling.
@@ -1166,7 +1166,7 @@ Each stage is its own PR with its own tests.
    new modes (Misdirect, LostWrite, WriteErrAfter, SyncErrAfter, BitFlip) with their own tests. The
    kill campaign's power-loss layer (`dm-log-writes` on the runners, or the user-space fallback) and
    its `nosync` / `early_ack` negative controls, proven against today's code: a power-loss campaign
-   on today's master must lose acknowledged writes and say so. Check what 0.2.x does with an
+   on today's primary must lose acknowledged writes and say so. Check what 0.2.x does with an
    unrecognised device and with a nonzero format slot (decides magic number vs slot). The NVMe
    measurement (decision 8).
 
@@ -1177,11 +1177,11 @@ Each stage is its own PR with its own tests.
    store changes.
 2. **Wired to the commit path, test stores only (two-way).** `--durable_acks=experimental` works
    only on stores it creates (refuses to upgrade an existing one): log records at commit, the
-   durability wait, levels and receipts, durable safe POVs, recovery through the slave apply path,
+   durability wait, levels and receipts, durable safe POVs, recovery through the replica apply path,
    the write-ahead rule in the global flush, graceful stop without draining safe POVs. Gate: the
    kill campaign's `durable` mode with zero acknowledged safe writes lost over 40 kills under the
    power-loss layer, both negative controls failing, the fault harness green, ab-bench throughput
-   and latency at 1/8/64 writers against master on x86 and arm64. (2a, if POV restore proves hard:
+   and latency at 1/8/64 writers against primary on x86 and arm64. (2a, if POV restore proves hard:
    ship option B's subset first.)
 
    **APPROVAL POINT.** Before stage 3 the maintainer approves, together with #745's stage 3: the
@@ -1196,7 +1196,7 @@ Each stage is its own PR with its own tests.
    Tests: upgrade from a 0.2.x store with data; an older binary refusing the store; the durable
    campaign on an upgraded store; downgrade refused while the log holds anything.
 4. **Exactly-once (#733)** on top: operation ids, the table, retries across a restart, clients.
-5. **Replication levels** (`replica`), the slave's own log, the failover rule of §6.
+5. **Replication levels** (`replica`), the replica's own log, the failover rule of §6.
 6. **Docs.** `docs/durability.md` rewritten with the new contract and the measured loss bounds per
    level; `docs/PROTOCOL.md`; README; clients' docs.
 

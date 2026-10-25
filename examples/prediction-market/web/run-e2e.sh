@@ -26,7 +26,7 @@ echo "[2/4] compile market.orly + start orlyi"
 "$ORLYC" -o "$WORK" ../market.orly
 mkdir "$WORK/packages"; touch "$WORK/packages/__orly__"; cp "$WORK/market.0.so" "$WORK/packages/"
 pkill -9 -f 'instance_name=prediction_market_e2e' 2>/dev/null || true; sleep 1
-"$ORLYI" --mem_sim --create=true --port_number=19600 --slave_port_number=19601 \
+"$ORLYI" --mem_sim --create=true --port_number=19600 --replica_port_number=19601 \
   --connection_backlog=10 --instance_name=prediction_market_e2e --starting_state=SOLO \
   --package_dir="$WORK/packages" > "$WORK/orlyi.log" 2>&1 &
 ORLYI_PID=$!

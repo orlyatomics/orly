@@ -26,7 +26,7 @@ mkdir "$WORK/packages"; touch "$WORK/packages/__orly__"; cp "$WORK/market.0.so" 
 
 echo "[2/4] start orlyi"
 pkill -9 -f 'instance_name=prediction_market_web' 2>/dev/null || true; sleep 1
-"$ORLYI" --mem_sim --create=true --port_number=19600 --slave_port_number=19601 \
+"$ORLYI" --mem_sim --create=true --port_number=19600 --replica_port_number=19601 \
   --connection_backlog=10 --instance_name=prediction_market_web --starting_state=SOLO \
   --bind_address="${ORLY_BIND_ADDRESS:-127.0.0.1}" \
   --package_dir="$WORK/packages" > "$WORK/orlyi.log" 2>&1 &

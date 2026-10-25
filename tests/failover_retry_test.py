@@ -82,7 +82,7 @@ class Server:
         p = self.port
         cmd = [os.path.join(self.args.orly_out, 'orly/server/orlyi'),
                '--create=true', f'--instance_name={self.instance}', f'--starting_state={state}',
-               f'--port_number={p}', f'--slave_port_number={p + 1}', f'--ws_port_number={p + 2}',
+               f'--port_number={p}', f'--replica_port_number={p + 1}', f'--ws_port_number={p + 2}',
                f'--reporting_port_number={p + 3}', '--connection_backlog=32',
                f'--package_dir={self.work}/packages', '--max_parallel_frames=4000',
                '--page_cache_size=256', '--block_cache_size=64', '--log_info', '--log_notice']
@@ -91,7 +91,7 @@ class Server:
         else:
             cmd += ['--do_fsync', '--no_realtime', '--durable_acks=local']
         if master_slave_port is not None:
-            cmd.append(f'--address_of_master=127.0.0.1:{master_slave_port}')
+            cmd.append(f'--address_of_primary=127.0.0.1:{master_slave_port}')
             if self.args.negative == 'noretry':
                 cmd.append('--operation_retention_count=0')
         self.log = open(self.logpath, 'w')

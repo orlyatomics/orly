@@ -55,7 +55,7 @@ touch "$WORK/packages/__orly__"
 cp "$WORK/sample.1.so" "$WORK/packages/"
 
 "$ORLYI" --mem_sim --mem_sim_mb="$MEM_MB" --mem_sim_slow_mb="$SLOW_MB" --create=true \
-         --port_number=19730 --slave_port_number=19731 \
+         --port_number=19730 --replica_port_number=19731 \
          --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
          --connection_backlog=32 \
          --instance_name=orly_disk_full_smoke \

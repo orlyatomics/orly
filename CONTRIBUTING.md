@@ -81,7 +81,7 @@ Run the lint locally before pushing:
 
 ```sh
 python3 tools/maint/lint_todos.py            # whole tree
-python3 tools/maint/lint_todos.py --base origin/master   # only your new TODOs
+python3 tools/maint/lint_todos.py --base origin/main   # only your new TODOs
 ```
 
 Doc-stub cleanup tooling lives in
@@ -128,7 +128,7 @@ checks for new code.
 The formatter and linter apply to **changed lines only**. There is no mass
 reformat: it would wreck `git blame`, and the repo-wide churn would drown real
 changes. Format just your own edits with
-`git clang-format-18 origin/master` (clang-format 18, the version on Ubuntu
+`git clang-format-18 origin/main` (clang-format 18, the version on Ubuntu
 24.04). CI runs both tools over the lines a PR touches in an advisory job,
 `style-advisory`, which annotates findings but never fails the PR. Wrap code
 that is deliberately aligned (tables, generated-looking blocks) in
@@ -143,7 +143,7 @@ end-to-end examples, and the `todo-lint` and ThreadSanitizer gates.
 ### CI build caches
 
 Compiler snapshots are separate for each OS, architecture, compiler identity
-and jhm configuration. Only successful master-push builds write: the debug,
+and jhm configuration. Only successful default-branch push builds write: the debug,
 release, ASan and TSan producers on x64, and debug/release producers on ARM.
 Other CI jobs, pull requests and manual workflows restore only; there is no
 fallback across configurations or architectures.
@@ -153,7 +153,7 @@ complete compiler-reported source/header dependencies (including system
 headers), compiler/linker/runtime inputs and absolute source layout. It has
 no fallback key. `make bootstrap` still runs nycr generation. Normal nightly
 builds bypass both caches; sanitizers keep their compiler cache but rebuild
-bootstrap seeds. A new cache namespace starts cold and warms on master.
+bootstrap seeds. A new cache namespace starts cold and warms on the default branch.
 
 ### Documentation-only CI
 
@@ -171,7 +171,7 @@ classification retain full coverage. Contract documents such as
 are deliberately not allowlisted.
 
 Client-only PRs still run every existing native and integration check.
-Master pushes, scheduled runs and manual dispatches always run full CI;
+Default-branch pushes, scheduled runs and manual dispatches always run full CI;
 the unsharded nightly retains its existing cache-disabled builds.
 The `jhm -c release` aggregate accepts a skipped producer only after a
 successful lint/classification job explicitly identifies a docs-only PR.

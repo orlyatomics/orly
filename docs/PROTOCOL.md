@@ -41,11 +41,11 @@ clear unless TLS carries the connection (see "TLS via a reverse proxy").
   `--bind_address=<ip>` changes that for all three; `--bind_address=0.0.0.0`
   listens on every interface. `orlyi` logs each address it bound at startup
   (`client listener bound to 127.0.0.1:19380`, with `--log_info`).
-- **Replication.** The replication listener (`--slave_port_number`) binds
-  every interface by default, because a slave usually runs on another host.
+- **Replication.** The replication listener (`--replica_port_number`) binds
+  every interface by default, because a replica usually runs on another host.
   Without a replication token it is unauthenticated too, and its stream
   carries all of the data, so keep peers on a private network and set
-  `--slave_bind_address` to that network's address.
+  `--replica_bind_address` to that network's address.
 - **Docker.** Inside the published image `orlyi` binds every interface, since
   `docker run -p` can't reach a loopback listener in the container. Who can
   connect is then decided by the `-p` mapping: `-p 127.0.0.1:8082:8082`
@@ -65,8 +65,8 @@ clear unless TLS carries the connection (see "TLS via a reverse proxy").
 ### Shared secret (#710)
 
 Off unless configured. Start `orlyi` with a token and every client connection
-must present it before any statement runs, and a slave must present the
-replication token to join a master.
+must present it before any statement runs, and a replica must present the
+replication token to join a primary.
 
 | setting | flag | environment | default |
 | -- | -- | -- | -- |
@@ -104,22 +104,22 @@ replication token to join a master.
   session id, an old-session request gets result `'U'`. Health checks need no
   token. The C++ client (`orly/client`, `orly_client`) presents
   `ORLY_AUTH_TOKEN_FILE` or `ORLY_AUTH_TOKEN`.
-- **Replication.** A master with a replication token sends the 8 bytes
-  `ORLYAUTH` to a slave as soon as it connects. The slave answers `ORLYAUTH`,
-  the token's length as a big-endian `uint16`, and the token; the master
-  replies `'A'` or `'R'`. On a mismatch both sides log it (master:
-  `replication: refused a slave from 10.0.0.2:41234: the slave presented a
-  different replication token`; slave: `replication: cannot join master
-  10.0.0.1:19381: the master refused this slave's replication token`), the
-  slave exits, and the master keeps listening for another slave. A slave with
-  no token can't answer: the master logs that and refuses it after 10 seconds.
+- **Replication.** A primary with a replication token sends the 8 bytes
+  `ORLYAUTH` to a replica as soon as it connects. The replica answers `ORLYAUTH`,
+  the token's length as a big-endian `uint16`, and the token; the primary
+  replies `'A'` or `'R'`. On a mismatch both sides log it (primary:
+  `replication: refused a replica from 10.0.0.2:41234: the replica presented a
+  different replication token`; replica: `replication: cannot join primary
+  10.0.0.1:19381: the primary refused this replica's replication token`), the
+  replica exits, and the primary keeps listening for another replica. A replica with
+  no token can't answer: the primary logs that and refuses it after 10 seconds.
 - **No token, no change.** Without a token neither side sends any of the
   above, and the bytes on the wire are the same as before #710. A server
   without a token answers a WebSocket auth message as the statement it doesn't
   parse (`"status": "exception"`), and the clients here take any reply but
   `unauthorized` to mean the server needs no token and carry on. Likewise a
-  slave with a token joins a master without one, logging that it wasn't asked.
-  That lets clients and slaves get the token before the server requires it.
+  replica with a token joins a primary without one, logging that it wasn't asked.
+  That lets clients and replicas get the token before the server requires it.
 
 **Turning it on.** Every client and every replica needs the token, or it is
 refused as soon as the server requires one:
@@ -128,11 +128,11 @@ refused as soon as the server requires one:
    `ORLY_AUTH_TOKEN` for the Python, Go, Zig and TypeScript clients, the MCP server,
    the REPL and `orly_client`; or the clients' `token` option) and to every
    replica. Clients that have it keep working against the server as it is.
-2. Restart slaves with the token (or `--replication_token_file`), then the
-   master. A slave started with the token joins a master without one.
-3. Restart the master (or solo server) with `--auth_token_file`. From then on a
-   client or slave without the token is refused, and logged at `LOG_WARNING`
-   (clients) or `LOG_ERR` (slaves).
+2. Restart replicas with the token (or `--replication_token_file`), then the
+   primary. A replica started with the token joins a primary without one.
+3. Restart the primary (or solo server) with `--auth_token_file`. From then on a
+   client or replica without the token is refused, and logged at `LOG_WARNING`
+   (clients) or `LOG_ERR` (replicas).
 
 Taking it off is the same in reverse: restart the server without a token, and
 clients that still send one keep working.
@@ -173,8 +173,8 @@ Clients then connect to `wss://orly.example.com/` with the token as usual.
 The C++ client speaks plain TCP, so give it a local TLS tunnel, for example
 `socat TCP-LISTEN:19380,bind=127.0.0.1,fork,reuseaddr OPENSSL:orly.example.com:19443,cafile=/etc/ssl/certs/ca-certificates.crt`,
 and point it at `127.0.0.1:19380`. Replication between hosts can be carried the
-same way (a layer4 route to the master's `--slave_port_number`, a tunnel on the
-slave's host for `--address_of_master`), or over a private network or VPN.
+same way (a layer4 route to the primary's `--replica_port_number`, a tunnel on the
+replica's host for `--address_of_primary`), or over a private network or VPN.
 Only the proxy's port should be reachable from other machines.
 
 ## Request / reply
@@ -410,10 +410,10 @@ try {<pov-id>} mypkg bump <{.n: 1}> <{.op_id: "0194a2b4-7c00-7000-8000-000000000
   recovery rebuilds the table from the checkpoint and the log. On a fast POV, or without the log,
   the table is in memory only: it covers a dropped connection, not a restart (a fast POV does not
   survive one at all).
-- A **slave** keeps the ids its master's writes carry (#862), so after a failover the promoted
-  slave answers a retry with the saved result. It can't know the ids of writes from before it
+- A **replica** keeps the ids its primary's writes carry (#862), so after a failover the promoted
+  replica answers a retry with the saved result. It can't know the ids of writes from before it
   joined, so it replies `operation_expired` to any id it doesn't know that is no newer than its
-  join plus a minute (for client clock skew). A slave promoted within that minute refuses new ids
+  join plus a minute (for client clock skew). A replica promoted within that minute refuses new ids
   as well until it passes. See [durability.md](durability.md), "Retrying a write exactly once".
 - A read (a call that wrote nothing) with an id works but is not remembered: its retry runs again.
 
@@ -443,7 +443,7 @@ try {C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3} mypkg get <{.n: 1}> <{.at: 42}>;
   `"requested"`, `"oldest"` and `"newest"`: the versions from `oldest` to `newest` are the ones it
   can read now. A version past `newest` is not committed yet. A version below `oldest` is older
   than the history the disk merges have kept: a merge that folds `+=` runs or prunes overwritten
-  values raises `oldest` to the newest version it merged. After a restart, or after a slave loads
+  values raises `oldest` to the newest version it merged. After a restart, or after a replica loads
   a synced file, `oldest` starts at the newest version on disk.
 - Retention (off by default) keeps a window of history through merges and folds, so `oldest`
   stays within it. `--retention_versions=N` keeps the last N versions and `--retention_seconds=S`
@@ -453,15 +453,15 @@ try {C4EF7C46-28C5-4000-8CCD-C8E799E2C3F3} mypkg get <{.n: 1}> <{.at: 42}>;
   it, and the read then gets `version_unavailable`. The holds live in memory. The window's
   horizon is kept on disk (store format version 2, below), so after a restart `oldest` comes back
   where it was rather than at the newest version on disk; merges never drop a version until the
-  record saying they may is on disk. A master ships its horizon to its slaves, and a slave never
-  drops a version at or above it, so after a failover `oldest` is no newer than the old master's.
-  Until a slave has heard from its master it keeps all history. Give master and slaves the same
+  record saying they may is on disk. A primary ships its horizon to its replicas, and a replica never
+  drops a version at or above it, so after a failover `oldest` is no newer than the old primary's.
+  Until a replica has heard from its primary it keeps all history. Give primary and replicas the same
   retention flags; the server does not check that they match.
 - **Upgrade note.** Only binaries from #846 on (the store format version 1 check) refuse a store
   whose version is newer than they know. One from before it, such as v0.2.0, has no format check,
   so it would open a format version 2 store instead of refusing it, then drop the retained history
   in its merges and ignore the records. Upgrade every binary that may open the store, including
-  slaves, standbys and tools such as `orly_dm`, to a release with the check before the first start
+  replicas, standbys and tools such as `orly_dm`, to a release with the check before the first start
   with a retention flag.
 - Store format version 2: the first start with `--retention_versions` or `--retention_seconds` on
   a format version 1 store upgrades it in place to version 2, which adds the per-POV retention

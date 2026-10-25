@@ -53,7 +53,7 @@ cp "$WORK/keyset_paging.1.so" "$WORK/packages/"
 
 echo "[2/3] start orlyi (read budget $ROW_LIMIT rows; logs -> $WORK/orlyi.log), run keyset_paging.mjs"
 "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-         --port_number=19880 --slave_port_number=19881 \
+         --port_number=19880 --replica_port_number=19881 \
          --ws_port_number=$WS_PORT --reporting_port_number=19883 \
          --connection_backlog=10 \
          --instance_name=orly_keyset_paging_smoke \

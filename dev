@@ -54,7 +54,7 @@ run_steps() {
       else
         bind="0.0.0.0"
       fi
-      echo "make bootstrap version >/dev/null && jhm orly/server/orlyi && exec ../out_orly/debug/orly/server/orlyi --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true --instance_name=orly --starting_state=SOLO --port_number=19380 --slave_port_number=19381 --ws_port_number=8082 --reporting_port_number=19388 --bind_address=$bind --le --log_info \"\$@\""
+      echo "make bootstrap version >/dev/null && jhm orly/server/orlyi && exec ../out_orly/debug/orly/server/orlyi --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true --instance_name=orly --starting_state=SOLO --port_number=19380 --replica_port_number=19381 --ws_port_number=8082 --reporting_port_number=19388 --bind_address=$bind --le --log_info \"\$@\""
       ;;
     sh)    echo 'if [ $# -gt 0 ]; then "$@"; else exec bash; fi' ;;
   esac

@@ -116,7 +116,7 @@ these documented leaks and would gate on noise, not signal.
   today that is a logged leak (and a debug assert), not a drain. The real
   fix is closing established connections and joining their serving fibers
   before the teardown jumper.
-- **#461 — master-mode replication**: a replicate loop wedged in a remote
+- **#461 — primary-mode replication**: a replicate loop wedged in a remote
   `future->Sync()` holds `JoinReplicationServices()` until the RPC
   resolves; interrupting in-flight RPCs is future work.
 - **#462 — never-scheduled fibers (FIXED)**: a fiber that was latched but

@@ -42,7 +42,7 @@ touch "$WORK/packages/__orly__"
 cp "$WORK/sample.1.so" "$WORK/packages/"
 
 "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-         --port_number=19720 --slave_port_number=19721 \
+         --port_number=19720 --replica_port_number=19721 \
          --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
          --connection_backlog=32 \
          --instance_name=orly_pool_pressure_smoke \
