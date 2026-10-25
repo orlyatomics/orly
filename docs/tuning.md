@@ -44,10 +44,13 @@ The process is also held to 44 of the machine's 56 threads (`taskset -c 0-21,28-
 threads are pinned to threads 28-30, 32 and 36-38, 40 (see below). On two paired runs this gave a paged-read p99
 of about 9.0 ms (the same build on the default layout was 10.7 to 11.1 ms), point-read p50 of about 228 us and
 p99 of about 1.6 ms, no write wait over 1 s, and no refusals. Those runs used a build with the paged-read skip
-change and a profile-guided build ([pgo.md](pgo.md)); the settings alone are not enough. The same settings on a plain release build (no paged-read skip change, no
-profile guidance) brought paged-read p99 to 8.8 to 9.1 ms but failed the ingest limits on both paired runs: the longest
-write wait was 9 to 11 s (limit 1 s) and 27 to 30 writes were refused. The build changes lower the CPU the readers use, which
-leaves the merges the room to keep up. Treat the pinning and the build as one recommendation.
+change and a profile built from a scorecard-shaped training workload. The same settings on a plain release build
+brought paged-read p99 to 8.8 to 9.1 ms but failed the ingest limits on both paired runs: the longest write wait
+was 9 to 11 s (limit 1 s) and 27 to 30 writes were refused. A build made with `make release-pgo` (profile from the
+repository's own smokes), with or without the paged-read skip change, behaved the same way: reads inside the limits,
+ingest outside them ([pgo.md](pgo.md) has the table). So the pinning alone moves the read numbers, but whether
+ingest stays healthy depends on something else about the build that this page cannot yet name. Check ingest on
+your own build before adopting the settings.
 
 What each part does:
 
@@ -95,7 +98,7 @@ default table around the CPUs the flags you gave use. Give all five when you wan
 
 ## Build
 
-A profile-guided build is a separate, additive step: see [pgo.md](pgo.md). Compiling for the machine's CPU
+A profile-guided build is a separate, additive step: see [pgo.md](pgo.md), which also says what it did and did not fix. Compiling for the machine's CPU
 (`--march=x86-64-v3` on the PGO build) is also optional, and makes the binary Haswell-and-later only.
 
 ## Checking a run
