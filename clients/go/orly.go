@@ -274,6 +274,7 @@ type Client struct {
 }
 
 type reply struct {
+	ID      *float64        `json:"id,omitempty"` // set on the reply to an envelope (#1033); the server prints numbers as floats
 	Status  string          `json:"status"`
 	Result  json.RawMessage `json:"result"`
 	Receipt *Receipt        `json:"receipt,omitempty"`
@@ -383,6 +384,12 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 	if err != nil {
 		return nil, &connError{fmt.Errorf("orly: read after %q: %w", stmt, err)}
 	}
+	return c.decode(stmt, msg)
+}
+
+// decode turns the reply to stmt into its result, or the error its status
+// names, and records its receipt and version.
+func (c *Client) decode(stmt string, msg []byte) (json.RawMessage, error) {
 	var r reply
 	if err := json.Unmarshal(msg, &r); err != nil {
 		return nil, fmt.Errorf("orly: parse reply to %q: %w (raw: %s)", stmt, err, msg)
@@ -448,6 +455,134 @@ func (c *Client) Send(stmt string) (json.RawMessage, error) {
 		return nil, fmt.Errorf("orly: %s -> %s", stmt, msg)
 	}
 	return r.Result, nil
+}
+
+// DefaultPipelineWindow is how many statements Pipeline keeps sent and not yet
+// answered. It matches the server's default --ws_pipeline_depth; a larger
+// window only queues in TCP (#1033).
+const DefaultPipelineWindow = 16
+
+// PipelineItem is one statement for Pipeline. A statement with Read false is a
+// barrier: the server starts it after every earlier statement is answered and
+// starts nothing after it until it is. Read true says the statement writes
+// nothing, so the server may run it alongside the other reads in flight.
+type PipelineItem struct {
+	Stmt string
+	Read bool
+}
+
+// PipelineOpts tunes Pipeline. The zero value is the default window.
+type PipelineOpts struct {
+	// Window is the most statements sent and not yet answered; 0 means
+	// DefaultPipelineWindow.
+	Window int
+}
+
+// Pipeline keeps several statements in flight on this connection (#1033) and
+// returns their results in the order given, whatever order the replies arrive
+// in. It needs a server with --ws_pipeline_depth above 1 (the default); an
+// older server answers an envelope with an error.
+//
+// Mark only statements that write nothing as reads: a write marked as a read
+// loses its ordering against the statements around it. A bare statement that
+// must see an earlier write goes in with Read false.
+//
+// Every reply is read before Pipeline returns, so a failing statement leaves
+// the connection in step; the first failure in the order given is then
+// returned, with a nil result in its place. A broken connection, or a reply
+// that names no statement of ours, returns at once and leaves the connection
+// unusable. LastReceipt and LastVersion are not updated: use Send or Call for
+// a statement whose receipt you need. Receipts and operation ids are not
+// available here.
+func (c *Client) Pipeline(items []PipelineItem, opts PipelineOpts) ([]json.RawMessage, error) {
+	window := opts.Window
+	if window == 0 {
+		window = DefaultPipelineWindow
+	}
+	if window < 0 {
+		return nil, fmt.Errorf("orly: pipeline window must be at least 1")
+	}
+	n := len(items)
+	msgs := make([][]byte, n)
+	slots := make(chan struct{}, window) // a token per statement in flight
+	for i := 0; i < window; i++ {
+		slots <- struct{}{}
+	}
+	readErr := make(chan error, 1)
+	// Read in their own goroutine, so a connection with a full send buffer and
+	// a full receive buffer cannot stall both ends.
+	go func() {
+		for got := 0; got < n; got++ {
+			_, msg, err := c.conn.ReadMessage()
+			if err != nil {
+				readErr <- &connError{fmt.Errorf("orly: read pipelined reply: %w", err)}
+				return
+			}
+			var r reply
+			if err := json.Unmarshal(msg, &r); err != nil || r.ID == nil || *r.ID < 0 || *r.ID >= float64(n) || *r.ID != math.Trunc(*r.ID) || msgs[int(*r.ID)] != nil {
+				readErr <- fmt.Errorf("orly: pipelined reply matches no statement in flight (raw: %s)", msg)
+				return
+			}
+			msgs[int(*r.ID)] = msg
+			slots <- struct{}{}
+		}
+		readErr <- nil
+	}()
+	for i, item := range items {
+		select {
+		case <-slots:
+		case err := <-readErr:
+			return nil, c.abortPipeline(err)
+		}
+		env := map[string]any{"id": i, "stmt": item.Stmt}
+		if item.Read {
+			env["read"] = true
+		}
+		b, _ := json.Marshal(env)
+		if err := c.conn.WriteMessage(websocket.TextMessage, b); err != nil {
+			return nil, c.abortPipeline(&connError{fmt.Errorf("orly: write %q: %w", item.Stmt, err)})
+		}
+	}
+	if err := <-readErr; err != nil {
+		return nil, c.abortPipeline(err)
+	}
+	results := make([]json.RawMessage, n)
+	var first error
+	receipt, version := c.LastReceipt, c.LastVersion
+	for i, item := range items {
+		res, err := c.decode(item.Stmt, msgs[i])
+		if err != nil && first == nil {
+			first = err
+		}
+		results[i] = res
+	}
+	c.LastReceipt, c.LastVersion = receipt, version
+	return results, first
+}
+
+// abortPipeline closes the connection, which also ends the reader goroutine,
+// since replies can no longer be matched up with what was sent.
+func (c *Client) abortPipeline(err error) error {
+	c.conn.Close()
+	return err
+}
+
+// CallPipelined calls pkg method on pov once per record in argsList as separate
+// statements kept in flight together (#1033), and returns the results in order.
+// Unlike CallBatch these are N transactions, each seeing the ones before it.
+// read true says none of them writes, so the server may run them concurrently;
+// leave it false for writes, which run one at a time in the order given. See
+// Pipeline for errors and the window.
+func (c *Client) CallPipelined(pov, pkg, method string, argsList []map[string]any, read bool, opts PipelineOpts) ([]json.RawMessage, error) {
+	items := make([]PipelineItem, 0, len(argsList))
+	for _, args := range argsList {
+		r, err := litRecord(args)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, PipelineItem{Stmt: fmt.Sprintf("try {%s} %s %s %s;", pov, pkg, method, r), Read: read})
+	}
+	return c.Pipeline(items, opts)
 }
 
 // sendOp sends a write. Without an operation id it is Send: a dropped

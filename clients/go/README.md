@@ -88,6 +88,27 @@ raw, err := c.CallWithOpts(pov, "bank", "deposit", args, orly.CallOpts{OpID: orl
 `ErrOperationExpired`, `ErrOperationIDReused` and `*OutcomeTooLargeError` (with `.Version`) are the
 server's refusals; none is retried. See `docs/PROTOCOL.md`, "Exactly-once writes".
 
+## Pipelining (#1033)
+
+`Call` waits for each reply. To keep several statements in flight on one connection (needs a server
+with `--ws_pipeline_depth` above 1, the default), use `Pipeline` or `CallPipelined`:
+
+```go
+// Reads the server may run together; results come back in the order given.
+rows, err := c.CallPipelined(pov, "mypkg", "get", argsList, true, orly.PipelineOpts{})
+
+// Mixed: Read false is a barrier (starts after everything before it is answered).
+out, err := c.Pipeline([]orly.PipelineItem{
+	{Stmt: "try {" + pov + "} mypkg put <{.k: 1, .v: 2}>;"},              // write
+	{Stmt: "try {" + pov + "} mypkg get <{.k: 1}>;", Read: true},         // sees the write
+}, orly.PipelineOpts{})
+```
+
+At most `Window` (default 16) statements are unanswered at once. Every reply is read before the call
+returns, then the first failure in the order given is returned (its result is nil), so the
+connection stays in step. Mark only statements that write nothing as reads. Receipts and operation
+ids are not available here: use `Call` for those.
+
 ## Reading the past (#745)
 
 ```go
