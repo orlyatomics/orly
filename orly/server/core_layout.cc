@@ -18,6 +18,14 @@
 
 #include <orly/server/core_layout.h>
 
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <fstream>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+
 #include <sched.h>
 #include <unistd.h>
 
@@ -111,6 +119,81 @@ TCoreLayout Orly::Server::DefaultCoreLayout(const vector<size_t> &cpus) {
     }
   }
   return layout;
+}
+
+TCoreLayout Orly::Server::DefaultCoreLayout(const vector<size_t> &cpus, const vector<size_t> &claimed) {
+  const set<size_t> taken(claimed.begin(), claimed.end());
+  vector<size_t> free_cpus;
+  for (const size_t cpu : cpus) {
+    if (!taken.contains(cpu)) {
+      free_cpus.emplace_back(cpu);
+    }
+  }
+  return DefaultCoreLayout(free_cpus.size() < 2 ? cpus : free_cpus);
+}
+
+vector<size_t> Orly::Server::ParseCpuList(const string &text) {
+  vector<size_t> cpus;
+  istringstream strm(text);
+  for (string part; getline(strm, part, ',');) {
+    try {
+      size_t used = 0;
+      const size_t first = stoul(part, &used);
+      size_t last = first;
+      if (used < part.size() && part[used] == '-') {
+        last = stoul(part.substr(used + 1));
+      }
+      for (size_t cpu = first; cpu <= last && cpu < CPU_SETSIZE; ++cpu) {
+        cpus.emplace_back(cpu);
+      }
+    } catch (const logic_error &) {
+      /* Skip what isn't a number or a range. */
+    }
+  }
+  return cpus;
+}
+
+vector<vector<size_t>> Orly::Server::ReadSiblingGroups(const string &sys_cpu_dir) {
+  set<vector<size_t>> groups;
+  error_code ec;
+  for (const auto &entry : filesystem::directory_iterator(sys_cpu_dir, ec)) {
+    const string name = entry.path().filename().string();
+    if (!name.starts_with("cpu") || name.size() == 3 || !isdigit(static_cast<unsigned char>(name[3]))) {
+      continue;
+    }
+    ifstream file(entry.path() / "topology" / "thread_siblings_list");
+    string line;
+    if (getline(file, line)) {
+      vector<size_t> group = ParseCpuList(line);
+      ranges::sort(group);
+      if (group.size() > 1) {
+        groups.insert(std::move(group));
+      }
+    }
+  }
+  return {groups.begin(), groups.end()};
+}
+
+vector<pair<size_t, size_t>> Orly::Server::FastSiblingConflicts(const TCoreLayout &layout,
+                                                                const vector<vector<size_t>> &groups) {
+  set<size_t> pinned;
+  for (const auto *vec : {&layout.Fast, &layout.Slow, &layout.MemMerge, &layout.DiskMerge, &layout.DiskController}) {
+    pinned.insert(vec->begin(), vec->end());
+  }
+  vector<pair<size_t, size_t>> conflicts;
+  for (const size_t fast : set<size_t>(layout.Fast.begin(), layout.Fast.end())) {
+    for (const auto &group : groups) {
+      if (ranges::find(group, fast) == group.end()) {
+        continue;
+      }
+      for (const size_t other : group) {
+        if (other != fast && pinned.contains(other)) {
+          conflicts.emplace_back(fast, other);
+        }
+      }
+    }
+  }
+  return conflicts;
 }
 
 vector<size_t> Orly::Server::AllowedCpus() {

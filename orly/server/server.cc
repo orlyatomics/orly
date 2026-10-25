@@ -1155,7 +1155,13 @@ void TServer::TCmd::ResolveCoreVecDefaults() {
   if (cpus.size() < 2) {
     syslog(LOG_ERR, "Indy is not supported on single processor machines");
   }
-  TCoreLayout layout = DefaultCoreLayout(cpus);
+  /* The defaults for the pools not given go around the CPUs the given ones use: a --fast_cores that
+     overlapped the default memory-merge or disk-controller CPUs used to share them with those. */
+  std::vector<size_t> claimed;
+  for (const auto *vec : {&user_fast, &user_slow, &user_mem, &user_disk, &user_ctl}) {
+    claimed.insert(claimed.end(), vec->begin(), vec->end());
+  }
+  TCoreLayout layout = DefaultCoreLayout(cpus, claimed);
   FastCoreVec = std::move(layout.Fast);
   SlowCoreVec = std::move(layout.Slow);
   MemMergeCoreVec = std::move(layout.MemMerge);
@@ -1191,6 +1197,23 @@ void TServer::TCmd::ResolveCoreVecDefaults() {
            << " disk_controller=[" << join_cores(DiskControllerCoreVec) << "]"
            << " disk_merge_threads=" << NumDiskMergeThreads;
   syslog(LOG_INFO, "%s", resolved.str().c_str());
+
+  /* A fast runner that shares a physical core with another pinned thread is slower and more variable than
+     one that has it to itself. Say so; the layout stays as given. */
+  TCoreLayout resolved_layout;
+  resolved_layout.Fast = FastCoreVec;
+  resolved_layout.Slow = SlowCoreVec;
+  resolved_layout.MemMerge = MemMergeCoreVec;
+  resolved_layout.DiskMerge = DiskMergeCoreVec;
+  resolved_layout.DiskController = DiskControllerCoreVec;
+  std::stringstream shared;
+  for (const auto &[fast, other] : FastSiblingConflicts(resolved_layout, ReadSiblingGroups())) {
+    shared << " " << fast << "/" << other;
+  }
+  if (!shared.str().empty()) {
+    syslog(LOG_INFO, "fast cores sharing a physical core (hyper-thread siblings) with another pinned thread, as fast/other:%s;"
+                        " leaving the sibling idle gives reads a steadier tail (docs/tuning.md)", shared.str().c_str());
+  }
 }
 
 void TServer::RestoreOperation(const Base::TUuid &repo_id, Indy::TSequenceNumber seq_num, const Atom::TCore &meta_core,
