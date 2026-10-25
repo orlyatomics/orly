@@ -56,6 +56,11 @@ namespace Orly {
 
       inline const TNoteInterner::TNotes &GetNotes() const;
 
+      /* Make room for `count` more notes (#1018). */
+      void ReserveNotes(size_t count) {
+        NoteInterner.Reserve(count);
+      }
+
       /* See base class. */
       virtual TCore::TOffset Propose(TCore::TNote *proposed_note) final;
 

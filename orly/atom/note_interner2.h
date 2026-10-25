@@ -51,6 +51,10 @@ namespace Orly {
       /* The number of notes interned. */
       inline size_t GetSize() const;
 
+      /* Make room for `count` more notes, so proposing them doesn't rehash the notes already here
+         as the set grows (#1018). */
+      inline void Reserve(size_t count);
+
       /* The bytes the interned notes hold, headers included (#694). */
       inline size_t GetByteSize() const;
 
@@ -90,6 +94,10 @@ namespace Orly {
 
     inline size_t TNoteInterner::GetSize() const {
       return Notes.size();
+    }
+
+    inline void TNoteInterner::Reserve(size_t count) {
+      Notes.reserve(Notes.size() + count);
     }
 
     inline size_t TNoteInterner::GetByteSize() const {

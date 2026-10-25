@@ -18,6 +18,7 @@
 
 #include <orly/atom/kit2.h>
 
+#include <orly/atom/suprena.h>
 #include <orly/sabot/order_states.h>
 
 #include <memory>
@@ -27,6 +28,13 @@
 
 using namespace std;
 using namespace Orly::Atom;
+
+namespace {
+
+  /* An array at least this long reserves room for its elements' notes in an in-memory arena (#1018). */
+  constexpr size_t MinReserveElemCount = 32UL;
+
+}  // namespace
 
 /*
  *    TCore's public members.
@@ -811,9 +819,17 @@ bool TCore::TryInitIndirectCoreArray(TTycon tycon, TExtensibleArena *arena, cons
     void *pin_alloc = alloca(State::GetMaxStatePinSize());
     State::TArrayOfSingleStates::TPin::TWrapper pin(state.Pin(pin_alloc));
     TInit1 init1 =
-        [arena, &pin](size_t elem_idx, void *elem) {
+        [arena, &pin, elem_count](size_t elem_idx, void *elem) {
           void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-          new (elem) TCore(arena, State::TAny::TWrapper(pin->NewElem(elem_idx, state_alloc)));
+          auto *core = new (elem) TCore(arena, State::TAny::TWrapper(pin->NewElem(elem_idx, state_alloc)));
+          /* When the elements of a long array, such as the rows of a result, propose notes of their own, make
+             room for the rest of them in an in-memory arena now, so its interner doesn't rehash every note it
+             holds each time it grows (#1018). The first element tells: an array of scalars reserves nothing. */
+          if (elem_idx == 0 && elem_count >= MinReserveElemCount && core->TryGetOffset()) {
+            if (auto *suprena = dynamic_cast<TSuprena *>(arena)) {
+              suprena->ReserveNotes(elem_count - 1);
+            }
+          }
         };
     InitIndirectCoreArray(tycon, arena->Propose(TNote::New(tycon, elem_count, false, init1)), elem_count, false);
   }
