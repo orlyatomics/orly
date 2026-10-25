@@ -19,9 +19,13 @@
 #include <orly/server/core_layout.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <set>
+#include <string>
 
 #include <sched.h>
+#include <unistd.h>
 
 #include <base/test/kit.h>
 
@@ -134,4 +138,68 @@ FIXTURE(AllowedCpusIsTheMask) {
   for (size_t cpu : cpus) {
     EXPECT_TRUE(CPU_ISSET(cpu, &mask));
   }
+}
+
+FIXTURE(DefaultsGoAroundClaimedCpus) {
+  const vector<size_t> cpus = Range(0, 16);
+  /* Nothing claimed is the plain layout. */
+  EXPECT_TRUE(DefaultCoreLayout(cpus, {}).MemMerge == DefaultCoreLayout(cpus).MemMerge);
+  /* The 16-CPU table puts memory merges on 2 and 10 and the disk controllers on 4 and 12. Claim those for fast
+     runners (as --fast_cores 2,4,10,12 would) and the defaults for the other pools must not use them. */
+  const vector<size_t> claimed = {2, 4, 10, 12};
+  const TCoreLayout layout = DefaultCoreLayout(cpus, claimed);
+  for (const auto *vec : {&layout.Slow, &layout.MemMerge, &layout.DiskMerge, &layout.DiskController}) {
+    EXPECT_FALSE(vec->empty());
+    for (const size_t cpu : *vec) {
+      EXPECT_TRUE(find(claimed.begin(), claimed.end(), cpu) == claimed.end());
+      EXPECT_LT(cpu, 16UL);
+    }
+  }
+  /* Claim all but one CPU: nothing is left to place around the claim, so the layout is the plain one. */
+  EXPECT_TRUE(DefaultCoreLayout(cpus, Range(0, 15)).MemMerge == DefaultCoreLayout(cpus).MemMerge);
+  /* A claim outside the allowed CPUs changes nothing. */
+  EXPECT_TRUE(DefaultCoreLayout(cpus, {40, 41}).DiskMerge == DefaultCoreLayout(cpus).DiskMerge);
+}
+
+FIXTURE(CpuLists) {
+  EXPECT_TRUE(ParseCpuList("0,28") == (vector<size_t>{0, 28}));
+  EXPECT_TRUE(ParseCpuList("0-3,8\n") == (vector<size_t>{0, 1, 2, 3, 8}));
+  EXPECT_TRUE(ParseCpuList("5") == (vector<size_t>{5}));
+  EXPECT_TRUE(ParseCpuList("").empty());
+  EXPECT_TRUE(ParseCpuList("x,7") == (vector<size_t>{7}));
+}
+
+FIXTURE(SiblingGroupsFromSysfs) {
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() / ("core_layout_test_" + std::to_string(getpid()));
+  fs::create_directories(dir);
+  const auto add = [&](const string &cpu, const string &siblings) {
+    fs::create_directories(dir / cpu / "topology");
+    ofstream(dir / cpu / "topology" / "thread_siblings_list") << siblings << "\n";
+  };
+  add("cpu0", "0,4");
+  add("cpu4", "0,4");
+  add("cpu1", "1,5");
+  add("cpu5", "1,5");
+  add("cpu2", "2");  // No sibling: not a group.
+  fs::create_directories(dir / "cpufreq");  // Not a CPU.
+  const auto groups = ReadSiblingGroups(dir.string());
+  EXPECT_TRUE(groups == (vector<vector<size_t>>{{0, 4}, {1, 5}}));
+  EXPECT_TRUE(ReadSiblingGroups((dir / "missing").string()).empty());
+  fs::remove_all(dir);
+}
+
+FIXTURE(FastSiblingConflictsAreListed) {
+  const vector<vector<size_t>> groups = {{0, 4}, {1, 5}, {2, 6}};
+  TCoreLayout layout;
+  layout.Fast = {0, 1};
+  layout.MemMerge = {5};
+  layout.DiskMerge = {2};
+  /* 1's sibling 5 is a memory merge; 0's sibling 4 is idle; 2 is not fast. */
+  EXPECT_TRUE(FastSiblingConflicts(layout, groups) == (vector<pair<size_t, size_t>>{{1, 5}}));
+  /* Two fast runners on one core conflict with each other, once each. */
+  layout.Fast = {0, 4};
+  EXPECT_TRUE(FastSiblingConflicts(layout, groups) == (vector<pair<size_t, size_t>>{{0, 4}, {4, 0}}));
+  /* No topology, no conflicts. */
+  EXPECT_TRUE(FastSiblingConflicts(layout, {}).empty());
 }

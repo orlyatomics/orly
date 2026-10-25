@@ -27,6 +27,8 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace Orly {
@@ -48,9 +50,31 @@ namespace Orly {
        a single processor). */
     TCoreLayout DefaultCoreLayout(const std::vector<size_t> &cpus);
 
+    /* The same, for pools the command line did not place when it placed others. The CPUs in `claimed`
+       (the ones the user gave) are left out of cpus before the table is chosen, so a default pool never
+       lands on a CPU the user pinned something else to. Left with fewer than 2 CPUs, there is nothing
+       to place around the claim and the layout is over all of cpus, as before. The caller keeps only
+       the pools it needs: the user's own come from the command line. */
+    TCoreLayout DefaultCoreLayout(const std::vector<size_t> &cpus, const std::vector<size_t> &claimed);
+
     /* The CPUs this process may run on, ascending, from its affinity mask. If the mask can't be
        read, every CPU online. */
     std::vector<size_t> AllowedCpus();
+
+    /* The CPUs in a list as the kernel writes them ("0,28", "0-3,8"). Anything unparsable is skipped. */
+    std::vector<size_t> ParseCpuList(const std::string &text);
+
+    /* The groups of CPUs that share a physical core (hyper-threads), each ascending, from
+       <sys_cpu_dir>/cpuN/topology/thread_siblings_list. Only groups of two or more are returned. Empty
+       where the topology can't be read. */
+    std::vector<std::vector<size_t>> ReadSiblingGroups(const std::string &sys_cpu_dir = "/sys/devices/system/cpu");
+
+    /* Each (fast CPU, other CPU) where another pinned thread pool (or another fast runner) is on a
+       hyper-thread sibling of a fast runner's CPU. A busy sibling
+       shares the core's execution resources with it; measurements of read latency under write load found the
+       read tail depends on it. */
+    std::vector<std::pair<size_t, size_t>> FastSiblingConflicts(const TCoreLayout &layout,
+                                                               const std::vector<std::vector<size_t>> &groups);
 
   }  // Server
 
