@@ -6,7 +6,7 @@
  *  and `page_skip` (skip s) are timed at page 1 and $DEPTH rows in. */
 
 import net from "node:net";
-import { connect, ReadTooLargeError } from "../ts/dist/index.js";
+import { connect, InsufficientMemoryError, ReadTooLargeError } from "../ts/dist/index.js";
 
 const PKG = "keyset_paging";
 const ROWS = +process.env.ROWS;
@@ -52,7 +52,17 @@ await c.install(PKG, 1);
   const t0 = performance.now();
   for (let at = 0; at < ROWS; at += 250) {
     const batch = range(at, Math.min(ROWS, at + 250)).map((e) => ({ g: 1, e, w: e * 10 }));
-    await c.callBatch(pov, PKG, "put", batch);
+    /* A shared runner's merges can fall behind the load, and the pools then refuse a batch
+       with insufficient_memory, which is retryable. */
+    for (let tries = 0; ; ++tries) {
+      try {
+        await c.callBatch(pov, PKG, "put", batch);
+        break;
+      } catch (err) {
+        if (!(err instanceof InsufficientMemoryError) || tries >= 300) throw err;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
   }
   console.log(`wrote ${ROWS} edges in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
   const deadline = Date.now() + 120_000;
