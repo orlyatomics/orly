@@ -24,7 +24,9 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -56,8 +58,26 @@ class TWsTestServer::TSessionManager
     : public TWs::TSessionManager {
   public:
 
-  /* Do-little. */
-  TSessionManager() {}
+  /* Do-little.  With threaded set, a statement runs on a thread of its own (#1033). */
+  explicit TSessionManager(bool threaded = false) : Threaded(threaded) {}
+
+  /* Waits for the statement threads. */
+  ~TSessionManager() {
+    for (auto &thread: Threads) {
+      thread.join();
+    }
+  }
+
+  /* Run on a thread of its own, if so asked, so that two statements of one connection can overlap
+     (#1033); otherwise right here, as the base class does. */
+  virtual void RunStatement(std::function<void ()> &&work) override {
+    if (!Threaded) {
+      work();
+      return;
+    }
+    std::lock_guard lock(ThreadsMutex);
+    Threads.emplace_back(std::move(work));
+  }
 
   virtual const Package::TManager &GetPackageManager() const final {
     static const Package::TManager package_manager({""});
@@ -159,6 +179,13 @@ class TWsTestServer::TSessionManager
         const auto var = Var::ToVar(*Sabot::State::TAny::TWrapper(at->second.NewState(closure.GetArena().get(), alloc)));
         if (const auto *val = var.TryAs<Var::TInt>(); val && val->GetVal() > 1000) {
           throw TVersionUnavailable(static_cast<uint64_t>(val->GetVal()), 10UL, 1000UL);
+        }
+      }
+      /* A `sleep_ms` argument makes a call slow, for the pipelining tests (#1033). */
+      if (const auto nap = closure.GetCoreByName().find("sleep_ms"); nap != closure.GetCoreByName().end()) {
+        const auto var = Var::ToVar(*Sabot::State::TAny::TWrapper(nap->second.NewState(closure.GetArena().get(), alloc)));
+        if (const auto *val = var.TryAs<Var::TInt>()) {
+          this_thread::sleep_for(chrono::milliseconds(val->GetVal()));
         }
       }
       TSuprena arena;
@@ -320,16 +347,22 @@ class TWsTestServer::TSessionManager
   /* All the sessions currently in memory. */
   unordered_map<TUuid, unique_ptr<TSession>> Sessions;
 
+  /* See the constructor. */
+  const bool Threaded;
+  mutex ThreadsMutex;
+  vector<thread> Threads;
+
 };  // TSessionManager
 
-TWsTestServer::TWsTestServer(in_port_t port_start, size_t probe_size, const std::string &auth_token)
+TWsTestServer::TWsTestServer(
+    in_port_t port_start, size_t probe_size, const std::string &auth_token, size_t pipeline_depth)
     : SessionManager(nullptr), PortNumber(port_start), Ws(nullptr) {
   assert(probe_size);
   try {
-    SessionManager = new TSessionManager;
+    SessionManager = new TSessionManager(pipeline_depth > 1);
     for (;;) {
       try {
-        Ws = TWs::New(SessionManager, 4, PortNumber, "127.0.0.1", false, auth_token);
+        Ws = TWs::New(SessionManager, 4, PortNumber, "127.0.0.1", false, auth_token, 0, pipeline_depth);
         break;
       } catch (...) {
         --probe_size;
