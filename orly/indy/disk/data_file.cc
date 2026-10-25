@@ -879,6 +879,7 @@ void TDataFile::Build(const TEntrySource &source,
   try {
     auto main_arena_note_index = make_unique<TIndexFile::TOrderedNoteIndex>(
         HERE, Source::DataFileNoteIndex, TempFileConsolThresh, StorageSpeed, Engine, true);
+    main_arena_note_index->SetCancelPoll(throw_if_cancelled);
     std::unordered_map<Base::TUuid, std::unique_ptr<TIndexFile> > index_map;
     size_t main_arena_max_bytes = 0UL;
     /* NumUpdates (the count of distinct sequence numbers in the update index)
@@ -920,6 +921,7 @@ void TDataFile::Build(const TEntrySource &source,
           prev_index_id = cur_idx_id;
           ordered_note_index = std::make_unique<TIndexFile::TOrderedNoteIndex>(
               HERE, Source::DataFileNoteIndex, TempFileConsolThresh, StorageSpeed, Engine, true);
+          ordered_note_index->SetCancelPoll(throw_if_cancelled);
                                                                               }
         TSuprena &cur_arena = *csr->Suprena;
         /* push the key's arena */ {
