@@ -37,7 +37,7 @@ orlyi ... \
   --fast_cores=18 --fast_cores=19 --fast_cores=20 --fast_cores=21 \
   --num_ws_threads=8 \
   --update_pool_size=150000 --update_entry_pool_size=3000000 \
-  --mem_interval=15
+  --mem_interval=15 --read_yield_us=1000
 ```
 
 The process is also held to 44 of the machine's 56 threads (`taskset -c 0-21,28-49`), and its eight websocket
@@ -63,6 +63,9 @@ What each part does:
   runs out between memory merges and writes are refused. These are the sizes the passing runs used. They cost memory in proportion to their size, so keep `--memory_budget_mb` in step.
 - **`--mem_interval=15`.** The minimum milliseconds between memory merges of a repo. A short interval keeps the
   number of memory layers a read must walk low.
+- **`--read_yield_us=1000`.** The passing runs used a 1000 us read time slice, which was the default then. The
+  default is now 50 us, which helps point reads that share a runner with long scans, but on this workload it raised
+  paged-read p99 by about 4% (8.5 to 8.9 ms on paired runs), so keep 1000 us to reproduce these numbers.
 
 ## Hyper-thread siblings
 
