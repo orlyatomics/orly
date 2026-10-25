@@ -35,6 +35,9 @@ file when the release notes are published.
   the replication log text changed (anything that greps `refused a slave from` or `waiting for slave to connect`
   needs the new wording). Wire protocol and on-disk formats are unchanged. If the PR is revised to drop the aliases,
   this entry becomes a hard break and the table is the migration.
+- **Default branch renamed from `master` to `main`.** Existing clones update with:
+  `git branch -m master main && git fetch origin && git branch -u origin/main main && git remote set-head origin -a`.
+  GitHub redirects the old web links; open pull requests were retargeted.
 - **On-disk format.** Starting with a retention flag upgrades a version 1 store to version 2, and a store that has
   copied a paused POV is marked version 3; older binaries refuse both and `orly_dm` does not downgrade them. Take a
   backup before the first start of the new binary on a store you may need to roll back.
@@ -67,7 +70,7 @@ in while a long read runs), #1017 to #1024 (runner handoff, page cache pins, WAL
 
 ## Before tagging (checklist for the releaser)
 
-- [ ] The perf PRs are merged and CI is green on master (confirm the run conclusion, not just the checks list).
+- [ ] The perf PRs are merged and CI is green on main (confirm the run conclusion, not just the checks list).
 - [ ] A release build made with `make release-pgo` passes the scorecard with the documented settings (see docs/pgo.md for what was run).
 - [ ] The #1034 rename has merged in its final form; update the table above.
 - [ ] `tools/fold_changelog.py` run, version bumped, the release-benchmarks workflow dispatched on the tag.
