@@ -153,6 +153,11 @@ namespace Orly {
 
         TKeyCursor &operator++() override;
 
+        /* Pass over the next n keys without yielding them (a sequence's `skip`). It steps the merge as ++ does, but builds
+           no key for the rows it passes over, so a skip costs the walk and not a key per row. Charges the read budget exactly
+           as stepping would. */
+        int64_t Skip(int64_t n) override;
+
         [[nodiscard]] const TContext::TPresentWalker::TItem &GetVal() const noexcept;
 
         private:

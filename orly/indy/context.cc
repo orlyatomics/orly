@@ -638,6 +638,21 @@ TContext::TKeyCursor &TContext::TKeyCursor::operator++() {
   return *this;
 }
 
+int64_t TContext::TKeyCursor::Skip(int64_t n) {
+  if (n <= 0 || !Valid) {
+    return 0;
+  }
+  Cached = false;
+  ContextMembership.Remove();
+  /* Step, building no key for the rows passed over. */
+  int64_t skipped = 0;
+  for (; skipped < n && Csr; ++skipped) {
+    ++Csr;
+  }
+  Refresh();
+  return skipped;
+}
+
 const TContext::TPresentWalker::TItem &TContext::TKeyCursor::GetVal() const noexcept {
   assert(Valid);
   assert(Csr);
