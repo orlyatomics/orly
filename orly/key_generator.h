@@ -53,6 +53,17 @@ namespace Orly {
       return Arena;
     }
 
+    /* Pass over the next n keys (fewer if the walk ends first) and return how many that was. A cursor that can pass
+       over keys without reading each one overrides this. Declared after the others, so the vtable of a cursor built
+       against an older header keeps its slots. */
+    virtual int64_t Skip(int64_t n) {
+      int64_t skipped = 0;
+      for (; skipped < n && *this; ++skipped) {
+        ++*this;
+      }
+      return skipped;
+    }
+
     protected:
 
     TKeyCursor(Atom::TCore::TExtensibleArena *arena) : Arena(arena) {}
@@ -139,6 +150,14 @@ namespace Orly {
         return *this;
       }
 
+      /* Pass over the next count keys, or as many as there are. */
+      void Skip(int64_t count) {
+        if (count > 0) {
+          Iter->Skip(count);
+          Fresh = false;
+        }
+      }
+
       private:
 
       /* Decode the key at the current position into Item, or disengage Item
@@ -186,6 +205,14 @@ namespace Orly {
 
     virtual Base::TIterHolder<const TRet> NewCursor() const {
       return MakeHolder(new TCursor(this->shared_from_this()));
+    }
+
+    /* The engine's cursor passes over the keys, without decoding them or, where it can, reading them. */
+    Base::TIterHolder<const TRet> NewCursorSkipping(int64_t count) const override {
+      auto *csr = new TCursor(this->shared_from_this());
+      Base::TIterHolder<const TRet> holder = MakeHolder(csr);
+      csr->Skip(count);
+      return holder;
     }
 
     TKeyGenerator(L0::TPackageContext *package_context, TContextBase &ctx,  const Sabot::State::TAny *start, const Base::TUuid &index_id)

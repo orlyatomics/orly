@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -62,6 +63,16 @@ namespace Orly {
          refuse work too big for it before doing any. */
       virtual int64_t GetSizeHint() const {
         return -1;
+      }
+
+      /* A cursor that has passed over the first `count` elements (all of them, if there are no more), as `skip` needs.
+         A generator that can pass over elements without producing each one overrides this. */
+      virtual Base::TIterHolder<TItem> NewCursorSkipping(int64_t count) const {
+        Base::TIterHolder<TItem> csr = NewCursor();
+        for (; count > 0 && csr; --count) {
+          ++csr;
+        }
+        return csr;
       }
 
       static constexpr int64_t InfiniteSize = std::numeric_limits<int64_t>::max();
@@ -977,11 +988,9 @@ namespace Orly {
         public:
 
         TCursor(const TPtr &ptr)
-            : CurCount(0),
-              Iter(ptr->GetGenerator()->NewCursor()),
-              Ptr(ptr) {
-          for (; Iter && CurCount < Ptr->GetCount(); ++CurCount, ++Iter) {}
-        }
+            : CurCount(std::max<int64_t>(ptr->GetCount(), 0)),
+              Iter(ptr->GetGenerator()->NewCursorSkipping(ptr->GetCount())),
+              Ptr(ptr) {}
 
         TCursor(const TCursor &that)
             : CurCount(that.CurCount),
