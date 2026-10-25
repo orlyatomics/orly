@@ -19,6 +19,7 @@
 #include <orly/server/ws.h>
 
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <iostream>
 #include <optional>
@@ -599,4 +600,196 @@ FIXTURE(SetTtlNegative) {
     EXPECT_EQ(replies[2]["status"], Base::TJson("ok"));
     EXPECT_EQ(replies[3]["status"], Base::TJson("ok"));
   }
+}
+
+/* Pipelining on one connection (#1033).  The test server runs each try on a thread of its own at a depth
+   above 1, and a `sleep_ms` argument makes a call slow. */
+
+/* An envelope message: {"id": id, "stmt": stmt, "read": read}.  A null id leaves the id out. */
+static string Envelope(const Base::TJson &id, const string &stmt, bool read) {
+  Base::TJson msg = Base::TJson::Object;
+  if (id.GetKind() != Base::TJson::Null) {
+    msg["id"] = id;
+  }
+  msg["stmt"] = stmt;
+  if (read) {
+    msg["read"] = true;
+  }
+  string text;
+  msg.AppendTo(text);
+  return text;
+}
+
+/* The ids of the replies, in the order they arrived, as "2,1"; "-" for a reply without one. */
+static string IdsOf(const vector<Base::TJson> &replies) {
+  string ids;
+  for (const auto &reply: replies) {
+    const auto *id = reply.TryFind("id");
+    ids += (ids.empty() ? "" : ",") + (id ? to_string(static_cast<int>(id->GetNumber())) : string("-"));
+  }
+  return ids;
+}
+
+static const string PipeCall = "try {00000000-0000-0000-0000-000000000001} pkg/v1 f ";
+
+/* A fast read sent after a slow one is answered first, and each reply carries its id. */
+FIXTURE(PipelineFastReadOvertakesSlow) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100, string(), 4);
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      Envelope(1, PipeCall + "<{.sleep_ms: 400}>;", true),
+      Envelope(2, PipeCall + "<{}>;", true)}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 3U)) {
+    EXPECT_EQ(IdsOf(replies), string("-,2,1"));
+    EXPECT_EQ(replies[1]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[2]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[2]["result"], Base::TJson(98.6));
+  }
+}
+
+/* An id may be a string, and comes back as sent. */
+FIXTURE(PipelineStringId) {
+  TWsTestServer ws_test_server(8080, 100, string(), 4);
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      Envelope(Base::TJson("abc"), "echo 7;", false)}, closed);
+  if (EXPECT_EQ(replies.size(), 1U)) {
+    EXPECT_EQ(replies[0]["id"], Base::TJson("abc"));
+    EXPECT_EQ(replies[0]["result"], Base::TJson(7));
+  }
+}
+
+/* Bare statements, with no ids, are answered one at a time in the order sent even with pipelining on, and their
+   replies carry no id. */
+FIXTURE(PipelineBareStatementsInOrder) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100, string(), 4);
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      PipeCall + "<{.sleep_ms: 300}>;",
+      "echo 'second';"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 3U)) {
+    EXPECT_EQ(replies[1]["result"], Base::TJson(98.6));
+    EXPECT_EQ(replies[2]["result"], Base::TJson("second"));
+    EXPECT_EQ(IdsOf(replies), string("-,-,-"));
+  }
+}
+
+/* A write between two reads is a barrier both ways: it starts after the earlier read is answered and the later read
+   starts after it, so replies come back in the order sent although the first read is slow. */
+FIXTURE(PipelineWriteIsABarrier) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100, string(), 4);
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      "new session;",
+      Envelope(1, PipeCall + "<{.sleep_ms: 300}>;", true),
+      Envelope(2, PipeCall + "<{}> <{.receipt: true}>;", false),
+      Envelope(3, PipeCall + "<{}>;", true)}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 4U)) {
+    EXPECT_EQ(IdsOf(replies), string("-,1,2,3"));
+    EXPECT_EQ(replies[2]["receipt"]["durability"], Base::TJson("memory"));
+  }
+}
+
+/* At the pipeline depth the server stops reading the connection, and reads again as replies go out: with a depth of
+   2, three slow reads take two rounds, and all three are answered. */
+FIXTURE(PipelineDepthStopsAndResumesReading) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100, string(), 2);
+  net::io_context ioc;
+  tcp::resolver resolver(ioc);
+  websocket::stream<tcp::socket> ws(ioc);
+  auto const results = resolver.resolve("127.0.0.1", to_string(ws_test_server.GetPortNumber()));
+  net::connect(ws.next_layer(), results.begin(), results.end());
+  ws.handshake("127.0.0.1", "/");
+  ws.write(net::buffer(string("new session;")));
+  beast::flat_buffer first;
+  ws.read(first);
+  const auto start = chrono::steady_clock::now();
+  for (int id = 1; id <= 3; ++id) {
+    ws.write(net::buffer(Envelope(id, PipeCall + "<{.sleep_ms: 300}>;", true)));
+  }
+  vector<Base::TJson> got;
+  for (int i = 0; i < 3; ++i) {
+    beast::flat_buffer buffer;
+    ws.read(buffer);
+    got.push_back(Base::TJson::Parse(beast::buffers_to_string(buffer.data())));
+  }
+  const long elapsed = static_cast<long>(chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count());
+  beast::error_code ec;
+  ws.close(websocket::close_code::going_away, ec);
+  /* Two overlapped, then the third: no less than two sleeps. */
+  EXPECT_GE(elapsed, 550L);
+  for (const auto &reply: got) {
+    EXPECT_EQ(reply["status"], Base::TJson("ok"));
+  }
+}
+
+/* A malformed envelope is answered in its turn with an exception, carrying its id when it has one, and the
+   connection goes on. */
+FIXTURE(PipelineBadEnvelope) {
+  TWsTestServer ws_test_server(8080, 100, string(), 4);
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      R"({"id": 5, "stmt": 12})",
+      R"({"id": 6, "stmt": "echo 1;", "extra": true})",
+      R"({"id": [1], "stmt": "echo 1;"})",
+      R"({"stmt": "echo 1;", "read": true})",
+      R"({"id": 8, "stmt": "echo 1;"})"}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 5U)) {
+    for (size_t i = 0; i < 4; ++i) {
+      EXPECT_EQ(replies[i]["status"], Base::TJson("exception"));
+    }
+    EXPECT_EQ(replies[0]["id"], Base::TJson(5));
+    EXPECT_EQ(replies[4]["status"], Base::TJson("ok"));
+    EXPECT_EQ(replies[4]["id"], Base::TJson(8));
+  }
+}
+
+/* Statements sent after an exit are not run, and the connection closes once the earlier replies are out. */
+FIXTURE(PipelineExitStopsTheInbox) {
+  TWsTestServer ws_test_server(8080, 100, string(), 4);
+  bool closed;
+  auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
+      Envelope(1, "echo 1;", false),
+      "exit;",
+      Envelope(3, "echo 3;", false)}, closed);
+  EXPECT_TRUE(closed);
+  if (EXPECT_EQ(replies.size(), 2U)) {
+    EXPECT_EQ(replies[0]["id"], Base::TJson(1));
+    EXPECT_EQ(replies[1]["status"], Base::TJson("ok"));
+  }
+}
+
+/* A client that goes away with statements in flight leaves the server standing: they finish with nobody to
+   reply to, the server shuts down cleanly, and another connection is served meanwhile.  Meant for the
+   sanitizer builds. */
+FIXTURE(PipelineCloseWithStatementsInFlight) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100, string(), 4);
+  /* A scope for the client that goes away. */ {
+    net::io_context ioc;
+    tcp::resolver resolver(ioc);
+    websocket::stream<tcp::socket> ws(ioc);
+    auto const results = resolver.resolve("127.0.0.1", to_string(ws_test_server.GetPortNumber()));
+    net::connect(ws.next_layer(), results.begin(), results.end());
+    ws.handshake("127.0.0.1", "/");
+    ws.write(net::buffer(string("new session;")));
+    beast::flat_buffer first;
+    ws.read(first);
+    for (int id = 1; id <= 4; ++id) {
+      ws.write(net::buffer(Envelope(id, PipeCall + "<{.sleep_ms: 200}>;", true)));
+    }
+    /* Gone, without a close handshake. */
+    ws.next_layer().close();
+  }
+  EXPECT_EQ(SendOne(ws_test_server.GetPortNumber(), "echo 'still here';")["result"], Base::TJson("still here"));
 }

@@ -305,6 +305,12 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "in arrival order (#761). 0, the default, picks max_parallel_frames / 8, at least 4."
   );
   Param(
+      &TCmd::WsPipelineDepth, "ws_pipeline_depth", Optional, "ws_pipeline_depth\0",
+      "The most statements one websocket connection may have sent without an answer yet (#1033). A client "
+      "that tags its statements with an id may keep that many in flight on one connection; the server stops "
+      "reading the connection until a reply is written. 1 disables pipelining. Default 16."
+  );
+  Param(
       &TCmd::MaxRepoCacheSize, "max_repo_cache_size", Optional, "max_repo_cache_size\0",
       "The maximum number of unused repos that can be held in memory."
   );
@@ -696,6 +702,7 @@ TServer::TCmd::TCmd()
       NumDiskMergeThreads(DefaultNumDiskMergeThreads),
       NumWsThreads(4),
       MaxWsInFlight(0),
+      WsPipelineDepth(16),
       MaxRepoCacheSize(10000),
       NumFiberFrames(1000UL),
       NumDiskEvents(10000UL),
@@ -1476,7 +1483,8 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
   /* Launch the websockets server. */
   Ws.reset(TWs::New(this, cmd.NumWsThreads, cmd.WsPortNumber, cmd.BindAddress, cmd.AllowRemoteCompile,
                     cmd.AuthToken.value_or(string()),
-                    cmd.MaxWsInFlight ? cmd.MaxWsInFlight : std::max<size_t>(4, cmd.NumFiberFrames / 8)));
+                    cmd.MaxWsInFlight ? cmd.MaxWsInFlight : std::max<size_t>(4, cmd.NumFiberFrames / 8),
+                    cmd.WsPipelineDepth));
   LogStartupPhase("starting the websockets server",
                   "serving " + std::to_string(MsSinceProcessStart()) + "ms after the process started");
 

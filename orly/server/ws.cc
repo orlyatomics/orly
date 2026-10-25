@@ -421,11 +421,12 @@ class TWsImpl final
   TWsImpl(
       TSessionManager *session_mngr, size_t thread_count,
       in_port_t port_number, const std::string &bind_address, bool allow_remote_compile,
-      const std::string &auth_token, size_t max_in_flight)
+      const std::string &auth_token, size_t max_in_flight, size_t pipeline_depth)
       : SessionManager(session_mngr),
         AllowRemoteCompile(allow_remote_compile),
         AuthToken(auth_token),
         StmtQueue(std::make_shared<TStmtQueue>(session_mngr, max_in_flight)),
+        PipelineDepth(pipeline_depth ? pipeline_depth : 1),
         TmpDirMaker(MakeCompileTmpDir()),
         IoCtx(thread_count ? static_cast<int>(thread_count) : 1),
         Acceptor(IoCtx) {
@@ -1341,12 +1342,41 @@ class TWsImpl final
 
     };  // TConn::TStmtVisitor
 
-    /* Queue a read. */
+    /* One message off the wire, once it has been split into its envelope (#1033).  A bare statement
+       has no id and is not a read.  An enveloped one, {"id": 17, "stmt": "...", "read": true}, has an
+       id its reply carries back; "read": true says the statement writes nothing and may run
+       alongside the other reads in flight. */
+    struct TRequest {
+      /* Null: the message had no id, and its reply carries none. */
+      TJson Id;
+      std::string Stmt;
+      bool Read = false;
+      /* Set for a message that is not a statement or an envelope; its turn gets this error. */
+      std::string Bad;
+    };
+
+    /* How much this connection has taken from the client and not yet got off its hands: messages
+       waiting for their turn, statements running, and replies waiting to be written.  The read loop
+       stops while it is at the pipeline depth and starts again as replies go out (#1033). */
+    [[nodiscard]] size_t Backlog() const {
+      return Inbox.size() + Running + WriteQ.size();
+    }
+
+    /* Queue a read, unless one is already out, the connection is going away, or the client is
+       already as far ahead as it is allowed to get. */
     void DoRead() {
+      if (Closed || Exiting || ReadPending) {
+        return;
+      }
+      if (Authenticated && Backlog() >= Ws->PipelineDepth) {
+        return;
+      }
+      ReadPending = true;
       ReadBuf.consume(ReadBuf.size());
       WsStream.async_read(
           ReadBuf,
           [self = shared_from_this()](beast::error_code ec, std::size_t /*n*/) {
+            self->ReadPending = false;
             if (ec == websocket::error::closed ||
                 ec == net::error::operation_aborted ||
                 ec == net::error::eof ||
@@ -1362,29 +1392,111 @@ class TWsImpl final
           });
     }
 
-    /* Parse + run the incoming statement, format the JSON reply, write
-       it back.  A try, batch or multi doesn't run here: it goes to the
-       statement queue (#761), and its reply is sent by Finish(), on this
-       strand, when it's done.  Either way the next message isn't read
-       until this one's reply is written, so a session's statements run
-       one at a time, in order. */
+    /* Split a message into its envelope.  A message that starts with '{' is an envelope, as no
+       statement does.  Anything else is a bare statement, answered in order as it always was. */
+    [[nodiscard]] static TRequest ParseRequest(const string &payload) {
+      TRequest req;
+      const auto first = payload.find_first_not_of(" \t\r\n");
+      if (first == string::npos || payload[first] != '{') {
+        req.Stmt = payload;
+        return req;
+      }
+      try {
+        const TJson msg = TJson::Parse(payload);
+        if (msg.GetKind() != TJson::Object) {
+          throw invalid_argument("the message is not a JSON object");
+        }
+        msg.ForEachElem([](const string &key, const TJson &) {
+          if (key != "id" && key != "stmt" && key != "read") {
+            throw invalid_argument("unknown envelope field \"" + key + "\"; the fields are id, stmt and read");
+          }
+          return true;
+        });
+        if (msg.Contains("id")) {
+          const auto kind = msg["id"].GetKind();
+          if (kind != TJson::Number && kind != TJson::String) {
+            throw invalid_argument("the id must be a number or a string");
+          }
+          req.Id = msg["id"];
+        }
+        if (!msg.Contains("stmt") || msg["stmt"].GetKind() != TJson::String) {
+          throw invalid_argument("an envelope needs a \"stmt\" string");
+        }
+        req.Stmt = msg["stmt"].GetString();
+        if (msg.Contains("read")) {
+          if (msg["read"].GetKind() != TJson::Bool) {
+            throw invalid_argument("read must be true or false");
+          }
+          req.Read = msg["read"].GetBool();
+          if (req.Read && req.Id.GetKind() == TJson::Null) {
+            throw invalid_argument("a read that may overlap others needs an id, to tell its reply apart");
+          }
+        }
+      } catch (const exception &ex) {
+        /* Keeps the id, if one was read, so the error finds its way back to the right caller. */
+        req.Bad = string("bad envelope: ") + ex.what();
+        req.Read = false;
+      }
+      return req;
+    }
+
+    /* A message arrived.  Before the token is accepted it is answered at once, as it always was.
+       After that it joins the inbox and Pump() starts what the ordering rules allow (#1033). */
     void OnMsg() {
       const string payload = beast::buffers_to_string(ReadBuf.data());
-      TJson reply = TJson::Object;
       if (!Authenticated) {
+        TJson reply = TJson::Object;
         Authenticate(payload, reply);
-      } else try {
+        QueueReply(std::move(reply), TJson());
+        DoRead();
+        return;
+      }
+      Inbox.push_back(ParseRequest(payload));
+      Pump();
+      DoRead();
+    }
+
+    /* Start inbox messages in arrival order for as long as the ordering rules let the next one run:
+       a read may start alongside reads already running, and anything else waits until nothing is
+       running, then runs alone.  A statement is parsed when it starts, not when it arrives, so one
+       that depends on an earlier one (a try after `new session`) sees its effect. */
+    void Pump() {
+      while (!Closed && !Exiting && !Inbox.empty()) {
+        if (Running > 0 && !(Inbox.front().Read && RunningAllReads)) {
+          break;
+        }
+        TRequest req = std::move(Inbox.front());
+        Inbox.pop_front();
+        Dispatch(std::move(req));
+      }
+      if (Exiting) {
+        /* Nothing after an exit is run. */
+        Inbox.clear();
+      }
+    }
+
+    /* Run one request: a statement that finishes on this thread is answered now; one the visitor
+       left in Deferred goes to the statement queue and is answered by Finish(). */
+    void Dispatch(TRequest &&req) {
+      TJson reply = TJson::Object;
+      if (!req.Bad.empty()) {
+        reply["result"] = req.Bad;
+        reply["status"] = "exception";
+        QueueReply(std::move(reply), req.Id);
+        return;
+      }
+      try {
         TJson result;
         Deferred = nullptr;
         Receipt = TJson();
         ReadVersion.reset();
         ParseStmtStr(
-            payload.c_str(),
+            req.Stmt.c_str(),
             [this, &result](const TStmt *stmt) {
               stmt->Accept(TStmtVisitor(this, result));
             });
         if (Deferred) {
-          RunDeferred();
+          RunDeferred(std::move(req.Id), req.Read);
           return;
         }
         reply["result"] = std::move(result);
@@ -1392,32 +1504,39 @@ class TWsImpl final
       } catch (...) {
         SetErrorReply(reply);
       }
-      SendReply(std::move(reply));
+      QueueReply(std::move(reply), req.Id);
     }
 
     /* Hand the statement the visitor left in Deferred to the queue.  Its done callback runs on
        whichever thread finished it and posts the rest back to this connection's strand. */
-    void RunDeferred() {
+    void RunDeferred(TJson &&id, bool read) {
       auto work = std::move(Deferred);
       Deferred = nullptr;
+      RunningAllReads = (Running == 0 ? true : RunningAllReads) && read;
+      ++Running;
       Ws->StmtQueue->Submit(
           std::move(work),
-          [weak = weak_from_this()](TStmtQueue::TFinish &&finish, std::exception_ptr error) {
-            /* The connection lives in Ws->Conns until it closes, and it can't close while a
-               statement is in flight (no read is pending), so this only fails at shutdown,
-               when nobody is left to reply to. */
+          [weak = weak_from_this(), id = std::move(id)](TStmtQueue::TFinish &&finish, std::exception_ptr error) {
+            /* A connection that closed while this ran has nobody to answer, and is gone from
+               Ws->Conns; its statement still ran to the end, which a write needs. */
             if (auto self = weak.lock()) {
               auto executor = self->WsStream.get_executor();
               net::post(executor, [self = std::move(self), finish = std::move(finish),
-                                   error = std::move(error)]() mutable {
-                self->Finish(std::move(finish), std::move(error));
+                                   error = std::move(error), id]() mutable {
+                self->Finish(std::move(finish), std::move(error), id);
               });
             }
           });
     }
 
-    /* On the strand: the deferred statement is done; build its reply and send it. */
-    void Finish(TStmtQueue::TFinish &&finish, std::exception_ptr error) {
+    /* On the strand: a deferred statement is done; build its reply and queue it. */
+    void Finish(TStmtQueue::TFinish &&finish, std::exception_ptr error, const TJson &id) {
+      --Running;
+      if (Closed) {
+        return;
+      }
+      Receipt = TJson();
+      ReadVersion.reset();
       TJson reply = TJson::Object;
       try {
         if (error) {
@@ -1442,20 +1561,51 @@ class TWsImpl final
           Receipt = TJson();
         }
       }
-      SendReply(std::move(reply));
+      QueueReply(std::move(reply), id);
+      /* A barrier may have been waiting for this one, and there may be room to read again. */
+      Pump();
+      DoRead();
     }
 
-    /* Write a reply, then read the next message (or close, after an exit or a refused token). */
-    void SendReply(TJson &&reply) {
+    /* Queue a reply for the writer.  One frame is in flight at a time, as the stream requires;
+       replies leave in the order they are queued, which is the order they were finished.  Each
+       entry is one message, so a long reply could later be cut into slices here without the
+       callers knowing. */
+    void QueueReply(TJson &&reply, const TJson &id) {
+      if (Closed) {
+        return;
+      }
+      if (id.GetKind() != TJson::Null) {
+        reply["id"] = id;
+      }
       /* Formatted straight into the buffer (no stream): a 1000-row reply is ~180 KB of text. */
-      ReplyBuf.clear();
-      reply.AppendTo(ReplyBuf);
+      string text;
+      reply.AppendTo(text);
+      WriteQ.push_back(std::move(text));
+      if (!Writing) {
+        StartWrite();
+      }
+    }
+
+    /* Write the reply at the head of the queue.  When it is out, write the next, or close after an
+       exit or a refused token, or read on. */
+    void StartWrite() {
+      Writing = true;
       WsStream.text(true);
       WsStream.async_write(
-          net::buffer(ReplyBuf),
+          net::buffer(WriteQ.front()),
           [self = shared_from_this()](beast::error_code ec, std::size_t /*n*/) {
+            self->Writing = false;
+            if (self->Closed) {
+              return;
+            }
             if (ec) {
               self->OnError(ec, "write");
+              return;
+            }
+            self->WriteQ.pop_front();
+            if (!self->WriteQ.empty()) {
+              self->StartWrite();
               return;
             }
             if (self->Exiting) {
@@ -1466,6 +1616,7 @@ class TWsImpl final
                   [self2 = self](beast::error_code) { self2->Close(); });
               return;
             }
+            self->Pump();
             self->DoRead();
           });
     }
@@ -1525,6 +1676,9 @@ class TWsImpl final
        discarded when the io_context unwinds at shutdown). */
     void Close() {
       AuthTimer.cancel();
+      /* Statements still in flight finish without a reply (Finish() sees this). */
+      Closed = true;
+      Inbox.clear();
       lock_guard lock(Ws->Mutex);
       Ws->Conns.erase(shared_from_this());
     }
@@ -1532,13 +1686,30 @@ class TWsImpl final
     TWsImpl *Ws;
     websocket::stream<beast::tcp_stream> WsStream;
     beast::flat_buffer ReadBuf;
-    string ReplyBuf;
     bool Exiting = false;
+
+    /* Set by Close(); nothing is read, run or written after it (#1033). */
+    bool Closed = false;
+
+    /* An async_read is outstanding. */
+    bool ReadPending = false;
+
+    /* Messages read and not yet started, in arrival order (#1033). */
+    std::deque<TRequest> Inbox;
+
+    /* Deferred statements submitted whose replies have not been queued yet, and whether every one of
+       them is a read. */
+    size_t Running = 0;
+    bool RunningAllReads = true;
+
+    /* Replies waiting to be written; the front is in the stream's hands while Writing. */
+    std::deque<string> WriteQ;
+    bool Writing = false;
 
     /* Shared with a statement in flight (#761), which may finish after the connection closes. */
     shared_ptr<TSessionPin> Session;
 
-    /* Set by the visitor to a statement that runs off the I/O thread (#761); see OnMsg(). */
+    /* Set by the visitor to a statement that runs off the I/O thread (#761); see Dispatch(). */
     TStmtQueue::TWork Deferred;
 
     /* Set, on the strand, by a deferred `try` that asked for a receipt (#750); Finish() puts it in
@@ -1571,6 +1742,9 @@ class TWsImpl final
   /* Runs try, batch and multi statements off the I/O threads (#761).  Shared with the
      statements in flight; Shutdown() waits for them. */
   const std::shared_ptr<TStmtQueue> StmtQueue;
+
+  /* The most statements a connection may have sent and not had answered (#1033); 1: one at a time. */
+  const size_t PipelineDepth;
 
   /* Creates and destroys the tmp dir used by the compile stmt. */
   TTmpDirMaker TmpDirMaker;
@@ -1625,7 +1799,7 @@ void TWsImpl::DoAccept() {
 TWs *TWs::New(
     TSessionManager *session_mngr, size_t thread_count,
     in_port_t port_number, const std::string &bind_address, bool allow_remote_compile,
-    const std::string &auth_token, size_t max_in_flight) {
+    const std::string &auth_token, size_t max_in_flight, size_t pipeline_depth) {
   return new TWsImpl(session_mngr, thread_count, port_number, bind_address, allow_remote_compile, auth_token,
-                     max_in_flight);
+                     max_in_flight, pipeline_depth);
 }

@@ -307,6 +307,58 @@ sent as one WebSocket text message. The server replies with one JSON message:
   answer exactly, with `"requested"`, `"oldest"` and `"newest"`; not retryable as sent. See
   "Reads at a version" below. `version_read_only` is a read at a version that tried to write.
 
+## Pipelining statements on one connection (#1033)
+
+By default a connection runs one statement at a time: the server does not read the
+next message until the reply to the last one has been written. A client that wants
+several in flight on one connection (a slow `try` must not hold up a fast one
+behind it) wraps a statement in an **envelope**. A message whose first
+non-space character is `{` is an envelope (no statement starts with one):
+
+```json
+{ "id": 17, "stmt": "try {...} pkg/v1 f <{...}>;", "read": true }
+```
+
+- `id` is a number or a string the client picks. The reply carries it back as
+  `"id"`, next to `status` and `result`, so replies can be matched to requests
+  in any order. A bare statement (no envelope) has no id and its reply has none.
+- `stmt` is the statement, as it would be sent bare.
+- `read` is optional. `"read": true` says the statement writes nothing, so it may
+  run alongside the other reads in flight, and its reply goes out when it is done,
+  whatever the order sent. It needs an `id`. The server does not check the claim:
+  a `read` that writes is a client bug, and loses the ordering below.
+- An envelope with another field, a missing or non-string `stmt`, an `id` that
+  is not a number or a string, or a `read` without an `id` is answered in its turn with
+  `"status": "exception"` (and its `id`, if it had a usable one). The connection
+  carries on.
+
+**Ordering.** Messages are taken in the order sent.
+
+- A read starts as soon as the reads before it in flight allow: when nothing is
+  running, or everything running is a read.
+- Anything else (a bare statement, or an envelope without `"read": true`) is a
+  barrier. It starts only after every earlier statement has been answered, and no
+  later statement starts until it has. So a write is never overtaken by a later
+  read, and a read sent after a write sees it (read your writes).
+- Statements are parsed when they start, not when they arrive, so a statement
+  that depends on an earlier one (`new session;` then a `try`) sees its effect.
+- A client that sends only bare statements sees no change: one at a time, replies
+  in order, no `id`.
+- Replies are written in the order the statements finish. Writing is one reply at
+  a time, so a large reply delays the ones behind it, and a reply is always whole.
+
+**Limit.** The server will not have more than `--ws_pipeline_depth` (default 16)
+statements from a connection sent and not yet answered. Past that it stops reading
+the connection, and starts again as replies go out, so TCP back-pressure does the
+rest. A client that sends faster than it reads is stalled, not buffered without
+limit. `--ws_pipeline_depth=1` turns pipelining off.
+
+**Closing.** When a connection closes, statements already running finish (a write
+the server took is applied), their replies are dropped, and statements not yet
+started are discarded. `exit;` is a barrier: it is answered after every earlier
+statement, and nothing after it runs. A refused token closes the connection as
+before.
+
 ## Statements
 
 The server accepts exactly these (handlers in `orly/server/ws.cc`):

@@ -282,6 +282,11 @@ namespace Orly {
            fiber frame while it runs, and a read fans out to more. */
         size_t MaxWsInFlight;
 
+        /* The most statements one websocket connection may have sent and not yet had answered, running
+           or waiting for a barrier (#1033).  Past it the server stops reading that connection until a
+           reply goes out.  1 turns pipelining off: one statement at a time, as before. */
+        size_t WsPipelineDepth;
+
         size_t MaxRepoCacheSize;
 
         std::vector<size_t> FastCoreVec;

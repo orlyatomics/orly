@@ -36,10 +36,16 @@ namespace Orly {
 
       /* Startup the server on the first available port, starting from the
          given port, and continuing up monotonically for the given number of
-         probes.  If no port is available in the given range, throw. */
+         probes.  If no port is available in the given range, throw.
+
+         A pipeline_depth above 1 (#1033) turns on pipelining and runs each
+         try, batch and multi statement on a thread of its own, so statements
+         on one connection really do overlap.  A `try` given a `sleep_ms`
+         argument sleeps that long first, which lets a test make one read
+         slower than another. */
       explicit TWsTestServer(
           in_port_t port_start = 8080, size_t probe_size = 1,
-          const std::string &auth_token = std::string());
+          const std::string &auth_token = std::string(), size_t pipeline_depth = 1);
 
       /* Shutdown the server. */
       ~TWsTestServer();

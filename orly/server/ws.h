@@ -228,17 +228,29 @@ namespace Orly {
            reply; try, batch and multi statements run through
            TSessionManager::RunStatement() and don't hold an I/O thread while
            they execute (#761).  At most max_in_flight of those run at once
-           (0: no limit); the rest wait in arrival order.  A connection has at
-           most one statement in flight, since its next message isn't read
-           until the reply to the last one is sent, so each session's
-           statements still run in order. */
+           (0: no limit); the rest wait in arrival order.
+
+           pipeline_depth (#1033) is how many statements a connection may
+           have sent and not had answered.  At 1 the next message isn't read
+           until the reply to the last one is sent, so a connection's
+           statements run one at a time, in order.  Above 1 a client may send
+           ahead.  A message that is an envelope,
+           {"id": 17, "stmt": "...", "read": true}, is answered with the same
+           "id", and a read may run alongside the other reads in flight, its
+           reply going out when it is done, whatever the order.  Anything
+           else (a bare statement, an envelope without "read": true) runs
+           alone: after every earlier statement has been answered, and before
+           any later one starts, so a client always reads its own writes.
+           Past pipeline_depth the connection is not read from until a reply
+           goes out. */
         [[nodiscard]] static TWs *New(
             TSessionManager *session_mngr, size_t thread_count,
             in_port_t port_number = 8080,
             const std::string &bind_address = "127.0.0.1",
             bool allow_remote_compile = false,
             const std::string &auth_token = std::string(),
-            size_t max_in_flight = 0);
+            size_t max_in_flight = 0,
+            size_t pipeline_depth = 1);
 
         protected:
 
