@@ -7,7 +7,7 @@ and background.
 ## Building & testing
 
 Orly builds with gcc 13 / `-std=c++23` on Ubuntu 24.04 (see the
-[README status note](README.md) for the supported toolchain).
+[toolchain table](docs/building.md#toolchain)).
 
 ```sh
 make debug        # bootstrap jhm + build every target (debug)
