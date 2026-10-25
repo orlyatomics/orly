@@ -41,6 +41,11 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+if [ "$TRAIN" = 1 ]; then
+  for tool in node npm; do
+    command -v "$tool" >/dev/null || { echo "$tool is needed to run the training smokes (their client is TypeScript)" >&2; exit 1; }
+  done
+fi
 mkdir -p "$PROFILE"
 PROFILE="$(cd "$PROFILE" && pwd)"
 
