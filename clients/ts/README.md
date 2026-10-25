@@ -75,6 +75,28 @@ await client.callBatch(pov, "bank", "deposit", rows, { opId }); // one id for th
 `OperationExpiredError`, `OperationIdReusedError` and `OutcomeTooLargeError` (with `.version`) are the
 server's refusals; none is retried. See `docs/PROTOCOL.md`, "Exactly-once writes".
 
+## Pipelining (#1033)
+
+`call` waits for each reply. To keep several statements in flight on one connection (needs a server
+with `--ws_pipeline_depth` above 1, the default), use `pipeline` or `callPipelined`:
+
+```ts
+// Reads the server may run together; results come back in the order given.
+const rows = await client.callPipelined(pov, "mypkg", "get", keys.map((k) => ({ k })), { read: true });
+
+// Mixed: a string is a barrier (starts after everything before it is answered),
+// { stmt, read: true } is a read.
+const out = await client.pipeline([
+  `try {${pov}} mypkg put <{.k: 1, .v: 2}>;`,                      // write
+  { stmt: `try {${pov}} mypkg get <{.k: 1}>;`, read: true },       // sees the write
+]);
+```
+
+At most `window` (default 16) statements are unanswered at once. Every reply is read before the
+promise settles, then the first failure in the order given is thrown, so the connection stays in
+step. Mark only statements that write nothing as reads. Receipts and `opId` are not available here:
+use `call` for those.
+
 ## Reading the past (#745)
 
 ```ts

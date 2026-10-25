@@ -454,9 +454,26 @@ interface SocketLike {
   readyState: number;
 }
 
+interface Pending {
+  stmt: string;
+  resolve: (v: unknown) => void;
+  reject: (e: unknown) => void;
+}
+
+/** One statement for {@link Client.pipeline}: a string is a barrier (it starts after everything
+ *  before it is answered), `{ stmt, read: true }` is a read the server may run alongside other reads. */
+export type PipelineItem = string | { stmt: string; read?: boolean };
+
+/** Statements {@link Client.pipeline} keeps sent and not yet answered. Matches the server's default
+ *  `--ws_pipeline_depth`; a larger window only queues in TCP (#1033). */
+export const DEFAULT_PIPELINE_WINDOW = 16;
+
 /** A connection to a running `orlyi` (one WebSocket, one session). */
 export class Client {
-  private pending: Array<{ stmt: string; resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
+  private pending: Array<Pending> = [];
+  /** Pipelined statements in flight, by the id their envelope carried (#1033). */
+  private byId = new Map<number, Pending>();
+  private nextId = 1;
   public lastReceipt?: Receipt;
   /** The `"version"` of the last reply that carried one: the version a read at `at` ran against. */
   public lastVersion?: number;
@@ -481,13 +498,30 @@ export class Client {
 
   private onMessage(ev: any): void {
     const data: string = typeof ev.data === "string" ? ev.data : String(ev.data);
-    const p = this.pending.shift();
-    if (!p) return;
     let reply: any;
+    let parseError: unknown;
     try {
       reply = JSON.parse(data);
     } catch (e) {
-      p.reject(e);
+      parseError = e;
+    }
+    // A reply to an envelope carries its id; a bare statement's does not and takes the next in line.
+    const id = parseError === undefined && reply != null && typeof reply === "object" ? reply.id : undefined;
+    let p: Pending | undefined;
+    if (typeof id === "number" && this.byId.has(id)) {
+      p = this.byId.get(id);
+      this.byId.delete(id);
+    } else {
+      p = this.pending.shift();
+    }
+    if (!p) {
+      // Nothing waits for this reply by position and it names no statement of ours: with envelopes in
+      // flight the connection can no longer be matched up, so fail them rather than wait forever.
+      if (this.byId.size > 0) this.failAll(new Error("orly: reply matches no statement in flight"));
+      return;
+    }
+    if (parseError !== undefined) {
+      p.reject(parseError);
       return;
     }
     if (reply != null && typeof reply === "object" && "receipt" in reply) {
@@ -531,8 +565,9 @@ export class Client {
 
   private failAll(ev: any): void {
     const err = ev instanceof Error ? ev : new Error("orly: websocket closed");
-    const waiting = this.pending;
+    const waiting = [...this.pending, ...this.byId.values()];
     this.pending = [];
+    this.byId.clear();
     for (const p of waiting) p.reject(err);
   }
 
@@ -542,6 +577,83 @@ export class Client {
       this.pending.push({ stmt, resolve, reject });
       this.ws.send(stmt);
     });
+  }
+
+  /** Send one statement as an envelope with an id (#1033) and resolve its `result`. */
+  private sendEnvelope(stmt: string, read: boolean): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const id = this.nextId++;
+      this.byId.set(id, { stmt, resolve, reject });
+      this.ws.send(JSON.stringify(read ? { id, stmt, read: true } : { id, stmt }));
+    });
+  }
+
+  /**
+   * Keep several statements in flight on this connection (#1033) and resolve their results in the
+   * order given, whatever order the replies arrive in. Needs a server with `--ws_pipeline_depth`
+   * above 1 (the default); an older server answers an envelope with an error.
+   *
+   * A string is a barrier: it starts after every earlier statement is answered, and nothing after it
+   * starts until it is. `{ stmt, read: true }` says the statement writes nothing, so the server may
+   * run it alongside the other reads in flight; mark a write as a read and it loses its ordering.
+   *
+   * At most `opts.window` (default 16) statements are sent and unanswered at once. Every reply is
+   * read before this settles, so a failing statement leaves the connection in step; the first failure
+   * in the order given is then thrown. Receipts and `opId` are not available here: use {@link call}.
+   * {@link Client.lastReceipt} and {@link Client.lastVersion} are not updated.
+   */
+  async pipeline(items: PipelineItem[], opts: { window?: number } = {}): Promise<unknown[]> {
+    const window = opts.window ?? DEFAULT_PIPELINE_WINDOW;
+    if (!(window >= 1)) throw new RangeError("orly: pipeline window must be at least 1");
+    const outcomes: Array<{ ok: true; value: unknown } | { ok: false; error: unknown }> = new Array(items.length);
+    let next = 0;
+    let active = 0;
+    await new Promise<void>((done) => {
+      const pump = (): void => {
+        while (next < items.length && active < window) {
+          const i = next++;
+          const item = items[i];
+          const stmt = typeof item === "string" ? item : item.stmt;
+          const read = typeof item === "string" ? false : item.read === true;
+          active++;
+          this.sendEnvelope(stmt, read).then(
+            (value) => { outcomes[i] = { ok: true, value }; },
+            (error) => { outcomes[i] = { ok: false, error }; },
+          ).then(() => {
+            active--;
+            pump();
+          });
+        }
+        if (active === 0 && next >= items.length) done();
+      };
+      pump();
+    });
+    const results: unknown[] = [];
+    let failure: { error: unknown } | undefined;
+    for (const o of outcomes) {
+      if (o.ok) results.push(o.value);
+      else {
+        results.push(undefined);
+        failure ??= o;
+      }
+    }
+    if (failure) throw failure.error;
+    return results;
+  }
+
+  /**
+   * Call `pkg method` on `pov` once per record in `argsList` as separate statements kept in flight
+   * together (#1033); resolves the results in order. Unlike {@link callBatch} these are N
+   * transactions, each seeing the ones before it. `opts.read: true` says none of them writes, so the
+   * server may run them concurrently; leave it off for writes, which run one at a time in the order
+   * given. See {@link Client.pipeline} for errors and the window.
+   */
+  callPipelined<T = unknown>(pov: string, pkg: string, method: string, argsList: Args[],
+                             opts: { read?: boolean; window?: number } = {}): Promise<T[]> {
+    return this.pipeline(
+      argsList.map((a) => ({ stmt: `try {${pov}} ${pkg} ${method} ${lit(a ?? {})};`, read: opts.read === true })),
+      { window: opts.window },
+    ) as Promise<T[]>;
   }
 
   /** Present the server's shared secret (#710): the first message, `{"auth": "<token>"}`.
