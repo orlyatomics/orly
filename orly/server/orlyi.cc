@@ -161,40 +161,6 @@ static void ScrubSecretArgs(std::span<char *> args) {
   }
 }
 
-/* Names the deprecated spellings of renamed flags that were given on the command line (#1034). They
-   still work; the warning says what to use instead. */
-static void WarnDeprecatedFlags(int argc, char *argv[]) {
-  static const std::pair<const char *, const char *> renamed[] = {
-      {"slave_port_number", "replica_port_number"},
-      {"spn", "replica_port_number"},
-      {"slave_bind_address", "replica_bind_address"},
-      {"address_of_master", "address_of_primary"},
-  };
-  for (int i = 1; i < argc; ++i) {
-    std::string_view arg(argv[i]);
-    if (arg.size() < 2 || arg[0] != '-') {
-      continue;
-    }
-    arg.remove_prefix(arg[1] == '-' ? 2 : 1);
-    const auto eq = arg.find('=');
-    std::string_view value;
-    if (eq != std::string_view::npos) {
-      value = arg.substr(eq + 1);
-    } else if (i + 1 < argc) {
-      value = argv[i + 1];
-    }
-    arg = arg.substr(0, eq);
-    for (const auto &[old_name, new_name] : renamed) {
-      if (arg == old_name) {
-        std::cerr << "orlyi: --" << old_name << " is deprecated; use --" << new_name << std::endl;
-      }
-    }
-    if (arg == "starting_state" && value == "SLAVE") {
-      std::cerr << "orlyi: --starting_state=SLAVE is deprecated; use --starting_state=REPLICA" << std::endl;
-    }
-  }
-}
-
 int main(int argc, char *argv[]) {
   // Make std::terminate calls produce more data / info for us.
   SetBacktraceOnTerminate();
@@ -202,7 +168,6 @@ int main(int argc, char *argv[]) {
 #if defined(__SANITIZE_THREAD__)
   RunTsanRacyControl();
 #endif
-  WarnDeprecatedFlags(argc, argv);
   ::TCmd cmd(argc, argv);
   ScrubSecretArgs(std::span(argv, static_cast<size_t>(argc)));
   TLog log(cmd);

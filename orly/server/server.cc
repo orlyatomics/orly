@@ -158,8 +158,8 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "The port on which the server listens for websocket clients."
   );
   Param(
-      &TCmd::SlavePortNumber, "replica_port_number", Optional, "replica_port_number\0slave_port_number\0spn\0",
-      "The port on which the server listens for a replica. Deprecated alias: --slave_port_number."
+      &TCmd::SlavePortNumber, "replica_port_number", Optional, "replica_port_number\0",
+      "The port on which the server listens for a replica."
   );
   Param(
       &TCmd::BindAddress, "bind_address", Optional, "bind_address\0",
@@ -167,10 +167,9 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "Orly has no authentication: pass 0.0.0.0 to listen on every interface only on a trusted network."
   );
   Param(
-      &TCmd::SlaveBindAddress, "replica_bind_address", Optional, "replica_bind_address\0slave_bind_address\0",
+      &TCmd::SlaveBindAddress, "replica_bind_address", Optional, "replica_bind_address\0",
       "The IP address the replication listener binds (default 0.0.0.0, every interface, so a replica on another "
-      "host can reach it). Replication is unauthenticated: set this to a private network's address. "
-      "Deprecated alias: --slave_bind_address."
+      "host can reach it). Replication is unauthenticated: set this to a private network's address."
   );
   Param(
       &TCmd::AllowRemoteCompile, "allow_remote_compile", Optional, "allow_remote_compile\0",
@@ -285,7 +284,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
   );
   Param(
       &TCmd::StartingState, "starting_state", Required, "starting_state\0",
-      "The starting state of this server. Either SOLO or REPLICA (SLAVE is a deprecated alias for REPLICA)."
+      "The starting state of this server. Either SOLO or REPLICA."
   );
   Param(
       &TCmd::NumMemMergeThreads, "num_mem_threads", Optional, "num_mem_threads\0",
@@ -338,9 +337,8 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "The cores which will be pinned by the disk mergers."
   );
   Param(
-      &TCmd::AddressOfMaster, "address_of_primary", Optional, "address_of_primary\0address_of_master\0",
-      "The IP address of the primary to which this replica should try to connect. Deprecated alias: "
-      "--address_of_master."
+      &TCmd::AddressOfMaster, "address_of_primary", Optional, "address_of_primary\0",
+      "The IP address of the primary to which this replica should try to connect."
   );
   Param(
       &TCmd::PackageDirectory, "package_dir", Optional, "package_dir\0",
@@ -1509,7 +1507,7 @@ void TServer::Init() {
     TFd starting_sock;
     if (Cmd.StartingState == "SOLO") {
       RepoState = Orly::Indy::TManager::Solo;
-    } else if (Cmd.StartingState == "REPLICA" || Cmd.StartingState == "SLAVE") {
+    } else if (Cmd.StartingState == "REPLICA") {
       RepoState = Orly::Indy::TManager::SyncSlave;
       /* The writes before this reach a slave in the synced data, not through the apply path that
          reads their operation ids, so once promoted it can't tell a retry of one from a new write;

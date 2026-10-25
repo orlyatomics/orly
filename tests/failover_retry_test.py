@@ -196,7 +196,7 @@ def main():
         log(f'master: wrote key 1 with id {op_a} into POV {pov}')
 
         slave.create_volume()
-        err = slave.start('SLAVE', master_slave_port=master.port + 1)
+        err = slave.start('REPLICA', master_slave_port=master.port + 1)
         if err:
             sys.exit(f'{err}\n{slave.tail()}')
         joined_at = time.time()
