@@ -18,6 +18,7 @@
 
 #include <orly/var/jsonify.h>
 
+#include <limits>
 #include <tuple>
 #include <vector>
 
@@ -30,6 +31,7 @@
 #include <orly/rt/opt.h>
 #include <orly/type/type_czar.h>
 #include <orly/var.h>
+#include <orly/var/new_sabot.h>
 #include <orly/var/sabot_to_var.h>
 
 #include <base/test/kit.h>
@@ -101,6 +103,12 @@ static void CheckState(const TVal &val) {
   const TJson direct = StateToJson(*state), via_var = ToJson(ToVar(*state));
   EXPECT_TRUE(direct == via_var);
   EXPECT_EQ(AsStr(direct), AsStr(via_var));
+  /* AppendStateJson (#1053) writes the reply text with no tree: byte for byte what the reply path
+     formatted from the tree before, appended after whatever the buffer already holds. */
+  string old_text = "prefix:", new_text = "prefix:";
+  via_var.AppendTo(old_text);
+  AppendStateJson(new_text, *state);
+  EXPECT_EQ(new_text, old_text);
 }
 
 FIXTURE(StateToJsonMatchesToVar) {
@@ -156,4 +164,52 @@ FIXTURE(StateToJsonMatchesToVar) {
   const auto row3 = TVar::Obj(unordered_map<string, TVar>{{"p", TVar(a)}, {"s", TVar(a)}, {"v", v_del}});
   CheckState(row1);
   CheckState(TVar::Set(Rt::TSet<TVar>{row1, row2, row3}, row1.GetType()));
+  /* Ints past 2^53 lose the same low bits as the tree's double. */
+  CheckState(int64_t(1) << 60);
+  CheckState(int64_t((1LL << 53) + 1));
+  CheckState(std::numeric_limits<int64_t>::min());
+  CheckState(-0.0);
+  CheckState(1e300);
+  CheckState(5e-7);
+  /* Maps: string keys verbatim, other keys as their JSON text, sorted, nested values direct. */
+  CheckState(Rt::TDict<string, int64_t>{{"b", 2}, {"a", 1}, {"\xc3\xa9", 3}, {"A", 4}, {"", 5}});
+  CheckState(Rt::TDict<int64_t, string>{{10, "ten"}, {9, "nine"}, {-1, "minus"}});
+  CheckState(Rt::TDict<TUuid, int64_t>{{a, 1}, {b, 2}});
+  CheckState(Rt::TDict<tuple<int64_t, string>, bool>{{{1, "x\"y"}, true}, {{0, "z"}, false}});
+  CheckState(Rt::TDict<string, Rt::TDict<string, int64_t>>{{"o", {{"i", 1}}}, {"e", {}}});
+  CheckState(Rt::TDict<string, int64_t>{});
+  /* Two real keys whose text is the same: the tree keeps one, so this map takes the tree path. */
+  CheckState(Rt::TDict<double, int64_t>{{1.0000001, 1}, {1.0000002, 2}});
+  /* Records holding every other kind, a variant inside an optional, and a record inside a map. */
+  const auto big_rec = TVar::Obj(unordered_map<string, TVar>{
+      {"id", TVar(a)},
+      {"n", TVar(int64_t(3))},
+      {"r", TVar(0.1)},
+      {"t", TVar(Rt::TSet<int64_t>{3, 1})},
+      {"m", TVar(Rt::TDict<string, int64_t>{{"k", 1}})},
+      {"o", TVar(Rt::TOpt<int64_t>())},
+      {"v", v_txt},
+      {"rows", TVar::List(vector<TVar>{row1, row2, row3}, row1.GetType())},
+      {"Z", TVar(string("upper sorts first"))},
+      {"_", TVar(false)}});
+  CheckState(big_rec);
+  {
+    /* A TVar must reach the sabot as itself (orly/var/new_sabot.h), not as an empty object. */
+    void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+    string text;
+    AppendStateJson(text, *Sabot::State::TAny::TWrapper(Native::State::New(big_rec, state_alloc)));
+    EXPECT_NE(text.find(R"("Z":"upper sorts first")"), string::npos);
+    EXPECT_NE(text.find(R"("rows":[{)"), string::npos);
+  }
+  CheckState(TVar::Opt(Rt::TOpt<TVar>(v_int), var_type));
+  CheckState(TVar::Opt(Rt::TOpt<TVar>(), var_type));
+  CheckState(TVar::Dict(Rt::TDict<TVar, TVar>{{TVar(string("r1")), row1}, {TVar(string("r2")), row2}},
+                        Type::TStr::Get(), row1.GetType()));
+  /* A page-sized reply: a list of 1000 rows. */
+  vector<TVar> page;
+  for (int64_t i = 0; i < 1000; ++i) {
+    page.push_back(TVar::Obj(unordered_map<string, TVar>{
+        {"p", TVar(i % 2 ? a : b)}, {"s", TVar(int64_t(i))}, {"v", i % 3 ? v_txt : v_int}}));
+  }
+  CheckState(TVar::List(page, page.front().GetType()));
 }

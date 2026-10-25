@@ -153,6 +153,16 @@ namespace Base {
       out.push_back('"');
     }
 
+    /* Appends a number exactly as AppendTo writes one: the same digits as 'strm << std::fixed' at the
+       default precision (printf "%.6f").  Code that writes JSON text without building a TJson (the
+       WebSocket reply path, #1053) formats its numbers here, so the bytes cannot drift apart. */
+    static void AppendNumber(std::string &out, double number) {
+      char buf[400];
+      const auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), number, std::chars_format::fixed, 6);
+      assert(ec == std::errc());
+      out.append(buf, ptr);
+    }
+
     /* Read from the given input string to find a JSON string which starts/ends with '"' and properly unescape escaped
        characters. */
     static std::string ReadQuotedString(std::istream &strm) {
@@ -878,11 +888,7 @@ namespace Base {
           break;
         }
         case Number: {
-          /* Same digits as 'strm << std::fixed' at the default precision (printf "%.6f"). */
-          char buf[400];
-          const auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), Number_, std::chars_format::fixed, 6);
-          assert(ec == std::errc());
-          out.append(buf, ptr);
+          AppendNumber(out, Number_);
           break;
         }
         case Array: {
