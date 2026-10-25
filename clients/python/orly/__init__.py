@@ -58,6 +58,9 @@ DEFAULT_BACKOFF_S = 0.25
 # A write sent with an operation id (op_id=) is resent this many times when the
 # connection drops or the server says the first try is still running (#733).
 DEFAULT_OP_RETRIES = 3
+# Statements pipeline() keeps sent and not yet answered. Matches the server's
+# default --ws_pipeline_depth; a larger window only queues in TCP (#1033).
+DEFAULT_PIPELINE_WINDOW = 16
 
 
 class OrlyError(RuntimeError):
@@ -336,7 +339,10 @@ class Client:
     def send(self, statement):
         """Send one statement; return its ``result``, or raise ``OrlyError``."""
         self.ws.send(statement)
-        reply = _json.loads(self.ws.recv())
+        return self._result_of(statement, _json.loads(self.ws.recv()))
+
+    def _result_of(self, statement, reply):
+        """The ``result`` of ``reply``, or the :class:`OrlyError` for its status."""
         self.last_receipt = reply.get("receipt")
         version = reply.get("version")
         self.last_version = _as_version(version)
@@ -370,6 +376,70 @@ class Client:
         if status != "ok":
             raise OrlyError(statement, reply)
         return reply.get("result")
+
+    def pipeline(self, statements, window=DEFAULT_PIPELINE_WINDOW):
+        """Send several statements without waiting for each reply (#1033).
+
+        ``statements`` is a list of items, each either a statement string (a
+        barrier: it starts after everything before it is answered, like a bare
+        statement) or ``(statement, True)`` for a read, which the server may run
+        alongside the other reads in flight. Returns the results in the order
+        given, whatever order the replies arrive in.
+
+        At most ``window`` statements are sent and not yet answered (the
+        server's own limit is ``--ws_pipeline_depth``, default 16; past it the
+        server stops reading, so a larger window only queues in TCP).
+
+        Every reply is read before this returns, so the connection stays in step
+        even when one statement fails; the first failure in the order given is
+        then raised as its :class:`OrlyError`. A statement that must see an
+        earlier write goes in as a barrier (or after one): marking a write as a
+        read loses that ordering. :attr:`last_receipt` and :attr:`last_version`
+        are not updated; use :meth:`send` for a statement whose receipt you need.
+        """
+        if window < 1:
+            raise ValueError("window must be at least 1")
+        items = [(item, False) if isinstance(item, str) else (item[0], bool(item[1])) for item in statements]
+        replies = {}
+        sent = 0
+        while len(replies) < len(items):
+            while sent < len(items) and sent - len(replies) < window:
+                statement, read = items[sent]
+                envelope = {"id": sent, "stmt": statement}
+                if read:
+                    envelope["read"] = True
+                self.ws.send(_json.dumps(envelope))
+                sent += 1
+            reply = _json.loads(self.ws.recv())
+            if reply.get("id") not in range(len(items)):
+                # A reply we cannot match (no id): the connection is out of step.
+                raise OrlyError("<pipeline>", reply)
+            replies[reply["id"]] = reply
+        results = []
+        failure = None
+        for i, (statement, _read) in enumerate(items):
+            saved = (self.last_receipt, self.last_version)
+            try:
+                results.append(self._result_of(statement, replies[i]))
+            except OrlyError as e:
+                results.append(None)
+                failure = failure or e
+            self.last_receipt, self.last_version = saved
+        if failure is not None:
+            raise failure
+        return results
+
+    def call_pipelined(self, pov, package, method, args_list, *, read=False,
+                       window=DEFAULT_PIPELINE_WINDOW):
+        """Call ``package method`` on ``pov`` once per record in ``args_list``, as
+        separate statements kept in flight together (#1033); returns the results in
+        order. Unlike :meth:`call_batch` these are N transactions, each seeing the
+        ones before it. ``read=True`` says none of them writes, so the server may
+        run them concurrently; leave it off for writes, which run one at a time in
+        the order given. See :meth:`pipeline` for errors."""
+        return self.pipeline(
+            [(f"try {{{pov}}} {package} {method} {lit(dict(a or {}))};", read) for a in args_list],
+            window=window)
 
     def _send_op(self, statement, op_id, op_retries):
         """Send a write that carries an operation id. Without one, this is

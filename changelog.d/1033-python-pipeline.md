@@ -1,0 +1,1 @@
+- **Added**: the Python client can keep several statements in flight on one connection: `Client.pipeline(statements, window=16)` and `Client.call_pipelined(pov, package, method, args_list, read=False)`. Reads are sent as `read` envelopes so the server may run them together; anything else is a barrier. Results come back in the order given (#1033).
