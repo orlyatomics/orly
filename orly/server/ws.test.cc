@@ -689,7 +689,7 @@ FIXTURE(PipelineWriteIsABarrier) {
   auto replies = SendPipelined(ws_test_server.GetPortNumber(), {
       "new session;",
       Envelope(1, PipeCall + "<{.sleep_ms: 300}>;", true),
-      Envelope(2, PipeCall + "<{.receipt: true}>;", false),
+      Envelope(2, PipeCall + "<{}> <{.receipt: true}>;", false),
       Envelope(3, PipeCall + "<{}>;", true)}, closed);
   EXPECT_FALSE(closed);
   if (EXPECT_EQ(replies.size(), 4U)) {
