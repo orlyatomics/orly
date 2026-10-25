@@ -118,376 +118,68 @@ speaking the same [WebSocket + JSON protocol](docs/PROTOCOL.md).
 
 ## Quick start
 
-**Docker** — the engine itself is Linux-only, so this is also the macOS/Windows
-path. The published image is multi-arch (`linux/amd64` and `linux/arm64`), so
-Apple Silicon pulls a native image rather than running under emulation. A cold
-`docker run ... repl` answers in ~2s:
+**Docker.** This is also the macOS and Windows path, since the engine is
+Linux-only. The image is multi-arch (`linux/amd64` and `linux/arm64`):
 
 ```sh
 docker run --rm -p 127.0.0.1:8082:8082 ghcr.io/orlyatomics/orly
 ```
 
-That's a solo mem-sim server with the `sample`, `graph`, and `market` example
-packages pre-compiled and installable, speaking the
-[WebSocket + JSON protocol](docs/PROTOCOL.md) on `ws://127.0.0.1:8082/` —
-point any client driver ([`clients/`](clients/)) or the
-[MCP server](clients/mcp/) at it. `orlyc` and the source headers are in the
-image, so it compiles your own `.orly` packages too
-(`docker exec <ctr> orlyc -o /var/lib/orly/packages yourpkg.orly`). Extra
-`docker run ... <flags>` pass straight through to `orlyi`
-([#530](https://github.com/orlyatomics/orly/issues/530)).
+That's a solo server with the `sample`, `graph` and `market` example packages,
+speaking the [WebSocket + JSON protocol](docs/PROTOCOL.md) on
+`ws://127.0.0.1:8082/`. Point any [client](clients/) or the
+[MCP server](clients/mcp/) at it. `orlyc` is in the image, so it compiles your
+own `.orly` packages too. Keep the `127.0.0.1:` in `-p`: without a token Orly
+has no authentication (see [Security](#security)).
+[`docs/docker.md`](docs/docker.md) covers memory limits, sizing and flags.
 
-`-p 127.0.0.1:8082:8082` publishes the port on this machine's loopback only.
-Without a shared secret Orly has no authentication, so `-p 8082:8082`, which
-publishes it on every interface of the host, lets anyone who can reach the host
-read and write the database; do that only on a network you trust, or set a
-token. See [Security](#security).
-
-The `repl` mode shown at the top of this README is the same image
-([#538](https://github.com/orlyatomics/orly/issues/538)).
-
-**Memory.** `orlyi` sizes its fiber stacks, caches and pools from a memory
-budget, and a container's `--memory` limit caps it, so
-`docker run --memory=1g ...` plans for 1 GiB and stays inside it. Without a
-limit the image plans for 4 GiB. Set `-e ORLY_MEMORY_BUDGET_MB=<MiB>` to
-change that (a smaller `--memory` still wins). The startup log says what it
-chose:
-
-```
-memory budget: 1024 MiB, from the cgroup limit in /sys/fs/cgroup/memory.max (free RAM 14599 MiB, --memory_budget_mb=4096 is larger)
-memory plan: 732 MiB of the 1024 MiB budget; 356 MiB fixed (process baseline 32, append log 4, mem_sim_mb 256, mem_sim_slow_mb 64), 128 MiB kept for the heap, the rest scaled by 0.131836
-```
-
-A disk merge folds its merged file's `+=` runs in memory, which takes about
-three times the file's size, so a merged file larger than a sixteenth of the
-budget is kept unfolded (`--max_fold_input_mb`, 0 for no limit), unless a
-key in it has a `+=` run of more than 64 entries. With that
-cap, a heavy read load at a 6 GiB budget peaked at 5.7 to 5.9 GiB RSS
-([#988](https://github.com/orlyatomics/orly/issues/988)). A merge of any size
-leaves runs of up to 64 such entries unfolded (`--min_fold_run`, 0 to fold
-every one): the fold rewrites every key in the file, so folding for a few short
-runs kept merges from keeping up with ingest
-([#1037](https://github.com/orlyatomics/orly/issues/1037)).
-
-The smallest limit the image runs in is **768 MiB** (`--memory=768m`). Below
-747 MiB, `orlyi` refuses to start and says how much it needs. The floor is the
-mem-sim volumes (`ORLY_MEM_SIM_MB` + `ORLY_MEM_SIM_SLOW_MB`, 320 MiB by
-default) plus about 430 MiB: the process, 128 MiB for the heap, and pools just
-large enough that their merge reserve holds one memory merge's copy of 1,000
-writes, with at least 64 fiber frames. Smaller mem-sim volumes lower it by the
-same amount. At 768 MiB the image passes the write-and-read-back, pool-pressure
-and memory-full smokes. Measured on native arm64
-([#669](https://github.com/orlyatomics/orly/issues/669)):
-
-| `--memory` | idle | peak, pool-pressure smoke |
-| -- | -- | -- |
-| 768 MiB | 524 MiB | 569 MiB |
-| 1 GiB | 719 MiB | 752 MiB |
-| 2 GiB | 1.40 GiB | 1.44 GiB |
-| 4 GiB | 2.81 GiB | 2.85 GiB |
-
-Compiling a package inside the container (`docker exec ... orlyc`) needs about
-400 MiB more, nearly all of it the `g++` run that builds the package; the test
-server `orlyc` stands up for a package's `test` blocks peaks at about 150 MiB,
-after `g++` exits, and a package without tests gets none. Leave that room
-between the budget and the limit, for example
-`--memory=1280m -e ORLY_MEMORY_BUDGET_MB=800` (measured peak 948 MiB).
-
-**From source** — system dependencies (Ubuntu 24.04):
+**From source** on Ubuntu 24.04 (on macOS, use [`./dev`](CONTRIBUTING.md#getting-started-on-macos-or-any-non-linux-machine)):
 
 ```sh
-sudo apt-get install -y \
-  build-essential gcc g++ \
-  uuid-dev libgmp-dev libaio-dev libsnappy-dev libgoogle-perftools-dev libabsl-dev \
-  libreadline-dev libboost-system-dev zlib1g-dev \
-  bison flex valgrind
-```
-
-Build and test:
-
-```sh
-make debug       # 1707 jobs, ~2-5 min on a recent laptop
-make test        # runs 188 test binaries
+make debug       # build everything
+make test        # C++ unit tests
 make release     # LTO-built production binaries
+python3 tools/lang_test.py -d orly/data tests/lang_tests   # Orlyscript suite
 ```
 
-The three production binaries land in `../out_orly/debug/` (or `../out_orly/release/`):
-
-| Binary | Purpose |
-| --- | --- |
-| `orly/orlyc` | Orlyscript compiler |
-| `orly/server/orlyi` | Database server |
-| `orly/client/orly_client` | Interactive client shell |
-
-[Release benchmarks](docs/benchmarks.md) document the tag/on-demand suite,
-versioned results, A/A noise and same-runner comparisons. The page states the
-smoke-scale fixtures and remaining keyset-paging/fixed-hardware coverage.
-
-`orlyc` compiles incrementally (#312): recompiling an unchanged package into
-the same output directory skips codegen and the gcc/link step outright (keyed
-on a source-content hash plus the compiler's build stamp; `--debug` bypasses
-the cache). Check-only modes: `--syntax-only` stops after parsing,
-`--semantic-only` after type-checking — neither writes output — and
-`--transient-cc` keeps only the linked `.so`, removing the generated C++
-intermediates.
-Diagnostics name only your code's position; `--compiler-locations` appends
-the compiler source line that raised each one, for filing a compiler bug.
-
-Exercise the Orlyscript test suite against compiled `.orly` programs:
-
-```sh
-python3 tools/lang_test.py -d orly/data tests/lang_tests
-```
-
-### ThreadSanitizer build
-
-A `tsan` config builds with ThreadSanitizer (`-fsanitize=thread`) to check the
-lock-free / commutative-merge machinery for data races. Build a target and run
-it under TSan:
-
-```sh
-tools/jhm -c tsan orly/indy/context_fold.test          # output: ../out_orly/tsan/...
-setarch "$(uname -m)" -R ../out_orly/tsan/orly/indy/context_fold.test
-```
-
-The `setarch -R` (disable ASLR) is required on modern kernels — without it
-libtsan aborts at startup with *"unexpected memory mapping"*. CI runs a curated
-set of concurrency tests this way in a **gating** job — the set is clean under
-TSan, so the job fails on any un-suppressed race; provably-benign reports are
-documented and suppressed in [`orly/tsan.supp`](orly/tsan.supp). See
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and issues
-[#177](https://github.com/orlyatomics/orly/issues/177) /
-[#184](https://github.com/orlyatomics/orly/issues/184).
-
-The same job also builds `orlyi` and `orlyc` under TSan and runs the
-memory-drain smoke against that server
-([`clients/smoke/run-tsan-server.sh`](clients/smoke/run-tsan-server.sh), #713),
-so WebSocket sessions, Tetris, the merges and the reporting port are covered
-too. It fails on any un-suppressed report from `orlyi`, after a negative
-control that makes `orlyi` race on purpose and requires TSan to report it.
-
-### UndefinedBehaviorSanitizer build
-
-A `ubsan` config builds with UndefinedBehaviorSanitizer
-(`-fsanitize=undefined,float-cast-overflow`) to find signed overflow,
-misaligned or null accesses, bad shifts, out-of-range enum/bool loads and the
-like. Like the `asan` config it builds with `-U_FORTIFY_SOURCE`: the fibers
-switch stacks with `longjmp`, which glibc's fortified `longjmp` rejects. It is
-not part of CI yet. Reports are recoverable (the program keeps
-running), so collect them from the log:
-
-```sh
-tools/jhm -c ubsan --test      # builds and runs every test under UBSan
-```
-
-`jhm --test` prints the output of a *failing* test only, and UBSan reports do
-not fail a test, so to see them run the binaries yourself and send the reports
-to files:
-
-```sh
-export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=0:report_error_type=1:log_path=/tmp/ubsan/r
-mkdir -p /tmp/ubsan
-../out_orly/ubsan/orly/indy/context_fold.test
-grep -h 'runtime error:' /tmp/ubsan/r.* | sort | uniq -c | sort -rn
-```
-
-Orlyscript tests go through a UBSan `orlyc`. Keep `log_path` set here:
-`lang_test.py` does not drain a child's output pipe until the child exits, so
-the many megabytes of stack traces a plain run prints will hang it.
-
-```sh
-tools/jhm -c ubsan orly/orlyc orly/server/orlyi
-ORLYC="$PWD/../out_orly/ubsan/orly/orlyc" python3 tools/lang_test.py -d tests/lang_tests
-```
-
-On a machine with very large RAM, cap a standalone `orlyi` (cgroup limit) so
-it does not size its budget from free memory.
+Binaries land in `../out_orly/<config>/`: `orly/orlyc` (compiler),
+`orly/server/orlyi` (server) and `orly/client/orly_client` (shell).
+[`docs/building.md`](docs/building.md) has the apt packages, the sanitizer
+builds, supported platforms, the toolchain and clangd setup.
 
 ## Security
 
-By default Orly has **no authentication or authorization**. Any client that can reach
-`orlyi` can read and write any data its installed packages reach, and install
-or uninstall packages; `set user id` is attribution a client asserts, not an
-identity. Traffic isn't encrypted. Run `orlyi` only where every client that
-can reach it is trusted: on one host, on a private network, or behind an
-application that authenticates its users and talks to `orlyi` for them
-([#705](https://github.com/orlyatomics/orly/issues/705)).
-
-- **Listeners bind loopback by default.** On a bare host, the client
-  (19380), WebSocket (8082) and reporting (19388) listeners bind `127.0.0.1`.
-  `--bind_address=0.0.0.0` listens on every interface, or pass one
-  interface's address. `orlyi --log_info` logs each bound address at startup.
-- **Replication belongs on a private network.** The replication listener
-  (`--replica_port_number`, 19381) binds every interface by default, so a replica on
-  another host can reach it. Without a replication token it is just as
-  unauthenticated and carries all the data: set `--replica_bind_address` to the
-  private network's address.
-- **The Docker image binds every interface inside the container**, because
-  `docker run -p` needs that. The `-p` mapping then decides who can connect;
-  publish to `127.0.0.1` as above unless clients on other machines need it.
-- **`compile` over WebSocket is off.** That statement builds the source it is
-  sent with the server's C++ compiler, and `install` then loads it into the
-  server process, so it lets a client run code inside `orlyi`. It is refused
-  with `"status": "remote_compile_disabled"` unless `orlyi` is started with
-  `--allow_remote_compile`, both on a bare host and in the image. Compile
-  packages with `orlyc` and `install` them instead, as every client and
-  example here does.
-- **An optional shared secret** ([#710](https://github.com/orlyatomics/orly/issues/710)).
-  Start `orlyi` with `--auth_token_file=<path>` (or `ORLY_AUTH_TOKEN_FILE`, or
-  the token in `ORLY_AUTH_TOKEN`) and every WebSocket and binary-protocol
-  connection must present that token before any statement runs; one without
-  it, or with a wrong one, is refused with `"status": "unauthorized"`. A replica
-  must present the replication token (`--replication_token_file`, by default
-  the same token) to join a primary. The Python, Go and TypeScript clients, the
-  MCP server, the REPL and `orly_client` read `ORLY_AUTH_TOKEN_FILE` or
-  `ORLY_AUTH_TOKEN`. Off by default, and with no token nothing changes on the
-  wire. Turning it on means giving the token to **every client and replica**
-  first; `docs/PROTOCOL.md` has the order. It is one secret for all clients,
-  not user accounts.
-- **TLS goes in a reverse proxy.** `orlyi` doesn't speak TLS; keep it on
-  loopback and put a proxy such as Caddy in front of it. `docs/PROTOCOL.md`
-  has a Caddyfile for the WebSocket and the binary port.
-
-[`docs/PROTOCOL.md`](docs/PROTOCOL.md) has the details.
+By default Orly has **no authentication and no TLS**: any client that can reach
+`orlyi` can read and write everything. Listeners bind loopback on a bare host;
+an optional shared secret (`--auth_token_file`) and a TLS reverse proxy are
+available. Read [`SECURITY.md`](SECURITY.md) before exposing it to a network.
 
 ## Examples
 
-### [`examples/bitcoin-time-travel/`](examples/bitcoin-time-travel/) — time travel + multiverse via key-encoded version
+| Example | What it shows |
+| -- | -- |
+| [`agent-swarm`](examples/agent-swarm/) | 8 agents build one knowledge graph concurrently, colliding on hot keys, with provenance and zero lost writes |
+| [`mcp-agent-duet`](examples/mcp-agent-duet/) | Two MCP agents share one graph through one POV id; includes a two-Claude-Code-session recipe |
+| [`prediction-market`](examples/prediction-market/) | A parimutuel market: concurrent bets, prices folded on read, price history by time travel |
+| [`wikipedia-pageviews`](examples/wikipedia-pageviews/) | 8 writers `+=` the same hot counters; every increment lands |
+| [`bitcoin-time-travel`](examples/bitcoin-time-travel/) | Balance at a block height and on a fork, by putting the version and branch in the key |
+| [`wikipedia-categories`](examples/wikipedia-categories/) | The same time-travel trick with set union instead of addition |
+| [`grc20-pov`](examples/grc20-pov/) | A GRC-20 knowledge graph: typed event log, concurrent editors, replay in the engine, sourced claims |
+| [`crdt-text`](examples/crdt-text/) | Collaborative text editing where the storage merge is the CRDT |
+| [`recursive-variants`](examples/recursive-variants/) | Storing recursive sum types and reading them back over the wire |
+| [`playground`](examples/playground/) | A browser playground for writing and running Orlyscript |
 
-A Bitcoin-flavoured ledger that does **historical queries** ("balance at block 5") and **branched-history multiverse queries** ("balance on the fork vs the mainnet at block 7"). The trick: encode the version axis (block height) AND the branch into the key tuple, fold over the height axis on read.
+Each example's README explains the design and how to run it.
 
-### [`examples/wikipedia-categories/`](examples/wikipedia-categories/) — same trick, different monoid
+## Documentation
 
-A Wikipedia-flavoured demo that does the same fold-over-keyed-versions trick, but with **set union** as the operator instead of integer addition. Watch the "Programming languages" set grow from `{FORTRAN}` in 1957 through `{...35 entries...}` in 2024 — `members_at(cat, year)` is one four-line Orlyscript function.
-
-Together the first two examples prove the polymorphic-monoid claim: pick the operator (`+`, `|`, `++`, `min`, …) and the identity, get historical queries for that domain.
-
-### [`examples/wikipedia-pageviews/`](examples/wikipedia-pageviews/) — concurrent `+=` that actually composes
-
-Wikimedia-style hourly pageview counters under contention. 8 concurrent WebSocket sessions all do `*<['views', lang, page, hour]>::(int) += n` against the same hot keys; the self-check confirms every increment lands (5,938 / 5,938 events across 96 keys, zero lost updates).
-
-Most databases force a tradeoff on this workload:
-
-| Database | Statement | Behavior under N concurrent writers |
-|---|---|---|
-| Postgres | `UPDATE views SET n = n + 1 WHERE page = ?` | Row lock; writers serialize on hot pages |
-| Redis | `INCR views:<page>` | Atomic, but the server is single-threaded |
-| Cassandra | `UPDATE views SET n = n + 1 WHERE …` | Counter columns with consistency caveats |
-| **Orly** | `*<['views', …, page, hour]>::(int) += n` | Field call; lock-free; all N writers land their increments and the read folds them |
-
-The mechanism: each `+=` emits an `{Add, n}` mutation at the storage layer instead of resolving to a value at write time, and the read path folds same-mutator runs back into the resolved value. CI runs this as the workload-level integration test for the property; pass `DEMO_SCALE=small` for the CI-friendly 4-writer / 800-event variant.
-
-### [`examples/agent-swarm/`](examples/agent-swarm/) — multi-agent knowledge-graph extraction without coordination
-
-The shape multi-agent LLM pipelines keep reinventing badly. N independent extractor "agents" each process a disjoint slice of a corpus and stream tags, mentions, and cooccurrences into one shared knowledge graph — **with zero coordination**. No locks, no per-agent partitioning, no driver-side merge logic. Every tag carries **provenance** — the agent that asserted it — so a tag three agents independently produce is three records you can read back, not a collapsed string. Combines both commutative-write shapes from the demos above and runs them concurrently:
-
-- `*<['entity', e]>::({<{.tag: str, .agent: str}>}) |= {<{.tag, .agent}>}` — set-union of provenance **records** per entity (the `wikipedia-categories` operator, but concurrent and structured — storable record-sets are [#90](https://github.com/orlyatomics/orly/issues/90))
-- `*<['mention', e, d]>::(int) += 1` — per-(entity, doc) counter
-- `*<['cooccur', a, b]>::(int) += 1` — per-unordered-pair counter
-
-8 agents extract from 40 docs concurrently, with hot entities (`Python`, `OpenAI`, `Claude`, `GPT-4`, …) deliberately round-robined across agents so they collide on the same keys; the self-check confirms every tag provenance record, mention counter, and cooccurrence counter matches the independently-derived ground truth (147 `(tag, agent)` records across 25 entities + 105 mention counters + 76 cooccurrence pairs, zero lost extractions). The per-entity rollup annotates each tag with how many distinct agents corroborated it (`language×5`).
-
-What this would normally require:
-
-| Approach | Problem under N concurrent agents |
-|---|---|
-| Per-agent local graph + post-hoc merge | Doubles storage; merge logic has to commute by hand |
-| Read-modify-write per fact (`UPDATE … SET tags = tags ∪ {…}`) | Row lock per write; agents serialize on hot entities; provenance needs a separate join table |
-| Single-writer service in front of the store | Throughput ceiling = one writer; agents queue |
-| **Orly** | `\|=` and `+=` are field calls; lock-free; all N agents land their contributions and the engine aggregates |
-
-Why it matters: this is exactly the topology AI extraction pipelines have — many agents reading disjoint chunks, emitting overlapping facts into one graph — and every conventional database forces you to invent a coordination protocol on top. Orly gives it to you for free, as a direct consequence of how field calls work. The driver never reads-then-writes; it only ever calls the commutative functions in [`graph.orly`](examples/agent-swarm/graph.orly).
-
-And the graph it builds is **traversable**: cooccurrences are stored as a symmetric `<['adj', a, b]>` adjacency — a trailing-`free` prefix scan the sorted index seeks straight to (index-free adjacency) — so bounded k-hop reachability is a `reduce` over a depth range with a visited set, no new engine primitive. Concurrent multi-writer construction *and* transitive graph queries in one store, which Neo4j (single-primary writes) and Cayley (a query layer over a store) don't combine.
-
-### [`examples/mcp-agent-duet/`](examples/mcp-agent-duet/) — two MCP agents, one shared graph
-
-`agent-swarm` lifted to the layer real agent runtimes use: two independent agent processes, each speaking only [MCP](https://modelcontextprotocol.io) through its own [`orly-mcp`](clients/mcp/) server instance, build one knowledge graph (same [`graph.orly`](examples/agent-swarm/graph.orly) schema) in **one shared POV, concurrently** — the agents share exactly one string, the pov id. The CI-gated verifier checks that corroborated tags keep one provenance record *per agent*, every counter lands, and a `reach()` traversal seeded at an entity only agent A wrote arrives at entities only agent B wrote. The README includes the recipe for running the same topology with two live Claude Code sessions ([#528](https://github.com/orlyatomics/orly/issues/528)).
-
-### [`examples/grc20-pov/`](examples/grc20-pov/) — GRC-20 knowledge graph: event-sourced + concurrent editors + time-travel
-
-A reference impl of Geo / The Graph's [GRC-20](https://github.com/geobrowser/grc-20) knowledge-graph standard. GRC-20 models knowledge as append-only ops (`CreateEntity`, `SetProperty`, `CreateRelation`, `DeleteEntity`) — exactly the shape Orly stores natively. The op is a **typed tagged union** (`<| Text(str) | Number(int) | Relation(str) | Deleted |>`), and every op becomes one `|=` of an event record (`<{.ts: int, .editor: str, .op: ...}>`) into a per-`(entity, property)` history set — a set of variant-bearing records, storable since [#90](https://github.com/orlyatomics/orly/issues/90) / [#96](https://github.com/orlyatomics/orly/issues/96), so the typed op travels end to end with no string packing. Concurrent editors stream into the same shared POV with **no coordination**; reads replay the timestamp-sorted log — latest-write-wins, tombstones, value formatting, time-travel — *in the engine*, via a `reduce` + an exhaustive `when` match, not in the driver.
-
-The demo runs three phases over a corpus of six Greek philosophers:
-
-| Phase | Editor | What |
-|---|---|---|
-| 1 | `wiki` | biographical facts (`name`, `born`, `died`) |
-| 2 | `stanford` | school of thought + `student_of` relations |
-| 3 | both | concurrent race on `pythagoras.born` — both events survive in history |
-
-After each phase the demo prints a snapshot reconstructed from the event log; the final editorial diff shows per-editor event counts and overlapping entities. This example is the synthesis of the others: time-travel from [`bitcoin-time-travel`](examples/bitcoin-time-travel/) and [`wikipedia-categories`](examples/wikipedia-categories/), concurrent multi-writer from [`wikipedia-pageviews`](examples/wikipedia-pageviews/) and [`agent-swarm`](examples/agent-swarm/), applied to a published graph standard from another project rather than a synthetic workload — and it owns the GRC-20 op vocabulary and the entire replay *in orlyscript*, using the [sum-type](#features) `reduce` + `when` fold, with the driver reduced to streaming typed events and reading resolved values.
-
-A second package in the same directory, [`claims.orly`](examples/grc20-pov/claims.orly), goes past plain triples: every statement is a claim that keeps its source, so two sources asserting the same value stay two claims, each with a confidence, a time qualifier and citations. Readers choose which sources they trust and get an honest answer (agreed, a conflict with every position side by side, unknown value, no claim, or "only sources you didn't select say so"), with identity by entity id and never by name, and methods for point reads, one-hop neighbours, keyset range pages and cross-source listings ([#747](https://github.com/orlyatomics/orly/issues/747)).
-
-### [`examples/crdt-text/`](examples/crdt-text/) — collaborative text editing: the database *is* the CRDT merge
-
-A Google-Docs-style collaborative editor where Orly's commutative storage **is** the conflict-free merge — no operational transform, no central reconcile, no lock. It's a [Logoot](https://hal.inria.fr/inria-00432368/document) sequence CRDT: every character gets a dense, totally-ordered position id, so the document is an unordered *set* of `(position, char)` entries and the visible text is the engine's read-time fold — sort by position, drop tombstoned, concatenate (the same `sorted_by` + `reduce` machinery as `grc20-pov`, over a *sequence* instead of an event log). Two editors stream inserts and deletes into one shared POV with **no coordination** and converge; concurrent inserts at the same spot both survive (distinct dense positions, ties broken on `(site, clock)`), so nothing is lost. The one piece of real CRDT logic — `between(p, q)`, the dense-order position allocation — is ~12 lines in the driver; the merge, convergence, tombstones, and time-travel (version history) are all the engine. The self-check asserts three independent readers render byte-identical text.
-
-All six examples ship two equivalent drivers — Python (`./run.sh`) and Go (`./run-go.sh`) — and are smoke-tested in CI on every push.
-
-## Walkthrough
-
-[`docs/tour.md`](docs/tour.md) — an engineering tour: the core idea, how it is tested (sanitizers, fault injection, the kill-and-recover campaign), and where to start reading the source.
-
-[`docs/walkthrough.md`](docs/walkthrough.md) — compile an Orlyscript package with `orlyc`, load it into a running `orlyi`, and invoke a method on it via `orly_client`. The full pipeline end to end.
-
-[`docs/PROTOCOL.md`](docs/PROTOCOL.md) — the WebSocket + JSON client protocol an application uses to talk to a running `orlyi` (the path the `examples/` drivers use): connection, statements, and JSON marshaling.
-
-**Client libraries** implement that protocol so apps don't hand-roll it: [`clients/python`](clients/python) (`orly`), [`clients/go`](clients/go) (`orly`), [`clients/zig`](clients/zig) (`orly`), and [`clients/ts`](clients/ts) ([`@orlyatomics/orly`](https://www.npmjs.com/package/@orlyatomics/orly) on npm — typed, browser + Node). The `examples/` drivers run on them. For AI-agent runtimes, [`clients/mcp`](clients/mcp) ([`orly-mcp`](https://www.npmjs.com/package/orly-mcp), `npx -y orly-mcp`) wraps the TS driver in an [MCP](https://modelcontextprotocol.io) server, so any MCP-speaking agent can use a running `orlyi` as conflict-free shared memory — N agents share a POV id and write concurrently with the engine as the merge ([#526](https://github.com/orlyatomics/orly/issues/526)).
-
-**Interactive orlyscript** — [`clients/repl`](clients/repl) ([`orly-repl`](https://www.npmjs.com/package/orly-repl) on npm) is a REPL against a running `orlyi`: type an expression and see its value, define functions and call them, write through a POV and read back — no package files by hand. Each entry is compiled with `orlyc` into a synthetic package and installed behind the scenes ([#535](https://github.com/orlyatomics/orly/issues/535)).
-
-## Supported platforms
-
-Linux. Verified on Ubuntu 24.04.
-
-**macOS development**: on macOS (Apple silicon and Intel), the Linux engine builds and runs in a container through [`./dev`](CONTRIBUTING.md#getting-started-on-macos-or-any-non-linux-machine) (`./dev build|test|lang|run`), with warm ccache and build volumes yielding ~0.4 s incremental rebuilds; native macOS clients and REPL connect over loopback WebSocket ([#738](https://github.com/orlyatomics/orly/issues/738)).
-
-**x86-64** and **aarch64**. Both are built and released against: the published
-docker image is a multi-arch manifest, each architecture built on its own native
-runner and gated by the same smokes — the MCP smoke, an in-container `orlyc`
-compile, and the REPL — run on that architecture's own image.
-
-The port itself needed exactly two changes, which says more about the codebase
-than about the port: `_mm_prefetch` became `__builtin_prefetch`, and a `-msse2`
-flag that was a no-op on x86-64 was dropped ([#548](https://github.com/orlyatomics/orly/issues/548)). There is no inline
-assembly anywhere in the tree, and the fiber fast path is `setjmp`/`longjmp`
-bootstrapped from `ucontext` — both POSIX — so there was no hand-rolled context
-switch to port. aarch64 runs `make test` in CI: 1753 build jobs, 203 test
-binaries, zero failures on a native arm runner.
-
-Two aarch64-specific defects have been found and fixed, and they share one
-shape worth knowing: a fiber that has migrated OS threads reads a thread-local
-through a thread pointer the compiler computed before the switch, so it gets the
-*previous* thread's value. x86-64 re-derives the TLS base at every access, so
-only arm shows it, and only in optimised builds. `orlyc` deadlocked
-([#554](https://github.com/orlyatomics/orly/issues/554)), and the `v0.1.0`
-arm64 image segfaulted just after the first write
-([#578](https://github.com/orlyatomics/orly/issues/578), fixed in `v0.1.1`).
-The image smokes passed `v0.1.0` anyway, because that crash lands after the
-write has already answered.
-
-So the debug `make test` job above stays **informational**, and what guards the
-class is two other CI checks ([#556](https://github.com/orlyatomics/orly/issues/556)).
-A lint rejects any bare thread-local that isn't allowlisted with a reason it can
-never be read across a fiber switch. An `aarch64 release smoke` job builds
-`orlyi`/`orlyc` release on an arm runner, compiles a package, and writes through
-every POV flavour on 20 fresh servers, checking that each one survives.
-
-Earlier releases probably work; not re-tested in the revival pass.
-
-## Toolchain
-
-| Component | Version |
-| --- | --- |
-| gcc | 13.3.0 |
-| C++ standard | `-std=c++23` |
-| boost (system) | 1.83 — includes `boost::beast` for the WebSocket surface |
-| Python (for `lang_test.py`) | 3.12 |
-| Go (for the optional Go driver in `examples/`) | 1.22+ |
-
-Build flags live in [`root.jhm`](root.jhm); per-target overrides in `debug.jhm` / `release.jhm` / `bootstrap.jhm`.
+- [`docs/tour.md`](docs/tour.md): an engineering tour, how it is tested, and where to start reading the source.
+- [`docs/walkthrough.md`](docs/walkthrough.md): compile a package, load it into `orlyi`, call a method.
+- [`docs/architecture.md`](docs/architecture.md): POVs, the Tetris merge and commutative folding.
+- [`docs/PROTOCOL.md`](docs/PROTOCOL.md): the WebSocket + JSON protocol.
+- [`docs/durability.md`](docs/durability.md): what an `ok` promises, and what survives a crash.
+- [`docs/tuning.md`](docs/tuning.md) and [`docs/benchmarks.md`](docs/benchmarks.md): performance tuning and benchmark results.
+- **Clients:** [Python](clients/python), [Go](clients/go), [Zig](clients/zig), [TypeScript](clients/ts) ([`@orlyatomics/orly`](https://www.npmjs.com/package/@orlyatomics/orly)), the [MCP server](clients/mcp) ([`orly-mcp`](https://www.npmjs.com/package/orly-mcp)) and the [REPL](clients/repl) ([`orly-repl`](https://www.npmjs.com/package/orly-repl)).
 
 ## Project status
 
@@ -496,10 +188,6 @@ Dormant from 2019 until early 2026. A modernization pass brought the codebase ba
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the conventions CI enforces — build/test commands and the `TODO(#nnn)` comment rule. The build system (`jhm`) lives in [`jhm/`](jhm/); the bootstrap path is documented in [`bootstrap.sh`](bootstrap.sh). There's no formal style guide beyond that; match the surrounding code.
-
-### IDE / clangd
-
-Every successful `make debug` (or any `jhm` invocation that compiles C/C++) writes a [JSON Compilation Database](https://clang.llvm.org/docs/JSONCompilationDatabase.html) to `compile_commands.json` at the repo root. clangd, clang-tidy, IWYU, and most C++-aware editors pick it up automatically. The file is regenerated on every build, so it's `.gitignore`d.
 
 ---
 
