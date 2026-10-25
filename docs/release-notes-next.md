@@ -8,11 +8,13 @@ file when the release notes are published.
 
 - **Read latency under ingest.** A run of changes to the read path (a point read no longer waits behind a long
   scan, cheaper layer merging and key compares, reads skip disk layers that cannot hold their key, a paged read's
-  `skip` builds no key per row) plus guidance on thread placement. With the pinning and the build described in
-  [docs/tuning.md](tuning.md), a 64-session mixed read load kept paged-read p99 near 9 ms and point-read p99 under 2 ms
-  while ingesting, with no write waiting over 1 s and no refusals, on a 28-core machine.
+  `skip` builds no key per row) plus guidance on thread placement. With the pinning described in
+  [docs/tuning.md](tuning.md), a 64-session mixed read load kept paged-read p99 at 8.4 to 9.1 ms (10.7 to 11.3 ms on
+  the default layout) and point-read p99 under 2 ms on a 28-core machine. Whether writes stay inside 1 s while that
+  load runs depends on the build; see Known limitations.
 - **Profile-guided builds.** `make release-pgo` builds `orlyi` and `orlyc` guided by a profile of the repository's
-  own smokes ([docs/pgo.md](pgo.md)). Optional; `make release` is unchanged.
+  own smokes ([docs/pgo.md](pgo.md)). Optional; `make release` is unchanged. It is a reproducible build step, not a
+  demonstrated fix for the ingest result below (see Known limitations).
 - **Reads at a version, bounded history retention, exactly-once writes, write receipts and durable acknowledgments**,
   an online integrity scrub, a POV review workflow, an Orlyscript language server and a browser playground, a Zig
   client, and keyset paging. See the changelog for each.
@@ -21,8 +23,8 @@ file when the release notes are published.
 
 ## Breaking changes and things to do when upgrading
 
-- **Replication flags renamed (master/slave to primary/replica)** (#1034, PR #1051 at the time of writing; confirm
-  against the merged diff). Final names:
+- **Replication flags renamed (master/slave to primary/replica), with no aliases** (#1034, #1051). A script or unit
+  file that still passes an old name fails at startup with an unknown-flag error:
 
   | old | new |
   | --- | --- |
@@ -31,10 +33,8 @@ file when the release notes are published.
   | `--slave_bind_address` | `--replica_bind_address` |
   | `--starting_state=SLAVE` | `--starting_state=REPLICA` |
 
-  As of the PR's current head the old spellings still work for this release and print a deprecation line on stderr;
-  the replication log text changed (anything that greps `refused a slave from` or `waiting for slave to connect`
-  needs the new wording). Wire protocol and on-disk formats are unchanged. If the PR is revised to drop the aliases,
-  this entry becomes a hard break and the table is the migration.
+  Replication log lines say primary and replica, so anything that greps the old wording needs the new. The wire
+  protocol and on-disk formats are unchanged.
 - **Default branch renamed from `master` to `main`.** Existing clones update with:
   `git branch -m master main && git fetch origin && git branch -u origin/main main && git remote set-head origin -a`.
   GitHub redirects the old web links; open pull requests were retargeted.
@@ -63,15 +63,20 @@ in while a long read runs), #1017 to #1024 (runner handoff, page cache pins, WAL
 
 - The M1 scorecard's runnable harness is not in the repository, so the headline numbers above are reproducible with
   the settings in [docs/tuning.md](tuning.md) and a load generator of your own, not with a script from this tree.
-- The pinning guidance was measured on one machine shape (28 cores, two threads each). The same settings on a plain
-  release build, without the paged-read skip and a profile-guided build, passed the paged-read limit but failed the
-  ingest limits on both paired runs. Whether the profile built from the repository's own smokes recovers the same gain
-  as the profile used for the headline numbers is stated in docs/pgo.md.
+- The pinning guidance was measured on one machine shape (28 cores, two threads each).
+- **Ingest under the tuned settings is not reproduced by the build in this tree.** With the tuned pinning and pool
+  flags, a plain release build, `make release-pgo` with the paged-read skip change, and `make release-pgo` without it
+  all met the read limits and all missed the ingest limits (longest write wait 6.8 to 11.9 s against a 1 s limit)
+  on every paired run. A build trained on a heavier, scorecard-shaped workload passed on two paired runs; what
+  separates it from the smoke-trained build is not isolated. docs/pgo.md has the table. Do not state in the
+  release that the settings keep writes within 1 s unless the checklist item below has been done.
 
 ## Before tagging (checklist for the releaser)
 
 - [ ] The perf PRs are merged and CI is green on main (confirm the run conclusion, not just the checks list).
-- [ ] A release build made with `make release-pgo` passes the scorecard with the documented settings (see docs/pgo.md for what was run).
-- [ ] The #1034 rename has merged in its final form; update the table above.
+- [ ] A build from this tree passes the whole scorecard, ingest limits included, with the documented settings. As of
+  the last measurement none did (see Known limitations). Either find what the passing build had that this tree does
+  not, or ship with the limitation stated.
+- [x] The #1034 rename has merged (#1051, #1052) with no aliases; the table above matches.
 - [ ] `tools/fold_changelog.py` run, version bumped, the release-benchmarks workflow dispatched on the tag.
 - [ ] This file deleted or moved into the release.
