@@ -1,0 +1,1 @@
+- **Added**: the TypeScript client can keep several statements in flight on one connection: `client.pipeline(items, { window })` and `client.callPipelined(pov, pkg, method, argsList, { read, window })`. Reads are sent as `read` envelopes so the server may run them together; anything else is a barrier. Results resolve in the order given (#1033).
