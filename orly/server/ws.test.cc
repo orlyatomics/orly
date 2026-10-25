@@ -620,12 +620,12 @@ static string Envelope(const Base::TJson &id, const string &stmt, bool read) {
   return text;
 }
 
-/* The ids of the replies, in the order they arrived; -1 for a reply without one. */
-static vector<int> IdsOf(const vector<Base::TJson> &replies) {
-  vector<int> ids;
+/* The ids of the replies, in the order they arrived, as "2,1"; "-" for a reply without one. */
+static string IdsOf(const vector<Base::TJson> &replies) {
+  string ids;
   for (const auto &reply: replies) {
     const auto *id = reply.TryFind("id");
-    ids.push_back(id ? static_cast<int>(id->GetNumber()) : -1);
+    ids += (ids.empty() ? "" : ",") + (id ? to_string(static_cast<int>(id->GetNumber())) : string("-"));
   }
   return ids;
 }
@@ -643,7 +643,7 @@ FIXTURE(PipelineFastReadOvertakesSlow) {
       Envelope(2, PipeCall + "<{}>;", true)}, closed);
   EXPECT_FALSE(closed);
   if (EXPECT_EQ(replies.size(), 3U)) {
-    EXPECT_EQ(IdsOf(replies), vector<int>({-1, 2, 1}));
+    EXPECT_EQ(IdsOf(replies), string("-,2,1"));
     EXPECT_EQ(replies[1]["status"], Base::TJson("ok"));
     EXPECT_EQ(replies[2]["status"], Base::TJson("ok"));
     EXPECT_EQ(replies[2]["result"], Base::TJson(98.6));
@@ -676,7 +676,7 @@ FIXTURE(PipelineBareStatementsInOrder) {
   if (EXPECT_EQ(replies.size(), 3U)) {
     EXPECT_EQ(replies[1]["result"], Base::TJson(98.6));
     EXPECT_EQ(replies[2]["result"], Base::TJson("second"));
-    EXPECT_EQ(IdsOf(replies), vector<int>({-1, -1, -1}));
+    EXPECT_EQ(IdsOf(replies), string("-,-,-"));
   }
 }
 
@@ -693,7 +693,7 @@ FIXTURE(PipelineWriteIsABarrier) {
       Envelope(3, PipeCall + "<{}>;", true)}, closed);
   EXPECT_FALSE(closed);
   if (EXPECT_EQ(replies.size(), 4U)) {
-    EXPECT_EQ(IdsOf(replies), vector<int>({-1, 1, 2, 3}));
+    EXPECT_EQ(IdsOf(replies), string("-,1,2,3"));
     EXPECT_EQ(replies[2]["receipt"]["durability"], Base::TJson("memory"));
   }
 }
@@ -722,11 +722,11 @@ FIXTURE(PipelineDepthStopsAndResumesReading) {
     ws.read(buffer);
     got.push_back(Base::TJson::Parse(beast::buffers_to_string(buffer.data())));
   }
-  const auto elapsed = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count();
+  const long elapsed = static_cast<long>(chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count());
   beast::error_code ec;
   ws.close(websocket::close_code::going_away, ec);
   /* Two overlapped, then the third: no less than two sleeps. */
-  EXPECT_GE(elapsed, 550);
+  EXPECT_GE(elapsed, 550L);
   for (const auto &reply: got) {
     EXPECT_EQ(reply["status"], Base::TJson("ok"));
   }
