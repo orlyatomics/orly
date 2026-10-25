@@ -93,7 +93,7 @@ namespace Orly {
           WalRoom = Disk::TWal::TRoom::KeepHeadroom;
         }
 
-        /* For a transaction that must not be refused (one a master replicated, #891): Prepare
+        /* For a transaction that must not be refused (one a primary replicated, #891): Prepare
            waits for WAL room for as long as it takes, refusing (Disk::TWalRingFull) only once
            `give_up` returns true.  On a fiber it yields between attempts; off one it blocks.  A
            failed or stopping WAL still throws at once.  Before Prepare. */

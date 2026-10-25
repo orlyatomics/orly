@@ -1,10 +1,10 @@
 #!/bin/bash
-# Exactly-once writes across a failover (#862): write with an operation id on a disk-backed master,
-# fail over to its slave, and send the write again there. The checks are listed at the top of
+# Exactly-once writes across a failover (#862): write with an operation id on a disk-backed primary,
+# fail over to its replica, and send the write again there. The checks are listed at the top of
 # tests/failover_retry_test.py.
 #
 #   NEGATIVE=noretry
-#                negative control: the slave's exactly-once table is off, so the retry runs again.
+#                negative control: the replica's exactly-once table is off, so the retry runs again.
 #                The run must FAIL, on the retry check.
 #   ORLY_OUT     build tree (default ../out_orly/release); needs orlyi, orlyc, orly_dm
 #

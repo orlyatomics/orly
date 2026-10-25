@@ -18,7 +18,7 @@ ORLYC="$ORLY_OUT/orly/orlyc"
 WS_PORT=${WS_PORT:-19732}
 REPORT_PORT=${REPORT_PORT:-19733}
 PORT=${PORT:-19730}
-SLAVE_PORT=${SLAVE_PORT:-19731}
+REPLICA_PORT=${REPLICA_PORT:-19731}
 
 for bin in "$ORLYI" "$ORLYC"; do
   if [ ! -x "$bin" ]; then
@@ -45,7 +45,7 @@ cp "$WORK/sample.1.so" "$WORK/packages/"
 echo "orlyi flags: ${ORLYI_FLAGS:-(none)}"
 
 "$ORLYI" --mem_sim --mem_sim_mb=${MEM_SIM_MB:-512} --mem_sim_slow_mb=64 --create=true \
-         --port_number=$PORT --replica_port_number=$SLAVE_PORT \
+         --port_number=$PORT --replica_port_number=$REPLICA_PORT \
          --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
          --connection_backlog=32 \
          --instance_name=orly_layer_count \

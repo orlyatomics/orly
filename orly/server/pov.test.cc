@@ -29,8 +29,8 @@ using namespace Orly::Server;
 using namespace Orly::Indy;
 using namespace Orly::Indy::Util;
 
-const Orly::Indy::TMasterContext::TProtocol Orly::Indy::TMasterContext::TProtocol::Protocol;
-const Orly::Indy::TSlaveContext::TProtocol Orly::Indy::TSlaveContext::TProtocol::Protocol;
+const Orly::Indy::TPrimaryContext::TProtocol Orly::Indy::TPrimaryContext::TProtocol::Protocol;
+const Orly::Indy::TReplicaContext::TProtocol Orly::Indy::TReplicaContext::TProtocol::Protocol;
 
 static const size_t BlockSize = 4096UL * 16;
 

@@ -423,7 +423,7 @@ namespace Orly {
       /* Whether InsertNotification() queues notifications.  Only the binary protocol's serving loop
          (TServer::TConnection::Run) pushes them and removes them once acked, so while a WebSocket client
          holds the session nothing would ever drain the queue, and every write that Tetris promotes or a
-         slave replicates would leave one behind, in memory and in every save of the session (#591).  The server turns queuing off when a
+         replica replicates would leave one behind, in memory and in every save of the session (#591).  The server turns queuing off when a
          WebSocket client attaches and back on when a binary client does.  The setting isn't saved: a
          session loaded from the durable store queues, so a binary client that reconnects still finds what
          arrived while it was away.  Notifications already queued are kept either way. */

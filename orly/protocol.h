@@ -45,8 +45,8 @@ namespace Orly {
   /* The port number on which the Orly server listens by default. */
   const in_port_t DefaultPortNumber = 19380;
 
-  /* The port number on which the Orly server listens for a slave connection by default. */
-  const in_port_t DefaultSlavePortNumber = 19381;
+  /* The port number on which the Orly server listens for a replica connection by default. */
+  const in_port_t DefaultReplicaPortNumber = 19381;
 
   namespace Handshake {
 
@@ -144,10 +144,10 @@ namespace Orly {
         /* The result of the request. */
         enum class TResult : char {
 
-          /* The machine is a master or solo and is ready to receive traffic.*/
+          /* The machine is a primary or solo and is ready to receive traffic.*/
           Ready = 'R',
 
-          /* The machine is a synchronized slave (or a newly started machine trying to synchronize to become a slave)
+          /* The machine is a synchronized replica (or a newly started machine trying to synchronize to become a replica)
              and so is not ready to receive traffic. */
           Unready = 'U',
 
@@ -159,7 +159,7 @@ namespace Orly {
         /* Default-constructs a bad reply.  This is meant to be used as a read buffer and overwritten with a valid reply. */
         TReply();
 
-        /* Constructs a reply, giving the state (Master or Slave) of the current machine. */
+        /* Constructs a reply, giving the state (Primary or Replica) of the current machine. */
         TReply(TResult result);
 
         /* See TResult. */
@@ -487,15 +487,15 @@ namespace Orly {
       UpdateReplicated = 2003,
 
       /* UpdateDurable(Base::TUuid pov_id, Base::TUuid tracking_id) -> void;
-         Notifies the session that one of its updates has been written to durable storage on the master and on the slave, meaning it will
+         Notifies the session that one of its updates has been written to durable storage on the primary and on the replica, meaning it will
          survive a double machine failure.  This notification is sent every pov, including the private pov in which the update begins
          and the global pov. */
       UpdateDurable = 2004,
 
       /* UpdateSemiDurable(Base::TUuid pov_id, Base::TUuid tracking_id) -> void;
-         Notifies the session that one of its updates has been written to durable storage on the master and that there is no slave.  This
-         notification is sent every pov, including the private pov in which the update begins, but only when the server has no slave;
-         if there is a slave, the server sends UpdateDurable() instead. */
+         Notifies the session that one of its updates has been written to durable storage on the primary and that there is no replica.  This
+         notification is sent every pov, including the private pov in which the update begins, but only when the server has no replica;
+         if there is a replica, the server sends UpdateDurable() instead. */
       UpdateSemiDurable = 2005;
 
   }  // Orly::ClientRpc

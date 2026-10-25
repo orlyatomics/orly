@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
-"""Exactly-once writes across a failover (#862): a slave keeps the operation ids its master's
+"""Exactly-once writes across a failover (#862): a replica keeps the operation ids its primary's
 writes carry, so after it is promoted a retry of one of those writes gets the saved outcome
 instead of running again.
 
-  1. A disk-backed master (--durable_acks=local) writes key 1 into a safe shared POV with
-     operation id A, before any slave has joined.
-  2. A slave joins. The master writes key 2 with operation id B, which replicates to the slave.
-     Both servers are disk-backed with the log: the master's records carry the ids, and the
-     slave logs what it applies and holds its checkpoint head until each id is in its table (#866).
-  3. The master is SIGKILLed and the slave promotes.
-  4. On the promoted slave:
+  1. A disk-backed primary (--durable_acks=local) writes key 1 into a safe shared POV with
+     operation id A, before any replica has joined.
+  2. A replica joins. The primary writes key 2 with operation id B, which replicates to the replica.
+     Both servers are disk-backed with the log: the primary's records carry the ids, and the
+     replica logs what it applies and holds its checkpoint head until each id is in its table (#866).
+  3. The primary is SIGKILLed and the replica promotes.
+  4. On the promoted replica:
        read     keys 1 and 2 are there, and the writer's `+=` counter is 2
        retry    B sent again replies with the saved outcome and doesn't run again: the counter
                 stays 2
-       join     A sent again is refused as operation_expired: it was written before the slave
-                joined, so the slave can't know whether it applied
+       join     A sent again is refused as operation_expired: it was written before the replica
+                joined, so the replica can't know whether it applied
        fresh    once the join floor (the join, plus a minute for clock skew) has passed, a write
                 with a new id applies
 
 Each write is the kill campaign's `put_once`, which bumps the writer's `+=` counter, so a write
 that runs twice shows in the counter.
 
---negative=noretry is the negative control: the slave runs with --operation_retention_count=0,
+--negative=noretry is the negative control: the replica runs with --operation_retention_count=0,
 which turns its exactly-once table off. As before #862, the retry runs again and the counter goes
 to 3, so the run must fail.
 
@@ -48,7 +48,7 @@ except ImportError as ex:
     sys.exit(f'failover retry test: cannot start: {ex} (install websocket-client for the python3 that runs this)')
 
 PKG = 'kill_campaign'
-# The slave refuses unknown ids up to a minute past its join (operation_table.h, RefuseUnknownBefore).
+# The replica refuses unknown ids up to a minute past its join (operation_table.h, RefuseUnknownBefore).
 JOIN_SKEW_S = 60
 
 
@@ -78,7 +78,7 @@ class Server:
                                '--num-devices=1', os.path.basename(self.loop)],
                               stdout=subprocess.DEVNULL)
 
-    def start(self, state, master_slave_port=None):
+    def start(self, state, primary_replica_port=None):
         p = self.port
         cmd = [os.path.join(self.args.orly_out, 'orly/server/orlyi'),
                '--create=true', f'--instance_name={self.instance}', f'--starting_state={state}',
@@ -90,8 +90,8 @@ class Server:
             cmd += ['--mem_sim', '--mem_sim_mb=512', '--mem_sim_slow_mb=256']
         else:
             cmd += ['--do_fsync', '--no_realtime', '--durable_acks=local']
-        if master_slave_port is not None:
-            cmd.append(f'--address_of_primary=127.0.0.1:{master_slave_port}')
+        if primary_replica_port is not None:
+            cmd.append(f'--address_of_primary=127.0.0.1:{primary_replica_port}')
             if self.args.negative == 'noretry':
                 cmd.append('--operation_retention_count=0')
         self.log = open(self.logpath, 'w')
@@ -155,7 +155,7 @@ def put(c, pov, n, op_id):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--orly-out', default=os.environ.get('ORLY_OUT', os.path.join(REPO_ROOT, '../out_orly/release')))
-    ap.add_argument('--port', type=int, default=19950, help='master uses port..port+3, slave port+10..port+13')
+    ap.add_argument('--port', type=int, default=19950, help='primary uses port..port+3, replica port+10..port+13')
     ap.add_argument('--volume-gb', type=int, default=3)
     ap.add_argument('--startup-timeout', type=int, default=300)
     ap.add_argument('--negative', choices=['none', 'noretry'], default=os.environ.get('NEGATIVE', 'none'))
@@ -165,8 +165,8 @@ def main():
     if os.geteuid() != 0:
         sys.exit('failover_retry_test.py needs root (losetup); run tests/failover_retry_test.sh')
     work = tempfile.mkdtemp(prefix='failover862.')
-    master = Server(args, work, 'master', args.port)
-    slave = Server(args, work, 'slave', args.port + 10)
+    primary = Server(args, work, 'primary', args.port)
+    replica = Server(args, work, 'replica', args.port + 10)
     failures = []
     finished = False
 
@@ -184,59 +184,59 @@ def main():
                               stdout=subprocess.DEVNULL)
         shutil.copy(f'{work}/{PKG}.1.so', f'{work}/packages/')
 
-        master.create_volume()
-        err = master.start('SOLO')
+        primary.create_volume()
+        err = primary.start('SOLO')
         if err:
-            sys.exit(f'{err}\n{master.tail()}')
-        with client(master) as c:
+            sys.exit(f'{err}\n{primary.tail()}')
+        with client(primary) as c:
             c.install(PKG, 1)
             pov = c.new_pov(safe=True, shared=True)
             op_a = orly.new_op_id()
             put(c, pov, 1, op_a)
-        log(f'master: wrote key 1 with id {op_a} into POV {pov}')
+        log(f'primary: wrote key 1 with id {op_a} into POV {pov}')
 
-        slave.create_volume()
-        err = slave.start('REPLICA', master_slave_port=master.port + 1)
+        replica.create_volume()
+        err = replica.start('REPLICA', primary_replica_port=primary.port + 1)
         if err:
-            sys.exit(f'{err}\n{slave.tail()}')
+            sys.exit(f'{err}\n{replica.tail()}')
         joined_at = time.time()
-        if not slave.wait_log('to [Slave]', 120):
-            sys.exit(f'slave never reached Slave state\n{slave.tail()}')
-        with client(slave) as c:
+        if not replica.wait_log('to [Replica]', 120):
+            sys.exit(f'replica never reached Replica state\n{replica.tail()}')
+        with client(replica) as c:
             c.install(PKG, 1)
-        log('slave: joined')
+        log('replica: joined')
 
-        with client(master) as c:
+        with client(primary) as c:
             op_b = orly.new_op_id()
             first = put(c, pov, 2, op_b)
-        log(f'master: wrote key 2 with id {op_b}, replied {first!r}')
-        # Let the write reach the slave; the read on the promoted slave below checks that it did.
+        log(f'primary: wrote key 2 with id {op_b}, replied {first!r}')
+        # Let the write reach the replica; the read on the promoted replica below checks that it did.
         time.sleep(5)
 
-        master.kill()
-        if not slave.wait_log('slave promoted to solo', 120):
-            sys.exit(f'slave never promoted\n{slave.tail()}')
-        log('slave: promoted')
+        primary.kill()
+        if not replica.wait_log('replica promoted to solo', 120):
+            sys.exit(f'replica never promoted\n{replica.tail()}')
+        log('replica: promoted')
 
-        with client(slave) as c:
+        with client(replica) as c:
             vals = c.call(pov, PKG, 'vals_of', {'w': 0})
             count = c.call(pov, PKG, 'count_of', {'w': 0})
             check(vals == [1001, 2001] and count == 2,
-                  f'read: keys 1 and 2 on the promoted slave, counter 2 (got {vals!r}, counter {count!r})')
+                  f'read: keys 1 and 2 on the promoted replica, counter 2 (got {vals!r}, counter {count!r})')
             try:
                 again = put(c, pov, 2, op_b)
                 count = c.call(pov, PKG, 'count_of', {'w': 0})
                 check(again == first and count == 2,
                       f'retry: id B answered with the saved outcome {first!r}, counter 2 (got {again!r}, counter {count!r})')
             except orly.OrlyError as ex:
-                check(False, f'retry: id B ran again on the promoted slave: {ex}')
+                check(False, f'retry: id B ran again on the promoted replica: {ex}')
             try:
                 put(c, pov, 1, op_a)
-                check(False, 'join: id A, from before the slave joined, was accepted')
+                check(False, 'join: id A, from before the replica joined, was accepted')
             except orly.OperationExpired:
-                check(True, 'join: id A, from before the slave joined, refused as operation_expired')
+                check(True, 'join: id A, from before the replica joined, refused as operation_expired')
             except orly.OrlyError as ex:
-                check(False, f'join: id A, from before the slave joined, ran again: {ex}')
+                check(False, f'join: id A, from before the replica joined, ran again: {ex}')
             wait = joined_at + JOIN_SKEW_S + 2 - time.time()
             if wait > 0:
                 log(f'waiting {wait:.0f}s for the join floor to pass')
@@ -249,12 +249,12 @@ def main():
                 check(False, f'fresh: a new id past the join floor was refused: {ex}')
         finished = True
     finally:
-        master.kill()
-        slave.kill()
-        master.detach()
-        slave.detach()
+        primary.kill()
+        replica.kill()
+        primary.detach()
+        replica.detach()
         if failures or not finished:
-            for srv in (master, slave):
+            for srv in (primary, replica):
                 log(f'--- {srv.name} log tail ---\n{srv.tail(30)}')
         if args.keep or failures or not finished:
             log(f'work directory kept: {work}')

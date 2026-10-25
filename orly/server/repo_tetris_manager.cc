@@ -38,13 +38,13 @@ TRepoTetrisManager::TRepoTetrisManager(
     Fiber::TRunner::TRunnerCons &runner_cons,
     Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *> *frame_pool_manager,
     const std::function<void (Indy::Fiber::TRunner *)> &runner_setup_cb,
-    bool is_master,
+    bool is_primary,
     Indy::TManager *repo_manager,
     Package::TManager *package_manager,
     Durable::TManager *durable_manager,
     bool log_assertion_failures,
     bool commutative_fastlane)
-    : TTetrisManager(scheduler, runner_cons, frame_pool_manager, runner_setup_cb, is_master),
+    : TTetrisManager(scheduler, runner_cons, frame_pool_manager, runner_setup_cb, is_primary),
       PushCount(0UL),
       PopCount(0UL),
       FailCount(0UL),
@@ -64,11 +64,11 @@ TRepoTetrisManager::~TRepoTetrisManager() {
   StopAllPlayers();
 }
 
-TRepoTetrisManager::TPlayer::TPlayer(TRepoTetrisManager *repo_tetris_manager, const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_master)
+TRepoTetrisManager::TPlayer::TPlayer(TRepoTetrisManager *repo_tetris_manager, const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_primary)
     : TTetrisManager::TPlayer(repo_tetris_manager), RepoTetrisManager(repo_tetris_manager) {
   Repo = repo_tetris_manager->RepoManager->ForceGetRepo(parent_pov_id);
   OnJoin(child_pov_id);
-  Start(is_paused, is_master);
+  Start(is_paused, is_primary);
 }
 
 TRepoTetrisManager::TPlayer::~TPlayer() {
@@ -600,6 +600,6 @@ bool TRepoTetrisManager::TPlayer::PlayRound() {
   return promoted;
 }
 
-TTetrisManager::TPlayer *TRepoTetrisManager::NewPlayer(const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_master) {
-  return new TPlayer(this, parent_pov_id, child_pov_id, is_paused, is_master);
+TTetrisManager::TPlayer *TRepoTetrisManager::NewPlayer(const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_primary) {
+  return new TPlayer(this, parent_pov_id, child_pov_id, is_paused, is_primary);
 }

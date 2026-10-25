@@ -752,15 +752,15 @@ namespace Orly {
           return false;
         }
 
-        /* Save the record with the given id, replicated to the slaves if 'replicate'. True if saved, and then 'sem'
+        /* Save the record with the given id, replicated to the replicas if 'replicate'. True if saved, and then 'sem'
            is pushed once, when the record is on disk; false, saving nothing, if there is no store or it cannot
            promise the disk (see Durable::TManager::TrySaveRecord). */
         virtual bool TrySaveRetentionRecord(const Base::TUuid &/*id*/, const std::string &/*blob*/, Base::TEventSemaphore */*sem*/, bool /*replicate*/) {
           return false;
         }
 
-        /* Whether this node decides the horizon and ships it to slaves (solo or master), rather than taking the one
-           its master ships (slave). */
+        /* Whether this node decides the horizon and ships it to replicas (solo or primary), rather than taking the one
+           its primary ships (replica). */
         virtual bool ShipsRetention() const noexcept {
           return true;
         }

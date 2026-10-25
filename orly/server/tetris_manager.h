@@ -65,7 +65,7 @@ namespace Orly {
       /* Cause a player that was previously paused to resume normal operations. */
       void UnpausePlayer(const Base::TUuid &parent_pov_id);
 
-      void BecomeMaster();
+      void BecomePrimary();
 
       /* The number of parent povs with children still waiting to be promoted into them, not
          counting paused ones (their children wait for an unpause).  Zero means every update
@@ -120,7 +120,7 @@ namespace Orly {
 
         void OnClose();
 
-        void BecomeMaster();
+        void BecomePrimary();
 
         protected:
 
@@ -157,7 +157,7 @@ namespace Orly {
         virtual void Play() = 0;
 
         /* Call this in the constructor of your derived player in order to launch the job which will play tetris. */
-        void Start(bool is_paused, bool is_master);
+        void Start(bool is_paused, bool is_primary);
 
         /* True while Main() would call Play() again at once: we still have a child, and no pause
            is waiting to be acknowledged.  Play() may make more than one promotion per call (#801);
@@ -224,13 +224,13 @@ namespace Orly {
                      Indy::Fiber::TRunner::TRunnerCons &runner_cons,
                      Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *> *frame_pool_manager,
                      const std::function<void (Indy::Fiber::TRunner *)> &runner_setup_cb,
-                     bool is_master);
+                     bool is_primary);
 
       /* You must call StopAllPlayers() in the destructor of your derived tetris manager or this destructor will fail. */
       virtual ~TTetrisManager();
 
       /* Override to construct a new tetris player connecting the given parent and child points of view. */
-      virtual TPlayer *NewPlayer(const Base::TUuid &parent_pov_id, const Base::TUuid &child_pov_id, bool is_paused, bool is_master) = 0;
+      virtual TPlayer *NewPlayer(const Base::TUuid &parent_pov_id, const Base::TUuid &child_pov_id, bool is_paused, bool is_primary) = 0;
 
       /* Call this in the destructor of your derived tetris manager.  It will block until all tetris has stopped. */
       void StopAllPlayers();
@@ -306,9 +306,9 @@ namespace Orly {
       std::atomic<bool> Halted {false};
       std::atomic<size_t> PlayingCount {0UL};
 
-      /* Covers 'IsMaster'.  Only ever taken under Mutex. */
-      bool IsMaster;
-      std::mutex MasterMutex;
+      /* Covers 'IsPrimary'.  Only ever taken under Mutex. */
+      bool IsPrimary;
+      std::mutex PrimaryMutex;
 
     };  // TTetrisManager
 

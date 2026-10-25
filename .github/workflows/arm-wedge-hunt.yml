@@ -90,13 +90,13 @@ jobs:
               echo "CAUGHT -- the join reported a stalled loop:"
               grep "JoinReplicationServices() still waiting" "/tmp/suite.$r.log" | head -5
             fi
-            # #565: the fixture interrogates a master that would not die.
+            # #565: the fixture interrogates a primary that would not die.
             if grep -q "interrogating before it dies" "/tmp/suite.$r.log"; then
               caught="round $r"
-              echo "CAUGHT -- thread dump from the wedged master:"
+              echo "CAUGHT -- thread dump from the wedged primary:"
               grep -A 120 "interrogating before it dies" "/tmp/suite.$r.log"
             fi
-            if grep -q "end GracefulShutdownUnresponsiveSlave; fail" "/tmp/suite.$r.log"; then
+            if grep -q "end GracefulShutdownUnresponsiveReplica; fail" "/tmp/suite.$r.log"; then
               caught="round $r"
               echo "the graceful fixture failed in round $r"
             fi

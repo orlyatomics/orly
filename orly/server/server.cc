@@ -107,8 +107,8 @@ static string DescribeBound(int fd) {
   return AsStr(TAddress(reinterpret_cast<const sockaddr &>(storage)));
 }
 
-const Orly::Indy::TMasterContext::TProtocol Orly::Indy::TMasterContext::TProtocol::Protocol;
-const Orly::Indy::TSlaveContext::TProtocol Orly::Indy::TSlaveContext::TProtocol::Protocol;
+const Orly::Indy::TPrimaryContext::TProtocol Orly::Indy::TPrimaryContext::TProtocol::Protocol;
+const Orly::Indy::TReplicaContext::TProtocol Orly::Indy::TReplicaContext::TProtocol::Protocol;
 
 static const size_t BlockSize = Disk::Util::PhysicalBlockSize;
 
@@ -158,7 +158,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "The port on which the server listens for websocket clients."
   );
   Param(
-      &TCmd::SlavePortNumber, "replica_port_number", Optional, "replica_port_number\0",
+      &TCmd::ReplicaPortNumber, "replica_port_number", Optional, "replica_port_number\0",
       "The port on which the server listens for a replica."
   );
   Param(
@@ -167,7 +167,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "Orly has no authentication: pass 0.0.0.0 to listen on every interface only on a trusted network."
   );
   Param(
-      &TCmd::SlaveBindAddress, "replica_bind_address", Optional, "replica_bind_address\0",
+      &TCmd::ReplicaBindAddress, "replica_bind_address", Optional, "replica_bind_address\0",
       "The IP address the replication listener binds (default 0.0.0.0, every interface, so a replica on another "
       "host can reach it). Replication is unauthenticated: set this to a private network's address."
   );
@@ -337,7 +337,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "The cores which will be pinned by the disk mergers."
   );
   Param(
-      &TCmd::AddressOfMaster, "address_of_primary", Optional, "address_of_primary\0",
+      &TCmd::AddressOfPrimary, "address_of_primary", Optional, "address_of_primary\0",
       "The IP address of the primary to which this replica should try to connect."
   );
   Param(
@@ -670,7 +670,7 @@ class TIndexIdReader
 TServer::TCmd::TCmd()
     : PortNumber(DefaultPortNumber),
       WsPortNumber(8082),
-      SlavePortNumber(DefaultSlavePortNumber),
+      ReplicaPortNumber(DefaultReplicaPortNumber),
       ConnectionBacklog(5000),
       DurableCacheSize(10000),
       IdleConnectionTimeout(2000),
@@ -847,7 +847,7 @@ bool TServer::TCmd::CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) {
     return false;
   }
   for (const auto &[flag, host]: {pair<const char *, const string &>{"bind_address", BindAddress},
-                                  pair<const char *, const string &>{"replica_bind_address", SlaveBindAddress}}) {
+                                  pair<const char *, const string &>{"replica_bind_address", ReplicaBindAddress}}) {
     try {
       MakeBindAddress(host, 0);
     } catch (const invalid_argument &ex) {
@@ -1277,7 +1277,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
                         1UL /* File Service */ +
                         1UL /* Repo Layer Cleaner */ +
                         1UL /* BGFastRunner */ +
-                        1UL /* WaitForSlaveRunner */ +
+                        1UL /* WaitForReplicaRunner */ +
                         1UL /* RunReplicationQueueRunner */ +
                         1UL /* RunReplicationWorkRunner */ +
                         1UL /* RunReplicateTransactionRunner */ +
@@ -1294,7 +1294,7 @@ TServer::TServer(TScheduler *scheduler, const TCmd &cmd)
       DurableLayerCleanerRunner(RunnerCons),
       RepoLayerCleanerRunner(RunnerCons),
       BGFastRunner(RunnerCons),
-      WaitForSlaveRunner(RunnerCons),
+      WaitForReplicaRunner(RunnerCons),
       RunReplicationQueueRunner(RunnerCons),
       RunReplicationWorkRunner(RunnerCons),
       RunReplicateTransactionRunner(RunnerCons),
@@ -1508,8 +1508,8 @@ void TServer::Init() {
     if (Cmd.StartingState == "SOLO") {
       RepoState = Orly::Indy::TManager::Solo;
     } else if (Cmd.StartingState == "REPLICA") {
-      RepoState = Orly::Indy::TManager::SyncSlave;
-      /* The writes before this reach a slave in the synced data, not through the apply path that
+      RepoState = Orly::Indy::TManager::SyncReplica;
+      /* The writes before this reach a replica in the synced data, not through the apply path that
          reads their operation ids, so once promoted it can't tell a retry of one from a new write;
          refuse those ids (#862). An id's time is the client's clock, so a minute more covers a
          client running that far ahead. */
@@ -1518,33 +1518,33 @@ void TServer::Init() {
         OperationTable->RefuseUnknownBefore(static_cast<uint64_t>((now_ms + chrono::minutes(1)).count()));
       }
       starting_sock = TFd(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
-      Connect(starting_sock, Cmd.AddressOfMaster);
+      Connect(starting_sock, Cmd.AddressOfPrimary);
       if (Cmd.ReplicationToken) {
-        /* Present the replication token if the master asks for it (#710). Without a token,
+        /* Present the replication token if the primary asks for it (#710). Without a token,
            nothing is read or written here, as before. */
-        const string master = AsStr(Cmd.AddressOfMaster);
+        const string primary = AsStr(Cmd.AddressOfPrimary);
         try {
-          if (Orly::Auth::AnswerMaster(starting_sock, *Cmd.ReplicationToken)) {
-            syslog(LOG_INFO, "replication: primary %s accepted this replica's replication token", master.c_str());
+          if (Orly::Auth::AnswerPrimary(starting_sock, *Cmd.ReplicationToken)) {
+            syslog(LOG_INFO, "replication: primary %s accepted this replica's replication token", primary.c_str());
           } else {
             syslog(LOG_WARNING, "replication: primary %s did not ask for a replication token; joining without one",
-                   master.c_str());
+                   primary.c_str());
           }
         } catch (const exception &ex) {
-          syslog(LOG_ERR, "replication: cannot join primary %s: %s", master.c_str(), ex.what());
+          syslog(LOG_ERR, "replication: cannot join primary %s: %s", primary.c_str(), ex.what());
           throw;
         }
       }
     } else {
       throw runtime_error("Server must start as SOLO or REPLICA");
     }
-    ScheduleRunnerHost(&WaitForSlaveRunner);
-    auto slave_bind_cb = [this](const shared_ptr<function<void (const TFd &)>> &cb) {
-      WaitForSlaveActionCb = cb;
+    ScheduleRunnerHost(&WaitForReplicaRunner);
+    auto replica_bind_cb = [this](const shared_ptr<function<void (const TFd &)>> &cb) {
+      WaitForReplicaActionCb = cb;
       Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
       assert(frame);
       try {
-        frame->Latch(&WaitForSlaveRunner, this, static_cast<Fiber::TRunnable::TFunc>(&TServer::WaitForSlave));
+        frame->Latch(&WaitForReplicaRunner, this, static_cast<Fiber::TRunnable::TFunc>(&TServer::WaitForReplica));
       } catch (...) {
         Fiber::TFrame::LocalFramePool->Free(Frame);
         throw;
@@ -1571,7 +1571,7 @@ void TServer::Init() {
           RepoManager->SaveIndexNamespaceMapping(idx_id, pkg_key);
         } catch (...) {
           /* Not saved (refused for WAL room while replication stopped, #891): forget it, so the
-             mapping is saved when the master sends it again rather than skipped as known. */
+             mapping is saved when the primary sends it again rather than skipped as known. */
           IndexByIndexId.erase(ret.first);
           throw;
         }
@@ -1662,7 +1662,7 @@ void TServer::Init() {
                                                     Cmd.AllowFileSync,
                                                     Cmd.NoRealtime,
                                                     std::move(starting_sock),
-                                                    slave_bind_cb,
+                                                    replica_bind_cb,
                                                     bind(&TServer::StateChangeCb, this, placeholders::_1),
                                                     update_replication_notification_cb,
                                                     on_replicate_index_id_cb,
@@ -2024,7 +2024,7 @@ void TServer::Init() {
         }
         LogStartupPhase("restoring the povs", std::to_string(restored_povs.size()) + " povs");
 
-        /* Step 7: Replay transactions through slave apply path.  Each one pins the record it came
+        /* Step 7: Replay transactions through replica apply path.  Each one pins the record it came
            from, as a live transaction pins the record it appends.  A paused repo copied forward
            (#963) is rebuilt from its newest complete copy instead: its mutations before the copy
            are read past, and the copy's transactions are replayed where its first part is. */
@@ -2174,7 +2174,7 @@ void TServer::Init() {
       saved_repo_jumper(FramePoolManager.get(), &BGFastRunner);
     }
     LogStartupPhase("queueing the saved repos the restart left");
-    /* A slave keeps the exactly-once entries its master's writes carry, as recovery does (#862). */
+    /* A replica keeps the exactly-once entries its primary's writes carry, as recovery does (#862). */
     RepoManager->SetReplicatedPushCallback(
         [this](const Base::TUuid &repo_id, Indy::TSequenceNumber seq_num, const Atom::TCore &meta_core,
                Atom::TCore::TArena *arena, uint64_t lsn) {
@@ -2192,7 +2192,7 @@ void TServer::Init() {
           }
         }});
     /* schedule everything the repo manager needs */ {
-      /* Read() from master / slave */ {
+      /* Read() from primary / replica */ {
         ScheduleRunnerHost(&RunReplicationQueueRunner, true);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
@@ -2203,7 +2203,7 @@ void TServer::Init() {
         }
         //Scheduler->Schedule(bind(&Orly::Indy::TManager::RunReplicationQueue, RepoManager.get()));
       }
-      /* Execute Job from master / slave */ {
+      /* Execute Job from primary / replica */ {
         ScheduleRunnerHost(&RunReplicationWorkRunner, true);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
@@ -2214,7 +2214,7 @@ void TServer::Init() {
         }
         //Scheduler->Schedule(bind(&Orly::Indy::TManager::RunReplicationWork, RepoManager.get()));
       }
-      /* Dequeue from replication queue and transmit to slave if necessary */ {
+      /* Dequeue from replication queue and transmit to replica if necessary */ {
         ScheduleRunnerHost(&RunReplicateTransactionRunner, true);
         Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
         try {
@@ -2321,9 +2321,9 @@ void TServer::Init() {
 void TServer::ScheduleRunnerHost(Fiber::TRunner *runner, bool disk_event_pool) {
   assert(runner);
   ScheduleHostJob([this, runner, disk_event_pool] {
-    /* The replication fibers can write to disk: the reader writes a slave's synced data files as
+    /* The replication fibers can write to disk: the reader writes a replica's synced data files as
        it deserializes them (TFileSync::Read), and a disk write takes its event from the thread's
-       own pool.  Without one, a disk-backed slave crashed on join (#866).  The merge and cleaner
+       own pool.  Without one, a disk-backed replica crashed on join (#866).  The merge and cleaner
        fibers allocate their own pool and assert the thread has none, so they don't ask for one. */
     if (disk_event_pool && !Cmd.MemorySim) {
       Fiber::TJumpRunnable::EnsureLocalDiskEventPool();
@@ -2361,14 +2361,14 @@ void TServer::Shutdown() {
   /* Stop the websockets server first: no new work arrives. */
   Ws.reset();
   /* Cut off the work sources next: wake the accept loops (blocked in
-     accept) so no new clients, slaves, or report requests arrive while we
+     accept) so no new clients, replicas, or report requests arrive while we
      drain (#440). */
   shutdown(MainSocket, SHUT_RDWR);
-  /* under SlaveSocketLock: WaitForSlave() publishes SlaveSocket under the
+  /* under ReplicaSocketLock: WaitForReplica() publishes ReplicaSocket under the
      same lock, so we either shut down the fd it is (or is about to be)
      accepting on, or it sees ShutdownCalled before blocking (#440). */ {
-    std::lock_guard<std::mutex> lock(SlaveSocketLock);
-    shutdown(SlaveSocket, SHUT_RDWR);
+    std::lock_guard<std::mutex> lock(ReplicaSocketLock);
+    shutdown(ReplicaSocket, SHUT_RDWR);
   }
   if (Reporter) {
     Reporter->Stop();
@@ -2647,9 +2647,9 @@ void TServer::Shutdown() {
   log_phase("the manager teardown");
   /* Stop the engine-level services that would otherwise wedge the
      scheduler's teardown: the background runners this server hosts on
-     scheduler jobs (replication, layer cleaners, mergers, slave wait) and
+     scheduler jobs (replication, layer cleaners, mergers, replica wait) and
      the disk controller's polling loop. */
-  WaitForSlaveRunner.ShutDown();
+  WaitForReplicaRunner.ShutDown();
   RunReplicationQueueRunner.ShutDown();
   RunReplicationWorkRunner.ShutDown();
   RunReplicateTransactionRunner.ShutDown();
@@ -3517,11 +3517,11 @@ void TServer::AcceptClientConnections() {
 
 void TServer::BeginImport() {
   /* The importer writes data files and consumes sequence-number ranges
-     outside the replication stream, which a live slave cannot survive
-     (#498): only a solo server may import.  WaitForSlave() holds any join
+     outside the replication stream, which a live replica cannot survive
+     (#498): only a solo server may import.  WaitForReplica() holds any join
      that arrives while an import is running. */ {
     std::lock_guard<std::mutex> lock(ImportGateMutex);
-    if (RepoState != Orly::Indy::TManager::Solo || SlaveHandshakeActive) {
+    if (RepoState != Orly::Indy::TManager::Solo || ReplicaHandshakeActive) {
       throw std::runtime_error(
           "cannot import: this server is part of a replication pair; imports require a solo server (#498)");
     }
@@ -3653,7 +3653,7 @@ void TServer::EndImport() {
   DEBUG_LOG("server; unpausing tetris for global pov");
   TetrisManager->UnpausePlayer(TSession::GlobalPovId);
   DEBUG_LOG("server; tetris for global pov is unpaused");
-  /* Reopen the slave-join gate (#498). */ {
+  /* Reopen the replica-join gate (#498). */ {
     std::lock_guard<std::mutex> lock(ImportGateMutex);
     ImportInProgress = false;
   }
@@ -3885,7 +3885,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
                   string pkg_key = PkgName + " " + AsStrFunc(Sabot::DumpType, *key_type_wrapper);
                   Atom::TCore key_core(&temp_arena, *key_type_wrapper);
                   Atom::TCore val_core(&temp_arena, *val_type_wrapper);
-                  /* this does not exist yet, uncommon case: at this point we grab the lock, recheck against the master copy (possibly update it),
+                  /* this does not exist yet, uncommon case: at this point we grab the lock, recheck against the primary copy (possibly update it),
                      and update our copy. */ {
                     std::lock_guard<std::mutex> lock(Server->IndexMapMutex);
                     auto new_ret = Server->IndexByIndexId.emplace(
@@ -4166,7 +4166,7 @@ string TServer::ImportCoreVector(const string &file_pattern,
   if (gen_id_vec.size() == 1) {
     global_repo->AddFileToRepo(gen_id_vec.front(), final_saved_low, final_saved_high, final_num_keys);
     /* Give back the unused tail of the load jobs' per-file reservations: a
-       joining slave's SyncInventory requires the highest advertised sequence
+       joining replica's SyncInventory requires the highest advertised sequence
        number to be the highest materialized one, and nothing after the
        import ever fills the reserved gap (#498). */
     global_repo->ReleaseUnusedSequenceNumbers(final_saved_high + 1);
@@ -4313,7 +4313,7 @@ void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
       }
       if (memcmp(&header, "HEALTHCHECK", 11) == 0) {
         DEBUG_LOG("server; ASCII health-check from %s", client_address_str.c_str());
-        char reply = (RepoState == Orly::Indy::TManager::Solo || RepoState == Orly::Indy::TManager::Master) ? 'R' : 'U';
+        char reply = (RepoState == Orly::Indy::TManager::Solo || RepoState == Orly::Indy::TManager::Primary) ? 'R' : 'U';
         WriteExactly(fd, &reply, sizeof(reply));
         break;
       }
@@ -4323,12 +4323,12 @@ void TServer::ServeClient(TFd &fd, const TAddress &client_address) {
           THealthCheck::TReply reply;
           switch (RepoState) {
             case Orly::Indy::TManager::Solo:
-            case Orly::Indy::TManager::Master: {
+            case Orly::Indy::TManager::Primary: {
               reply = THealthCheck::TReply(THealthCheck::TReply::TResult::Ready);
               break;
             }
-            case Orly::Indy::TManager::SyncSlave:
-            case Orly::Indy::TManager::Slave: {
+            case Orly::Indy::TManager::SyncReplica:
+            case Orly::Indy::TManager::Replica: {
               reply = THealthCheck::TReply(THealthCheck::TReply::TResult::Unready);
               break;
             }
@@ -4454,16 +4454,16 @@ void TServer::StateChangeCb(Orly::Indy::TManager::TState state) {
       from = "SOLO";
       break;
     }
-    case Orly::Indy::TManager::TState::Master: {
-      from = "Master";
+    case Orly::Indy::TManager::TState::Primary: {
+      from = "Primary";
       break;
     }
-    case Orly::Indy::TManager::TState::SyncSlave: {
-      from = "SyncSlave";
+    case Orly::Indy::TManager::TState::SyncReplica: {
+      from = "SyncReplica";
       break;
     }
-    case Orly::Indy::TManager::TState::Slave: {
-      from = "Slave";
+    case Orly::Indy::TManager::TState::Replica: {
+      from = "Replica";
       break;
     }
   }
@@ -4472,27 +4472,27 @@ void TServer::StateChangeCb(Orly::Indy::TManager::TState state) {
       to = "SOLO";
       break;
     }
-    case Orly::Indy::TManager::TState::Master: {
-      to = "Master";
+    case Orly::Indy::TManager::TState::Primary: {
+      to = "Primary";
       break;
     }
-    case Orly::Indy::TManager::TState::SyncSlave: {
-      to = "SyncSlave";
+    case Orly::Indy::TManager::TState::SyncReplica: {
+      to = "SyncReplica";
       break;
     }
-    case Orly::Indy::TManager::TState::Slave: {
-      to = "Slave";
+    case Orly::Indy::TManager::TState::Replica: {
+      to = "Replica";
       break;
     }
   }
   syslog(LOG_INFO, "StateChangeCB from [%s] to [%s]", from.c_str(), to.c_str());
   switch (RepoState) {
-    case Orly::Indy::TManager::TState::Slave: {
+    case Orly::Indy::TManager::TState::Replica: {
       switch (state) {
         case Orly::Indy::TManager::TState::Solo: {
-          std::cout << "StateChangeCb:: BecomeMaster" << std::endl;
+          std::cout << "StateChangeCb:: BecomePrimary" << std::endl;
           Indy::Fiber::TSwitchToRunner run_on_bg_runner(&BGFastRunner);
-          TetrisManager->BecomeMaster();
+          TetrisManager->BecomePrimary();
           break;
         }
         default: {
@@ -4514,7 +4514,7 @@ void TServer::UninstallPackage(const vector<string> &package_name, uint64_t vers
   RepoManager->SaveInstalledPackage(package_name, version, false);
 }
 
-void TServer::WaitForSlave() {
+void TServer::WaitForReplica() {
   using TLocalReadFileCache = Orly::Indy::Disk::TLocalReadFileCache<Orly::Indy::Disk::Util::LogicalPageSize,
     Orly::Indy::Disk::Util::LogicalBlockSize,
     Orly::Indy::Disk::Util::PhysicalBlockSize,
@@ -4525,23 +4525,23 @@ void TServer::WaitForSlave() {
   if (!Disk::TLocalWalkerCache::Cache) {
     Disk::TLocalWalkerCache::Cache = new Disk::TLocalWalkerCache();
   }
-  DEBUG_LOG("TServer::WaitForSlave() entering");
+  DEBUG_LOG("TServer::WaitForReplica() entering");
   try {
-    const TAddress slave_address = MakeBindAddress(Cmd.SlaveBindAddress, Cmd.SlavePortNumber);
-    TFd listener(socket(slave_address.GetFamily(), SOCK_STREAM, IPPROTO_TCP));
+    const TAddress replica_address = MakeBindAddress(Cmd.ReplicaBindAddress, Cmd.ReplicaPortNumber);
+    TFd listener(socket(replica_address.GetFamily(), SOCK_STREAM, IPPROTO_TCP));
     int flag = true;
     IfLt0(setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));
-    /* A previous slave session's listener can still be draining right after
+    /* A previous replica session's listener can still be draining right after
        a demote; retry rather than killing the server (#500). */
     for (;;) {
       try {
-        Bind(listener, slave_address);
+        Bind(listener, replica_address);
         break;
       } catch (const std::system_error &err) {
         if (err.code().value() != EADDRINUSE || ShutdownCalled) {
           throw;
         }
-        syslog(LOG_INFO, "replica port [%d] still in use; retrying", static_cast<int>(Cmd.SlavePortNumber));
+        syslog(LOG_INFO, "replica port [%d] still in use; retrying", static_cast<int>(Cmd.ReplicaPortNumber));
         sleep(1);
       }
     }
@@ -4551,84 +4551,84 @@ void TServer::WaitForSlave() {
     /* Publish the listener under the lock Shutdown() takes before its
        shutdown(2): either Shutdown() sees the fd we are about to accept
        on, or we see ShutdownCalled and bail before blocking (#440). */ {
-      std::lock_guard<std::mutex> lock(SlaveSocketLock);
+      std::lock_guard<std::mutex> lock(ReplicaSocketLock);
       if (ShutdownCalled) {
-        syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
+        syslog(LOG_INFO, "TServer::WaitForReplica shutting down (#440)");
         return;
       }
-      SlaveSocket = std::move(listener);
+      ReplicaSocket = std::move(listener);
     }
     syslog(LOG_INFO, "waiting for replica to connect");
-    TFd slave_fd;
+    TFd replica_fd;
     for (;;) {
       sockaddr_storage peer_storage{};
       socklen_t peer_len = sizeof(peer_storage);
-      slave_fd = TFd(accept(SlaveSocket, reinterpret_cast<sockaddr *>(&peer_storage), &peer_len));
+      replica_fd = TFd(accept(ReplicaSocket, reinterpret_cast<sockaddr *>(&peer_storage), &peer_len));
       syslog(LOG_INFO, "replica has connected");
       if (!Cmd.ReplicationToken) {
         break;
       }
-      /* With a replication token (#710), challenge the slave before anything else reaches it,
+      /* With a replication token (#710), challenge the replica before anything else reaches it,
          and keep listening for another one if it can't answer. */
       const string peer = AsStr(TAddress(reinterpret_cast<const sockaddr &>(peer_storage)));
       string why;
-      const auto verdict = Orly::Auth::ChallengeSlave(
-          slave_fd, *Cmd.ReplicationToken, Orly::Auth::ReplicationAnswerTimeout, why);
+      const auto verdict = Orly::Auth::ChallengeReplica(
+          replica_fd, *Cmd.ReplicationToken, Orly::Auth::ReplicationAnswerTimeout, why);
       if (verdict == Orly::Auth::TJoinVerdict::Accepted) {
         syslog(LOG_INFO, "replication: replica from %s presented the replication token", peer.c_str());
         break;
       }
       syslog(LOG_ERR, "replication: refused a replica from %s: %s", peer.c_str(), why.c_str());
-      slave_fd.Reset();
+      replica_fd.Reset();
       if (ShutdownCalled) {
-        syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
+        syslog(LOG_INFO, "TServer::WaitForReplica shutting down (#440)");
         return;
       }
     }
     /* This listener's one accept is consumed: release the port now, so the
-       WaitForSlave() that is re-armed when this slave disconnects and we
+       WaitForReplica() that is re-armed when this replica disconnects and we
        demote back to solo can bind it again (#500). */ {
-      std::lock_guard<std::mutex> lock(SlaveSocketLock);
-      SlaveSocket.Reset();
+      std::lock_guard<std::mutex> lock(ReplicaSocketLock);
+      ReplicaSocket.Reset();
     }
     /* Hold the join while an import is running, and keep imports from
        starting while the handshake runs (#498): the importer's data files
        and sequence-number reservations do not ride the replication stream,
-       so a slave may only sync against a server that is not importing. */
+       so a replica may only sync against a server that is not importing. */
     for (;;) {
       /* under the gate */ {
         std::lock_guard<std::mutex> gate_lock(ImportGateMutex);
         if (!ImportInProgress) {
-          SlaveHandshakeActive = true;
+          ReplicaHandshakeActive = true;
           break;
         }
       }
       if (ShutdownCalled) {
-        syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
+        syslog(LOG_INFO, "TServer::WaitForReplica shutting down (#440)");
         return;
       }
       sleep(1);
     }
     try {
-      (*WaitForSlaveActionCb)(slave_fd);
+      (*WaitForReplicaActionCb)(replica_fd);
     } catch (...) {
       std::lock_guard<std::mutex> gate_lock(ImportGateMutex);
-      SlaveHandshakeActive = false;
+      ReplicaHandshakeActive = false;
       throw;
     }
     /* under the gate */ {
       std::lock_guard<std::mutex> gate_lock(ImportGateMutex);
-      SlaveHandshakeActive = false;
+      ReplicaHandshakeActive = false;
     }
   } catch (const exception &ex) {
     if (ShutdownCalled) {
-      syslog(LOG_INFO, "TServer::WaitForSlave shutting down (#440)");
+      syslog(LOG_INFO, "TServer::WaitForReplica shutting down (#440)");
       return;
     }
     syslog(LOG_ERR, "failed to wait for replica: %s", ex.what());
     throw;
   }
-  DEBUG_LOG("TServer::WaitForSlave() exiting");
+  DEBUG_LOG("TServer::WaitForReplica() exiting");
 }
 
 TIndyReporter::TIndyReporter(const TServer *server, TScheduler *scheduler, const string &bind_address, int port_number)

@@ -1,4 +1,4 @@
-/* <orly/indy/master_test.cc>
+/* <orly/indy/primary_test.cc>
 
    Test for <orly/indy/manager.h>.
 
@@ -34,10 +34,10 @@ using namespace Orly::Atom;
 using namespace Orly::Indy;
 using namespace Orly::Indy::Util;
 
-const Orly::Indy::TMasterContext::TProtocol Orly::Indy::TMasterContext::TProtocol::Protocol;
-const Orly::Indy::TSlaveContext::TProtocol Orly::Indy::TSlaveContext::TProtocol::Protocol;
-static const char *MasterPath = "/dev/sdb";
-static const char *MasterDeviceName = "sdb";
+const Orly::Indy::TPrimaryContext::TProtocol Orly::Indy::TPrimaryContext::TProtocol::Protocol;
+const Orly::Indy::TReplicaContext::TProtocol Orly::Indy::TReplicaContext::TProtocol::Protocol;
+static const char *PrimaryPath = "/dev/sdb";
+static const char *PrimaryDeviceName = "sdb";
 static const size_t BlockSize = 4096UL * 16;
 static const size_t CacheSize = 10000UL;
 static const size_t QueueDepth = 128UL;
@@ -71,8 +71,8 @@ int main(int argc, char *argv[]) {
   int64_t num_iter = 400000L;
   Base::TFd solo_sock;
   std::thread join_thread;
-  auto wait_for_slave = [port_num, &join_thread](const std::shared_ptr<std::function<void (const TFd &)>> &cb) {
-    std::cout << "Wait_for_slave()" << std::endl;
+  auto wait_for_replica = [port_num, &join_thread](const std::shared_ptr<std::function<void (const TFd &)>> &cb) {
+    std::cout << "Wait_for_replica()" << std::endl;
     if (join_thread.joinable()) {
       join_thread.join();
     }
@@ -93,8 +93,8 @@ int main(int argc, char *argv[]) {
       (*cb)(client_fd);
     });
   };
-  auto master = std::make_unique<TManager>(MasterPath,
-                                           MasterDeviceName,
+  auto primary = std::make_unique<TManager>(PrimaryPath,
+                                           PrimaryDeviceName,
                                            BlockSize,
                                            CacheSize,
                                            QueueDepth,
@@ -104,28 +104,28 @@ int main(int argc, char *argv[]) {
                                            ReplicationDelay,
                                            TManager::Solo,
                                            solo_sock,
-                                           wait_for_slave,
+                                           wait_for_replica,
                                            StateChanged));
-  std::thread queuer([&master]() {
-    master->RunReplicationQueue();
+  std::thread queuer([&primary]() {
+    primary->RunReplicationQueue();
   });
-  std::thread runner([&master]() {
-    master->RunReplicationWork();
+  std::thread runner([&primary]() {
+    primary->RunReplicationWork();
   });
-  std::thread replicator([&master]() {
-    master->RunReplicateTransaction();
+  std::thread replicator([&primary]() {
+    primary->RunReplicateTransaction();
   });
-  std::thread mem_merger([&master]() {
-    master->RunMergeMem();
+  std::thread mem_merger([&primary]() {
+    primary->RunMergeMem();
   });
-  std::thread mem_flusher([&master]() {
-    master->RunFlushMem();
+  std::thread mem_flusher([&primary]() {
+    primary->RunFlushMem();
   });
-  std::thread disk_merger([&master]() {
-    master->RunMergeDisk();
+  std::thread disk_merger([&primary]() {
+    primary->RunMergeDisk();
   });
   TUuid repo_id("DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD");
-  auto repo = master->GetRepo(repo_id, true);
+  auto repo = primary->GetRepo(repo_id, true);
   for (int64_t i = 0; i < num_iter; ++i) {
     timespec wait {0, 100000};
     nanosleep(&wait, NULL);
@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
       std::cout << "[" << i << "]" << std::endl;
     }
     /* write num_iter updates to the repo */
-    auto transaction = master->NewTransaction();
+    auto transaction = primary->NewTransaction();
     TFastArena fast_arena;
     auto update = TUpdate::NewUpdate(TUpdate::TOpByKey{ { TAtom(std::tuple<TInt>(num_iter - 1L - i), &fast_arena), TAtom((num_iter - 1L - i) * 10L)} }, TAtom(), TAtom(Base::TUuid(TUuid::Best)));
     transaction->Push(repo, update);

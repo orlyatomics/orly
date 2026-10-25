@@ -176,18 +176,18 @@ namespace Orly {
         /* The port on which the server listens for websocket clients. */
         in_port_t WsPortNumber;
 
-        /* The port on which TServer::WaitForSlave listens for a slave. */
-        in_port_t SlavePortNumber;
+        /* The port on which TServer::WaitForReplica listens for a replica. */
+        in_port_t ReplicaPortNumber;
 
         /* The address the client, WebSocket and reporting listeners bind (#705): an IPv4 or IPv6
            literal. Loopback by default, because Orly has no authentication; 0.0.0.0 listens on
            every interface. */
         std::string BindAddress = "127.0.0.1";
 
-        /* The address the replication (slave) listener binds (#705). Every interface by default,
-           because a slave on another host must reach it; set it to a private interface's address
+        /* The address the replication (replica) listener binds (#705). Every interface by default,
+           because a replica on another host must reach it; set it to a private interface's address
            to keep replication off public networks. */
-        std::string SlaveBindAddress = "0.0.0.0";
+        std::string ReplicaBindAddress = "0.0.0.0";
 
         /* Accept the `compile` statement over WebSocket (#705). It builds the source it is sent
            with the system compiler and loads the result into this process, so it is off by
@@ -200,8 +200,8 @@ namespace Orly {
         std::string AuthTokenFlag;
         std::string AuthTokenFileFlag;
 
-        /* The shared secret a joining slave must present, and that this server presents when it
-           joins a master as a slave (#710), from --replication_token_file,
+        /* The shared secret a joining replica must present, and that this server presents when it
+           joins a primary as a replica (#710), from --replication_token_file,
            --replication_token, ORLY_REPLICATION_TOKEN_FILE or ORLY_REPLICATION_TOKEN; when none
            is set, the client token. CheckArgs() resolves them into ReplicationToken. */
         std::string ReplicationTokenFlag;
@@ -487,7 +487,7 @@ namespace Orly {
         /* See Base::TCmd. Resolves the memory budget. */
         virtual bool CheckArgs(const Base::TCmd::TMeta::TMessageConsumer &cb) override;
 
-        Socket::TAddress AddressOfMaster;
+        Socket::TAddress AddressOfPrimary;
 
         std::string PackageDirectory;
 
@@ -1049,10 +1049,10 @@ namespace Orly {
       }
 
       /* Durably save a newly minted (index id -> package namespace) mapping,
-         enqueue it for replication to a slave, and add it to the local id
+         enqueue it for replication to a replica, and add it to the local id
          set.  The caller must hold IndexMapMutex and have already inserted
-         the id into IndexByIndexId.  Not for ids learned *from* the master:
-         the slave-receive path saves without re-enqueueing. */
+         the id into IndexByIndexId.  Not for ids learned *from* the primary:
+         the replica-receive path saves without re-enqueueing. */
       void RegisterAndReplicateIndexId(const Base::TUuid &idx_id, const std::string &pkg_key, const Indy::TKey &val);
 
       /* Serves a client on the given fd.  Launched as a thread by AcceptClientConnections() when a client connects. */
@@ -1063,7 +1063,7 @@ namespace Orly {
       /* See <orly/protocol.h>. */
       void UninstallPackage(const std::vector<std::string> &package_name, uint64_t version);
 
-      void WaitForSlave();
+      void WaitForReplica();
 
       /* Schedule a job that hosts the given runner's scheduler loop
          (Fiber::LaunchSlowFiberSched) through ScheduleHostJob, below.  With
@@ -1086,7 +1086,7 @@ namespace Orly {
       Indy::Fiber::TRunner DurableLayerCleanerRunner;
       Indy::Fiber::TRunner RepoLayerCleanerRunner;
       Indy::Fiber::TRunner BGFastRunner;
-      Indy::Fiber::TRunner WaitForSlaveRunner;
+      Indy::Fiber::TRunner WaitForReplicaRunner;
       Indy::Fiber::TRunner RunReplicationQueueRunner;
       Indy::Fiber::TRunner RunReplicationWorkRunner;
       Indy::Fiber::TRunner RunReplicateTransactionRunner;
@@ -1195,14 +1195,14 @@ namespace Orly {
       /* The socket on which AcceptClientConnections() listens. */
       Base::TFd MainSocket;
 
-      /* The socket on which WaitForSlave() listens.  A member (rather than
-         a local of WaitForSlave) so Shutdown() can shut it down to wake the
+      /* The socket on which WaitForReplica() listens.  A member (rather than
+         a local of WaitForReplica) so Shutdown() can shut it down to wake the
          blocked accept (#440). */
-      Base::TFd SlaveSocket;
+      Base::TFd ReplicaSocket;
 
-      /* Guards ImportInProgress and SlaveHandshakeActive: imports and slave
+      /* Guards ImportInProgress and ReplicaHandshakeActive: imports and replica
          joins exclude each other (#498).  BeginImport() refuses unless the
-         server is solo and no join handshake is under way; WaitForSlave()
+         server is solo and no join handshake is under way; WaitForReplica()
          defers an accepted join until a running import finishes. */
       std::mutex ImportGateMutex;
 
@@ -1210,16 +1210,16 @@ namespace Orly {
          ImportGateMutex. */
       bool ImportInProgress = false;
 
-      /* True from the moment WaitForSlave() commits to handing an accepted
-         slave to the manager until that handoff returns.  Covered by
+      /* True from the moment WaitForReplica() commits to handing an accepted
+         replica to the manager until that handoff returns.  Covered by
          ImportGateMutex. */
-      bool SlaveHandshakeActive = false;
+      bool ReplicaHandshakeActive = false;
 
-      /* Serializes WaitForSlave()'s publication of SlaveSocket against
+      /* Serializes WaitForReplica()'s publication of ReplicaSocket against
          Shutdown()'s wake-up shutdown(2) of it: TFd is not atomic, and
          without the handshake Shutdown() could shut down a stale fd (or
          -1) and leave the accept parked forever (#440). */
-      std::mutex SlaveSocketLock;
+      std::mutex ReplicaSocketLock;
 
       /* Covers ConnectionBySessionId, LiveConnectionCount, and
          ConnectionDrainedCv. */
@@ -1243,11 +1243,11 @@ namespace Orly {
 
       std::shared_ptr<Orly::Indy::Disk::TIndyUtilReporter> UtilReporter;
 
-      std::shared_ptr<std::function<void (const Base::TFd &)>> WaitForSlaveActionCb;
+      std::shared_ptr<std::function<void (const Base::TFd &)>> WaitForReplicaActionCb;
 
       /* Set once Shutdown() has run; makes it idempotent and tells the
          destructor the managers are already gone.  Atomic: the service
-         loops (accept, housekeeper, slave wait) read it from their own
+         loops (accept, housekeeper, replica wait) read it from their own
          threads. */
       std::atomic<bool> ShutdownCalled{false};
 

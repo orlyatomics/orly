@@ -123,24 +123,24 @@ FIXTURE(ResolveToken) {
   EXPECT_THROW_FUNC(invalid_argument, short_token);
 }
 
-/* Runs the master's challenge on one end of a socket pair and `slave` on the other. */
-template <typename TSlave>
-static TJoinVerdict Join(const string &master_token, const TSlave &slave, string &why) {
-  Base::TFd master_fd, slave_fd;
-  Base::TFd::SocketPair(master_fd, slave_fd, AF_UNIX, SOCK_STREAM);
-  thread slave_thread([&slave, &slave_fd] {
-    slave(slave_fd);
+/* Runs the primary's challenge on one end of a socket pair and `replica` on the other. */
+template <typename TReplica>
+static TJoinVerdict Join(const string &primary_token, const TReplica &replica, string &why) {
+  Base::TFd primary_fd, replica_fd;
+  Base::TFd::SocketPair(primary_fd, replica_fd, AF_UNIX, SOCK_STREAM);
+  thread replica_thread([&replica, &replica_fd] {
+    replica(replica_fd);
   });
-  const auto verdict = ChallengeSlave(master_fd, master_token, chrono::milliseconds(2000), why);
-  master_fd.Reset();
-  slave_thread.join();
+  const auto verdict = ChallengeReplica(primary_fd, primary_token, chrono::milliseconds(2000), why);
+  primary_fd.Reset();
+  replica_thread.join();
   return verdict;
 }
 
 FIXTURE(ReplicationMatchingToken) {
   bool answered = false;
   string why;
-  EXPECT_TRUE(Join(Token, [&answered](int fd) { answered = AnswerMaster(fd, Token); }, why) == TJoinVerdict::Accepted);
+  EXPECT_TRUE(Join(Token, [&answered](int fd) { answered = AnswerPrimary(fd, Token); }, why) == TJoinVerdict::Accepted);
   EXPECT_TRUE(answered);
 }
 
@@ -149,7 +149,7 @@ FIXTURE(ReplicationMismatchedToken) {
   string why;
   const auto verdict = Join(Token, [&refused](int fd) {
     try {
-      AnswerMaster(fd, "0123456789abcdef-another-token");
+      AnswerPrimary(fd, "0123456789abcdef-another-token");
     } catch (const TReplicationRefused &) {
       refused = true;
     }
@@ -160,9 +160,9 @@ FIXTURE(ReplicationMismatchedToken) {
   EXPECT_EQ(why.find("another-token"), string::npos);
 }
 
-/* A slave with no token doesn't answer: it reads the challenge as replication traffic and,
+/* A replica with no token doesn't answer: it reads the challenge as replication traffic and,
    here, hangs up. */
-FIXTURE(ReplicationSlaveWithoutToken) {
+FIXTURE(ReplicationReplicaWithoutToken) {
   string why;
   const auto verdict = Join(Token, [](int fd) {
     char buf[sizeof(ReplicationChallenge)];
@@ -173,34 +173,34 @@ FIXTURE(ReplicationSlaveWithoutToken) {
   EXPECT_NE(why.find("replication token"), string::npos);
 }
 
-/* A slave with a token, joining a master without one, leaves the master's replication bytes
+/* A replica with a token, joining a primary without one, leaves the primary's replication bytes
    unread and goes ahead without a token. */
-FIXTURE(ReplicationMasterWithoutToken) {
-  Base::TFd master_fd, slave_fd;
-  Base::TFd::SocketPair(master_fd, slave_fd, AF_UNIX, SOCK_STREAM);
+FIXTURE(ReplicationPrimaryWithoutToken) {
+  Base::TFd primary_fd, replica_fd;
+  Base::TFd::SocketPair(primary_fd, replica_fd, AF_UNIX, SOCK_STREAM);
   const string traffic = "replication traffic, not a challenge";
-  Util::WriteExactly(master_fd, traffic.data(), traffic.size());
-  EXPECT_FALSE(AnswerMaster(slave_fd, Token));
+  Util::WriteExactly(primary_fd, traffic.data(), traffic.size());
+  EXPECT_FALSE(AnswerPrimary(replica_fd, Token));
   string got(traffic.size(), '\0');
-  Util::ReadExactly(slave_fd, got.data(), got.size());
+  Util::ReadExactly(replica_fd, got.data(), got.size());
   EXPECT_EQ(got, traffic);
 }
 
-/* A master that hangs up before saying anything is reported as such, not taken as consent. */
-FIXTURE(ReplicationMasterHangsUp) {
-  Base::TFd master_fd, slave_fd;
-  Base::TFd::SocketPair(master_fd, slave_fd, AF_UNIX, SOCK_STREAM);
-  master_fd.Reset();
-  auto answer = [&] { AnswerMaster(slave_fd, Token); };
+/* A primary that hangs up before saying anything is reported as such, not taken as consent. */
+FIXTURE(ReplicationPrimaryHangsUp) {
+  Base::TFd primary_fd, replica_fd;
+  Base::TFd::SocketPair(primary_fd, replica_fd, AF_UNIX, SOCK_STREAM);
+  primary_fd.Reset();
+  auto answer = [&] { AnswerPrimary(replica_fd, Token); };
   EXPECT_THROW_FUNC(TReplicationRefused, answer);
 }
 
-/* A peer that connects and hangs up at once is a refusal, not an exception out of the master. */
+/* A peer that connects and hangs up at once is a refusal, not an exception out of the primary. */
 FIXTURE(ReplicationPeerGoneBeforeChallenge) {
-  Base::TFd master_fd, slave_fd;
-  Base::TFd::SocketPair(master_fd, slave_fd, AF_UNIX, SOCK_STREAM);
-  slave_fd.Reset();
+  Base::TFd primary_fd, replica_fd;
+  Base::TFd::SocketPair(primary_fd, replica_fd, AF_UNIX, SOCK_STREAM);
+  replica_fd.Reset();
   string why;
-  EXPECT_TRUE(ChallengeSlave(master_fd, Token, chrono::milliseconds(2000), why) == TJoinVerdict::NoAnswer);
+  EXPECT_TRUE(ChallengeReplica(primary_fd, Token, chrono::milliseconds(2000), why) == TJoinVerdict::NoAnswer);
   EXPECT_FALSE(why.empty());
 }

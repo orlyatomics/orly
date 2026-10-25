@@ -122,10 +122,10 @@ optional<string> Orly::Auth::ClientTokenFromEnv() {
   return ResolveToken("", "", "auth_token", TokenFileEnvVar, TokenEnvVar);
 }
 
-TJoinVerdict Orly::Auth::ChallengeSlave(
+TJoinVerdict Orly::Auth::ChallengeReplica(
     int fd, string_view token, chrono::milliseconds timeout, string &why) {
   /* Everything a peer does here, hanging up included, ends in a verdict, never an exception: the
-     master's listener must survive whatever connects to it. */
+     primary's listener must survive whatever connects to it. */
   try {
     Util::WriteExactly(fd, ReplicationChallenge, sizeof(ReplicationChallenge), timeout);
     char intro[sizeof(ReplicationChallenge)];
@@ -170,8 +170,8 @@ TJoinVerdict Orly::Auth::ChallengeSlave(
   }
 }
 
-bool Orly::Auth::AnswerMaster(int fd, string_view token) {
-  /* Peek, so that a master without a token, which starts replicating at once, finds its bytes
+bool Orly::Auth::AnswerPrimary(int fd, string_view token) {
+  /* Peek, so that a primary without a token, which starts replicating at once, finds its bytes
      still in the socket for the replication protocol. */
   char intro[sizeof(ReplicationChallenge)];
   for (;;) {

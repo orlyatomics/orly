@@ -1,4 +1,4 @@
-/* <orly/indy/slave_test.cc>
+/* <orly/indy/replica_test.cc>
 
    Test for <orly/indy/manager.h>.
 
@@ -34,10 +34,10 @@ using namespace Orly::Atom;
 using namespace Orly::Indy;
 using namespace Orly::Indy::Util;
 
-const Orly::Indy::TMasterContext::TProtocol Orly::Indy::TMasterContext::TProtocol::Protocol;
-const Orly::Indy::TSlaveContext::TProtocol Orly::Indy::TSlaveContext::TProtocol::Protocol;
-static const char *SlavePath = "/dev/sdc";
-static const char *SlaveDeviceName = "sdc";
+const Orly::Indy::TPrimaryContext::TProtocol Orly::Indy::TPrimaryContext::TProtocol::Protocol;
+const Orly::Indy::TReplicaContext::TProtocol Orly::Indy::TReplicaContext::TProtocol::Protocol;
+static const char *ReplicaPath = "/dev/sdc";
+static const char *ReplicaDeviceName = "sdc";
 static const size_t BlockSize = 4096UL * 16;
 static const size_t CacheSize = 10000UL;
 static const size_t QueueDepth = 128UL;
@@ -67,7 +67,7 @@ int main(int argc, char *argv[]) {
   signal(SIGPIPE, [](int){});
   const char *host = "localhost";
   const char *port_num = argv[1];
-  Base::TFd slave_sock = socket(AF_INET, SOCK_STREAM, 0);
+  Base::TFd replica_sock = socket(AF_INET, SOCK_STREAM, 0);
   struct addrinfo hints;
   struct addrinfo *result, *rp;
   Base::Zero(hints);
@@ -85,8 +85,8 @@ int main(int argc, char *argv[]) {
       if (sock == -1) {
         continue;
       }
-      slave_sock = sock;
-      Base::IfLt0(connect(slave_sock, rp->ai_addr, rp->ai_addrlen));
+      replica_sock = sock;
+      Base::IfLt0(connect(replica_sock, rp->ai_addr, rp->ai_addrlen));
       break;
     }
   } catch (...) {
@@ -96,8 +96,8 @@ int main(int argc, char *argv[]) {
   freeaddrinfo(result);
 
   std::thread join_thread;
-  auto wait_for_slave = [port_num, &join_thread](const std::shared_ptr<std::function<void (const TFd &)>> &cb) {
-    std::cout << "Wait_for_slave()" << std::endl;
+  auto wait_for_replica = [port_num, &join_thread](const std::shared_ptr<std::function<void (const TFd &)>> &cb) {
+    std::cout << "Wait_for_replica()" << std::endl;
     join_thread = std::thread([port_num, cb]() {
       Base::TFd serv_sock = socket(AF_INET, SOCK_STREAM, 0);
       int flag = true;
@@ -115,8 +115,8 @@ int main(int argc, char *argv[]) {
       (*cb)(client_fd);
     });
   };
-  auto slave = make_unique<TManager>(SlavePath,
-                                     SlaveDeviceName,
+  auto replica = make_unique<TManager>(ReplicaPath,
+                                     ReplicaDeviceName,
                                      BlockSize,
                                      CacheSize,
                                      QueueDepth,
@@ -124,32 +124,32 @@ int main(int argc, char *argv[]) {
                                      FlushMemDelay,
                                      MergeDiskDelay,
                                      ReplicationDelay,
-                                     TManager::SyncSlave,
-                                     slave_sock,
-                                     wait_for_slave,
+                                     TManager::SyncReplica,
+                                     replica_sock,
+                                     wait_for_replica,
                                      StateChanged);
-  std::thread queuer([&slave]() {
-    slave->RunReplicationQueue();
+  std::thread queuer([&replica]() {
+    replica->RunReplicationQueue();
   });
-  std::thread runner([&slave]() {
-    slave->RunReplicationWork();
+  std::thread runner([&replica]() {
+    replica->RunReplicationWork();
   });
-  std::thread replicator([&slave]() {
-    slave->RunReplicateTransaction();
+  std::thread replicator([&replica]() {
+    replica->RunReplicateTransaction();
   });
-  std::thread mem_merger([&slave]() {
-    slave->RunMergeMem();
+  std::thread mem_merger([&replica]() {
+    replica->RunMergeMem();
   });
-  std::thread mem_flusher([&slave]() {
-    slave->RunFlushMem();
+  std::thread mem_flusher([&replica]() {
+    replica->RunFlushMem();
   });
-  std::thread disk_merger([&slave]() {
-    slave->RunMergeDisk();
+  std::thread disk_merger([&replica]() {
+    replica->RunMergeDisk();
   });
   //sleep(200);
   pause();
   TUuid repo_id("DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD");
-  auto repo = slave->GetRepo(repo_id, false);
+  auto repo = replica->GetRepo(repo_id, false);
   TInt num_iter = 400000L;
   /* check that all the updates are there */ {
     std::cout << "checking" << std::endl;

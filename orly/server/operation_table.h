@@ -150,7 +150,7 @@ namespace Orly {
          higher than this. */
       uint64_t HeadFloor() const;
 
-      /* A floor with no slot behind it, for a slave applying a replicated write: its record is
+      /* A floor with no slot behind it, for a replica applying a replicated write: its record is
          appended before Restore() can make a slot, and the checkpoint between the two would leave
          the entry in neither snapshot nor replay (#866). Pass what BeginCommit() would; returns the
          token ReleaseHead() takes. Every hold must be released, or the head stops moving. */
@@ -162,11 +162,11 @@ namespace Orly {
       /* The request ended without committing a write. The id can be tried again. */
       void Release(const Base::TUuid &pov_id, const Base::TUuid &op_id) noexcept;
 
-      /* Add an entry recovery found in a replayed record, or a slave in a replicated one. */
+      /* Add an entry recovery found in a replayed record, or a replica in a replicated one. */
       void Restore(const Base::TUuid &pov_id, const Base::TUuid &op_id, TOutcome &&outcome);
 
       /* Refuse, in every POV, an id at or below `ms` that has no entry: the table can't have seen
-         its write. A slave sets this when it joins, because the writes before that reach it as
+         its write. A replica sets this when it joins, because the writes before that reach it as
          data, not as records (#862). It only rises, and isn't in the checkpoint. */
       void RefuseUnknownBefore(uint64_t ms);
 

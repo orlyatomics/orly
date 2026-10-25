@@ -58,7 +58,7 @@ RECORD_ELEM(TManager::TSavedRepoObj, TSequenceNumber                    , Releas
 RECORD_ELEM(TManager::TSavedRepoObj, int                                , State);
 
 TManager::TManager(Disk::Util::TEngine *engine,
-                   size_t replication_sync_slave_buf_size_mb,
+                   size_t replication_sync_replica_buf_size_mb,
                    chrono::milliseconds merge_mem_delay,
                    chrono::milliseconds merge_disk_delay,
                    chrono::milliseconds layer_cleaning_interval,
@@ -69,7 +69,7 @@ TManager::TManager(Disk::Util::TEngine *engine,
                    bool allow_file_sync,
                    bool no_realtime,
                    TFd &&socket,
-                   const std::function<void (const shared_ptr<function<void (const TFd &)>> &)> &wait_for_slave,
+                   const std::function<void (const shared_ptr<function<void (const TFd &)>> &)> &wait_for_replica,
                    const std::function<void (TState)> &state_change_cb,
                    const std::function<void (const Base::TUuid &, const Base::TUuid &, const Base::TUuid &)> &update_replication_notification_cb,
                    const TIndexCb &on_replicate_index_id,
@@ -98,7 +98,7 @@ TManager::TManager(Disk::Util::TEngine *engine,
                    merge_disk_cores,
                    create_new),
       State(state),
-      WaitForSlave(wait_for_slave),
+      WaitForReplica(wait_for_replica),
       StateChangeCb(state_change_cb),
       ReplicationRead(false),
       ReplicationWork(false),
@@ -111,7 +111,7 @@ TManager::TManager(Disk::Util::TEngine *engine,
       ForEachIndexIdCb(for_each_index_cb),
       ForEachSchedulerCb(for_each_scheduler_cb),
       BGFastRunner(bg_fast_runner),
-      ReplicationSyncSlaveBufSizeBytes(replication_sync_slave_buf_size_mb * 1024UL * 1024UL),
+      ReplicationSyncReplicaBufSizeBytes(replication_sync_replica_buf_size_mb * 1024UL * 1024UL),
       AllowFileSync(allow_file_sync) {
   ReplicationQueueEpollFd = epoll_create1(0);
   ReplicationWorkEpollFd = epoll_create1(0);
@@ -141,32 +141,32 @@ TManager::TManager(Disk::Util::TEngine *engine,
     case Solo : {
       /* acquire Context lock */ {
         lock_guard<mutex> lock(ContextLock);
-        auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnSlaveJoin, this, placeholders::_1));
-        WaitForSlave(cb);
+        auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnReplicaJoin, this, placeholders::_1));
+        WaitForReplica(cb);
       }  // release context lock
       ShipsRetentionFlag = true;
       StateChangeCb(Solo);
       break;
     }
-    case Master : {
-      throw std::runtime_error("Cannot start Manager as Master. Must start as Solo.");
+    case Primary : {
+      throw std::runtime_error("Cannot start Manager as Primary. Must start as Solo.");
       break;
     }
-    case SyncSlave : {
+    case SyncReplica : {
       /* acquire Context lock */ {
         lock_guard<mutex> lock(ContextLock);
-        Context = make_shared<TSlave>(this, socket);
+        Context = make_shared<TReplica>(this, socket);
         ReplicationRead = true;
         ReplicationWork = true;
         ReplicationQueueSem.Push();
         ReplicationWorkSem.Push();
       }  // release context lock
       ShipsRetentionFlag = false;
-      StateChangeCb(SyncSlave);
+      StateChangeCb(SyncReplica);
       break;
     }
-    case Slave : {
-      throw std::runtime_error("Cannot start Manager as Slave. Must start as SyncSlave.");
+    case Replica : {
+      throw std::runtime_error("Cannot start Manager as Replica. Must start as SyncReplica.");
     }
   }
 }
@@ -261,7 +261,7 @@ void TManager::RunReplicationQueue() {
             if (ReplicationServicesStopping) {
               /* The connection died because StopReplicationServices()
                  hard-closed it (#461).  Don't run the failover transition --
-                 Demote()/PromoteSlave() would re-arm WaitForSlave() mid-
+                 Demote()/PromoteReplica() would re-arm WaitForReplica() mid-
                  teardown -- just leave. */
               syslog(LOG_INFO, "TManager::RunReplicationQueue shutting down (#461)");
               return;
@@ -272,16 +272,16 @@ void TManager::RunReplicationQueue() {
                 throw std::runtime_error("Solo should not be replicating.");
                 break;
               }
-              case Master : {
+              case Primary : {
                 Demote();
                 break;
               }
-              case SyncSlave : {
-                throw std::runtime_error("Connection died while in SyncSlave state. Cannot promote to master; must fail!");
+              case SyncReplica : {
+                throw std::runtime_error("Connection died while in SyncReplica state. Cannot promote to primary; must fail!");
                 break;
               }
-              case Slave : {
-                PromoteSlave();
+              case Replica : {
+                PromoteReplica();
                 break;
               }
             }
@@ -401,7 +401,7 @@ void TManager::RunReplicateTransaction() {
             }
             break;
           }
-          case Master : {
+          case Primary : {
             context = Context;
             /* acquire Replication lock */ {
               std::lock_guard<std::mutex> lock(ReplicationLock);
@@ -439,7 +439,7 @@ void TManager::RunReplicateTransaction() {
             }
             break;
           }
-          case SyncSlave : {
+          case SyncReplica : {
             /* acquire Replication lock */ {
               std::lock_guard<std::mutex> lock(ReplicationLock);
               ReplicationSem.Pop();
@@ -447,7 +447,7 @@ void TManager::RunReplicateTransaction() {
             }
             break;
           }
-          case Slave : {
+          case Replica : {
             /* acquire Replication lock */ {
               std::lock_guard<std::mutex> lock(ReplicationLock);
               ReplicationSem.Pop();
@@ -461,24 +461,24 @@ void TManager::RunReplicateTransaction() {
         case Solo : {
           break;
         }
-        case Master : {
+        case Primary : {
           if (!replication_streamer.IsEmpty()) {
             try {
               Base::TTimer timer;
-              auto future = context->Write<void>(TSlave::PushNotificationsId, replication_streamer);
+              auto future = context->Write<void>(TReplica::PushNotificationsId, replication_streamer);
               timer.Stop();
               /* Unconditional (the old <1s gate hid exactly the slow writes
                  worth seeing, #520), and paired with the 'acked' line below:
                  a 'took' with no 'acked' after it means this loop is parked
-                 in Sync() on an unresponsive slave -- the observable fact
+                 in Sync() on an unresponsive replica -- the observable fact
                  the graceful-shutdown fixture keys on. */
-              syslog(LOG_INFO, "Write TSlave::PushNotificationsId took [%fs]", ToSecondsDouble(timer.GetTotal()));
+              syslog(LOG_INFO, "Write TReplica::PushNotificationsId took [%fs]", ToSecondsDouble(timer.GetTotal()));
               assert(future);
               future->Sync();  // wait for the future to complete
               if (!static_cast<bool>(*future)) {
                 throw std::runtime_error("Future did not complete.");
               }
-              syslog(LOG_INFO, "Write TSlave::PushNotificationsId acked");
+              syslog(LOG_INFO, "Write TReplica::PushNotificationsId acked");
               /* now apply all the necessary replication notifications. */
               for (TReplicationQueue::TItemCollection::TCursor csr(copy_queue.GetItemCollection()); csr; ++csr) {
                 switch (csr->GetKind()) {
@@ -557,10 +557,10 @@ void TManager::RunReplicateTransaction() {
           }
           break;
         }
-        case SyncSlave : {
+        case SyncReplica : {
           break;
         }
-        case Slave : {
+        case Replica : {
           break;
         }
       }
@@ -591,8 +591,8 @@ void TManager::StopReplicationServices() {
   ReplicationWorkSem.Push();
   ReplicationSem.Push();
   /* A CONNECTED pair's loops are parked past those epolls: the queue loop
-     blocks in Read() on the socket, and a master-mode replicate loop can be
-     parked in future->Sync() on a slave RPC -- neither is sem-wakeable, and
+     blocks in Read() on the socket, and a primary-mode replicate loop can be
+     parked in future->Sync() on a replica RPC -- neither is sem-wakeable, and
      an unresponsive peer would hold JoinReplicationServices() forever
      (#461).  Hard-close the socket: the read errors out, which fails every
      outstanding future (waking Sync()) and collapses the reader loop. */
@@ -671,36 +671,36 @@ void TManager::JoinReplicationServices() {
   }
 }
 
-TManager::TMaster::TMaster(TManager *manager, const TFd &fd)
-    : TMasterContext(fd), Manager(manager) {}
+TManager::TPrimary::TPrimary(TManager *manager, const TFd &fd)
+    : TPrimaryContext(fd), Manager(manager) {}
 
-TManager::TMaster::~TMaster() {}
+TManager::TPrimary::~TPrimary() {}
 
-bool TManager::TMaster::Queue() {
+bool TManager::TPrimary::Queue() {
   return TCommonContext::Queue();
 }
 
-bool TManager::TMaster::Work() {
+bool TManager::TPrimary::Work() {
   return TCommonContext::Work();
 }
 
-void TManager::TMaster::NotifyFinishSyncInventory() {
-  std::lock_guard<std::mutex> lock(Manager->SlaveNotifyLock);
-  Manager->SlaveNotifiedFinish = true;
-  Manager->SlaveNotifyCond.notify_all();
+void TManager::TPrimary::NotifyFinishSyncInventory() {
+  std::lock_guard<std::mutex> lock(Manager->ReplicaNotifyLock);
+  Manager->ReplicaNotifiedFinish = true;
+  Manager->ReplicaNotifyCond.notify_all();
 }
 
-TContextInputStreamer TManager::TMaster::FetchUpdates(const TUuid &repo_id, TSequenceNumber lowest, TSequenceNumber highest) {
+TContextInputStreamer TManager::TPrimary::FetchUpdates(const TUuid &repo_id, TSequenceNumber lowest, TSequenceNumber highest) {
   /* log scope */ {
     std::ostringstream ss;
     ss << repo_id;
-    syslog(LOG_INFO, "TMaster::FetchUpdates(%s) [%lu -> %lu]", ss.str().c_str(), lowest, highest);
+    syslog(LOG_INFO, "TPrimary::FetchUpdates(%s) [%lu -> %lu]", ss.str().c_str(), lowest, highest);
   }
   Base::TTimer timer;
   /* The repo the join inventoried, pinned there: opening it by id could build an empty stand-in
      if it had gone (#671). */
-  assert(Manager->SlaveSyncViewMap.find(repo_id) != Manager->SlaveSyncViewMap.end());
-  const auto &sync = Manager->SlaveSyncViewMap.find(repo_id)->second;
+  assert(Manager->ReplicaSyncViewMap.find(repo_id) != Manager->ReplicaSyncViewMap.end());
+  const auto &sync = Manager->ReplicaSyncViewMap.find(repo_id)->second;
   const auto &repo = sync.Repo;
   const auto &view = sync.View;
   auto walker_ptr = repo->NewUpdateWalker(view, lowest, highest);
@@ -712,20 +712,20 @@ TContextInputStreamer TManager::TMaster::FetchUpdates(const TUuid &repo_id, TSeq
   /* log scope */ {
     std::ostringstream ss;
     ss << repo_id;
-    syslog(LOG_INFO, "TMaster::FetchUpdates(%s) [%lu -> %lu] took [%fs]", ss.str().c_str(), lowest, highest, ToSecondsDouble(timer.GetTotal()));
+    syslog(LOG_INFO, "TPrimary::FetchUpdates(%s) [%lu -> %lu] took [%fs]", ss.str().c_str(), lowest, highest, ToSecondsDouble(timer.GetTotal()));
   }
   return context;
 }
 
-TManager::TMaster::TViewDef TManager::TMaster::GetView(const Base::TUuid &repo_id) {
-  assert(Manager->SlaveSyncViewMap.find(repo_id) != Manager->SlaveSyncViewMap.end());
+TManager::TPrimary::TViewDef TManager::TPrimary::GetView(const Base::TUuid &repo_id) {
+  assert(Manager->ReplicaSyncViewMap.find(repo_id) != Manager->ReplicaSyncViewMap.end());
   TViewDef ret;
-  const auto &view = Manager->SlaveSyncViewMap.find(repo_id)->second.View;
+  const auto &view = Manager->ReplicaSyncViewMap.find(repo_id)->second.View;
   Manager->AugmentViewMapWithDiskLayers(ret, view);
   return ret;
 }
 
-void TManager::AugmentViewMapWithDiskLayers(TMaster::TViewDef &view_def, const std::unique_ptr<Indy::TRepo::TView> &view) const {
+void TManager::AugmentViewMapWithDiskLayers(TPrimary::TViewDef &view_def, const std::unique_ptr<Indy::TRepo::TView> &view) const {
   assert(view);
   const TRepo::TMapping *mapping = view->GetMapping();
   for (TRepo::TMapping::TEntryCollection::TCursor entry_csr(mapping->GetEntryCollection()); entry_csr; ++entry_csr) {
@@ -736,53 +736,53 @@ void TManager::AugmentViewMapWithDiskLayers(TMaster::TViewDef &view_def, const s
       view_def.emplace_back(disk_layer->GetLowestSeq(), disk_layer->GetHighestSeq(), disk_layer->GetGenId(), disk_layer->GetNumKeys());
     }
   }
-  std::sort(view_def.begin(), view_def.end(), [](const TMaster::TFileTuple &lhs, const TMaster::TFileTuple &rhs) {
+  std::sort(view_def.begin(), view_def.end(), [](const TPrimary::TFileTuple &lhs, const TPrimary::TFileTuple &rhs) {
     return std::get<0>(lhs) < std::get<0>(rhs);
   });
 }
 
-TFileSync TManager::TMaster::SyncFile(const Base::TUuid &file_id, size_t gen_id, size_t context) {
+TFileSync TManager::TPrimary::SyncFile(const Base::TUuid &file_id, size_t gen_id, size_t context) {
   return TFileSync(Manager->GetEngine(), file_id, gen_id, context);
 }
 
-TManager::TSlave::TSlave(TManager *manager, const TFd &fd)
-    : TSlaveContext(fd), Manager(manager), SlushCoreVec(new TCoreVectorBuilder()), Flusher(make_shared<TFlusher>(Manager->GetEngine())) {}
+TManager::TReplica::TReplica(TManager *manager, const TFd &fd)
+    : TReplicaContext(fd), Manager(manager), SlushCoreVec(new TCoreVectorBuilder()), Flusher(make_shared<TFlusher>(Manager->GetEngine())) {}
 
-TManager::TSlave::~TSlave() {}
+TManager::TReplica::~TReplica() {}
 
-bool TManager::TSlave::Queue() {
+bool TManager::TReplica::Queue() {
   return TCommonContext::Queue();
 }
 
-bool TManager::TSlave::Work() {
+bool TManager::TReplica::Work() {
   return TCommonContext::Work();
 }
 
-void TManager::TSlave::ScheduleSyncInventory() {
-  syslog(LOG_INFO, "TSlave: scheduling SyncInventory()");
+void TManager::TReplica::ScheduleSyncInventory() {
+  syslog(LOG_INFO, "TReplica: scheduling SyncInventory()");
   Fiber::TFrame *frame = Fiber::TFrame::LocalFramePool->Alloc();
   try {
-    frame->Latch(Manager->BGFastRunner, this, static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::TManager::TSlave::SyncInventory));
+    frame->Latch(Manager->BGFastRunner, this, static_cast<Fiber::TRunnable::TFunc>(&Orly::Indy::TManager::TReplica::SyncInventory));
   } catch (...) {
     Fiber::TFrame::LocalFramePool->Free(frame);
     throw;
   }
-  //Manager->Scheduler->Schedule(std::bind(&TManager::TSlave::SyncInventory, this));
+  //Manager->Scheduler->Schedule(std::bind(&TManager::TReplica::SyncInventory, this));
 }
 
-bool TManager::TSlave::DeferRepo(const TDeferredRepo &repo) {
+bool TManager::TReplica::DeferRepo(const TDeferredRepo &repo) {
   std::lock_guard<std::mutex> lock(DeferredReposMutex);
   if (InventoryBuilt) {
     return false;
   }
   DeferredRepos.push_back(repo);
   std::ostringstream strm;
-  strm << "Slave deferring repo [" << repo.RepoId << "] until the inventory is built: its parent [" << repo.ParentRepoId << "] isn't here yet (#676)";
+  strm << "Replica deferring repo [" << repo.RepoId << "] until the inventory is built: its parent [" << repo.ParentRepoId << "] isn't here yet (#676)";
   syslog(LOG_INFO, "%s", strm.str().c_str());
   return true;
 }
 
-std::vector<const TManager::TSlave::TToSync *> TManager::TSlave::OrderInventory(const std::vector<TToSync> &queue) {
+std::vector<const TManager::TReplica::TToSync *> TManager::TReplica::OrderInventory(const std::vector<TToSync> &queue) {
   std::unordered_map<TUuid, const TToSync *> by_id;
   for (const auto &to_sync : queue) {
     by_id.emplace(to_sync.RepoId, &to_sync);
@@ -802,9 +802,9 @@ std::vector<const TManager::TSlave::TToSync *> TManager::TSlave::OrderInventory(
   return ordered;
 }
 
-void TManager::TSlave::SyncInventory() {
-  syslog(LOG_INFO, "TSlave: calling SyncInventory()");
-  /* Build each repo with the ttl, safety and parent the master sent (#676).  This used to open each
+void TManager::TReplica::SyncInventory() {
+  syslog(LOG_INFO, "TReplica: calling SyncInventory()");
+  /* Build each repo with the ttl, safety and parent the primary sent (#676).  This used to open each
      one with GetRepo(..., create=false), which ignores all three: a repo not here yet came out of
      ReconstructRepo safe, with no parent and a 1000 s ttl, so after a failover a pov under a shared
      pov read through to nothing.  Every repo built here stays held until the sync is done, so a
@@ -823,21 +823,21 @@ void TManager::TSlave::SyncInventory() {
     /* log scope */ {
       std::ostringstream ss;
       ss << repo_id;
-      syslog(LOG_INFO, "TSlave::Inventory(%s)", ss.str().c_str());
+      syslog(LOG_INFO, "TReplica::Inventory(%s)", ss.str().c_str());
     }
     /* Engaged only for a real parent (#661). */
     std::optional<L0::TManager::TPtr<TRepo>> parent_repo;
     if (parent_repo_id) {
       /* The copy built above, or one already here (the global pov, or a repo the replication
          stream created during the sync).  Never a stand-in: opening the parent by force would
-         build an empty repo with no parent of its own (#671).  A parent the master didn't send
-         and this slave lacks leaves the repo out, and after a failover its pov is refused like
-         any other the new master lacks. */
+         build an empty repo with no parent of its own (#671).  A parent the primary didn't send
+         and this replica lacks leaves the repo out, and after a failover its pov is refused like
+         any other the new primary lacks. */
       const auto iter = built.find(*parent_repo_id);
       parent_repo = (iter != built.end()) ? iter->second : L0::TManager::TPtr<TRepo>(Manager->TryGetLiveRepo(*parent_repo_id));
       if (!*parent_repo) {
         std::ostringstream ss;
-        ss << "TSlave::Inventory not building repo [" << repo_id << "]: its parent [" << *parent_repo_id << "] isn't here (#676)";
+        ss << "TReplica::Inventory not building repo [" << repo_id << "]: its parent [" << *parent_repo_id << "] isn't here (#676)";
         syslog(LOG_INFO, "%s", ss.str().c_str());
         continue;
       }
@@ -845,22 +845,22 @@ void TManager::TSlave::SyncInventory() {
     /* log scope */ {
       std::ostringstream ss;
       ss << repo_id;
-      syslog(LOG_INFO, "TSlave::Inventory::GetRepo(%s)", ss.str().c_str());
+      syslog(LOG_INFO, "TReplica::Inventory::GetRepo(%s)", ss.str().c_str());
     }
     auto repo = Manager->GetRepo(repo_id, chrono::seconds(ttl), parent_repo, is_safe, true);
     built.emplace(repo_id, repo);
     /* log scope */ {
       /* A repo already here keeps the shape it was built with; say so if that isn't what the
-         master sent. */
+         primary sent. */
       const auto &has_parent = repo->GetParentRepo();
       const bool parent_matches = (has_parent && *has_parent) ?
           (parent_repo_id && (*has_parent)->GetId() == *parent_repo_id) : !parent_repo_id;
       std::ostringstream ss;
       ss << repo_id;
       if (parent_matches && repo->IsSafeRepo() == is_safe) {
-        syslog(LOG_INFO, "done TSlave::Inventory::GetRepo(%s)", ss.str().c_str());
+        syslog(LOG_INFO, "done TReplica::Inventory::GetRepo(%s)", ss.str().c_str());
       } else {
-        syslog(LOG_WARNING, "TSlave::Inventory: repo [%s] was already here with another parent or safety than the master's (#676)", ss.str().c_str());
+        syslog(LOG_WARNING, "TReplica::Inventory: repo [%s] was already here with another parent or safety than the primary's (#676)", ss.str().c_str());
       }
     }
     //repo->SetNextSequenceNumber(next_id);
@@ -868,7 +868,7 @@ void TManager::TSlave::SyncInventory() {
     /* log scope */ {
       std::ostringstream ss;
       ss << repo_id;
-      syslog(LOG_INFO, "TSlave::Inventory (%s) SetReleasedUpTo(%lu)", ss.str().c_str(), next_id > 0UL ? next_id - 1UL : 0UL);
+      syslog(LOG_INFO, "TReplica::Inventory (%s) SetReleasedUpTo(%lu)", ss.str().c_str(), next_id > 0UL ? next_id - 1UL : 0UL);
     }
 
 
@@ -876,7 +876,7 @@ void TManager::TSlave::SyncInventory() {
     std::optional<TSequenceNumber> snap_highest;
     TSequenceNumber snap_next_id;
     repo->GetSnapshot(snap_lowest, snap_highest, snap_next_id);
-    //std::cout << "TSlave::Inventory snapshot for (" << repo_id << ")\t[" << snap_lowest << " -> " << snap_highest << "] next=[" << snap_next_id << "]" << std::endl;
+    //std::cout << "TReplica::Inventory snapshot for (" << repo_id << ")\t[" << snap_lowest << " -> " << snap_highest << "] next=[" << snap_next_id << "]" << std::endl;
 
 
 
@@ -890,9 +890,9 @@ void TManager::TSlave::SyncInventory() {
       }
       assert(snap_next_id == my_lowest + 1);
 
-      auto view_future = Write<TMaster::TViewDef>(TMaster::GetViewId, repo_id);
+      auto view_future = Write<TPrimary::TViewDef>(TPrimary::GetViewId, repo_id);
       assert(view_future);
-      TMaster::TViewDef view_def = **view_future;
+      TPrimary::TViewDef view_def = **view_future;
 
       if (view_def.size() && Manager->AllowFileSync) {
         /* low, high, gen_id, num_keys */
@@ -900,7 +900,7 @@ void TManager::TSlave::SyncInventory() {
           syslog(LOG_INFO, "Can Sync [%ld -> %ld] from [%ld]", std::get<0>(view_file), std::get<1>(view_file), std::get<2>(view_file));
         }
 
-        /* do we need to fill in the front? if current low > first low from master disk view */
+        /* do we need to fill in the front? if current low > first low from primary disk view */
         if (my_lowest > std::get<0>(view_def[0])) {
           PullUpdateRange(repo_id, repo, my_lowest + 1, std::get<0>(view_def[0]) - 1);
         }
@@ -910,7 +910,7 @@ void TManager::TSlave::SyncInventory() {
           if (std::get<0>(view_file) >= my_lowest && std::get<1>(view_file) <= *highest) {
             highest_filled = std::max(highest_filled, std::get<1>(view_file));
             syslog(LOG_INFO, "sync file [%ld] for [%ld -> %ld] with service [%p]", std::get<2>(view_file), std::get<0>(view_file), std::get<1>(view_file), Manager->GetEngine());
-            auto file_future = Write<TFileSync>(TMaster::SyncFileId, repo_id, std::get<2>(view_file), reinterpret_cast<size_t>(Manager->GetEngine()));
+            auto file_future = Write<TFileSync>(TPrimary::SyncFileId, repo_id, std::get<2>(view_file), reinterpret_cast<size_t>(Manager->GetEngine()));
             assert(file_future);
             TFileSync file = **file_future;
             repo->AddSyncedFileToRepo(file.GetStartingBlockId(), file.GetStartingBlockOffset(), file.GetFileLength(), std::get<0>(view_file), std::get<1>(view_file), std::get<3>(view_file));
@@ -929,13 +929,13 @@ void TManager::TSlave::SyncInventory() {
     //std::cout << "SetNextSequenceNumber [" << next_id << "]" << std::endl;
     repo->SetNextSequenceNumber(next_id);
     repo->GetSnapshot(snap_lowest, snap_highest, snap_next_id);
-    //std::cout << "TSlave::Inventory snapshot for (" << repo_id << ")\t[" << snap_lowest << " -> " << snap_highest << "] next=[" << snap_next_id << "]" << std::endl;
+    //std::cout << "TReplica::Inventory snapshot for (" << repo_id << ")\t[" << snap_lowest << " -> " << snap_highest << "] next=[" << snap_next_id << "]" << std::endl;
     assert(!snap_highest || (*snap_highest == snap_next_id - 1));
   }
   /* The repos the replication stream created during the sync under a parent not built then, in
      the order they came, so a parent the stream created comes before its children (#676).  More
      can come while these are built; they wait for the next round.  Their mutations wait in the
-     slush until the slave applies it, after this. */
+     slush until the replica applies it, after this. */
   for (;;) {
     std::vector<TDeferredRepo> deferred;
     /* acquire DeferredRepos lock */ {
@@ -952,18 +952,18 @@ void TManager::TSlave::SyncInventory() {
           (iter != built.end()) ? iter->second : L0::TManager::TPtr<TRepo>(Manager->TryGetLiveRepo(repo.ParentRepoId));
       std::ostringstream ss;
       if (!*parent_repo) {
-        ss << "Slave not creating repo [" << repo.RepoId << "]: its parent [" << repo.ParentRepoId << "] has gone here (#671)";
+        ss << "Replica not creating repo [" << repo.RepoId << "]: its parent [" << repo.ParentRepoId << "] has gone here (#671)";
         syslog(LOG_INFO, "%s", ss.str().c_str());
         continue;
       }
       built.emplace(repo.RepoId, Manager->GetRepo(repo.RepoId, repo.Ttl, parent_repo, repo.IsSafe, true));
-      ss << "Slave created deferred repo [" << repo.RepoId << "] under [" << repo.ParentRepoId << "] (#676)";
+      ss << "Replica created deferred repo [" << repo.RepoId << "] under [" << repo.ParentRepoId << "] (#676)";
       syslog(LOG_INFO, "%s", ss.str().c_str());
     }
   }
   /* Each repo built here now holds its parent (#668); let go of the rest. */
   built.clear();
-  auto sync_future = Write<void>(TMaster::NotifyFinishSyncInventoryId);
+  auto sync_future = Write<void>(TPrimary::NotifyFinishSyncInventoryId);
   assert(sync_future);
   sync_future->Sync();  // wait for the future to complete
   if (!static_cast<bool>(*sync_future)) {
@@ -972,8 +972,8 @@ void TManager::TSlave::SyncInventory() {
   Indy::Fiber::FreeMyFrame(Fiber::TFrame::LocalFramePool);
 }
 
-void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPtr<Indy::TRepo> &repo, TSequenceNumber from, TSequenceNumber to) {
-  syslog(LOG_INFO, "TSlave: PullUpdateRange from [%lu -> %lu]", from, to);
+void TManager::TReplica::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPtr<Indy::TRepo> &repo, TSequenceNumber from, TSequenceNumber to) {
+  syslog(LOG_INFO, "TReplica: PullUpdateRange from [%lu -> %lu]", from, to);
   Disk::Util::TVolume::TDesc::TStorageSpeed storage_speed = Disk::Util::TVolume::TDesc::TStorageSpeed::Fast;
   const size_t max_update_pull = 50000;
   void *lhs_state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -984,7 +984,7 @@ void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPt
     for (size_t i = from; i <= to; i += (max_update_pull + 1UL)) {
       TSequenceNumber cur_from = i;
       TSequenceNumber cur_to = std::min(i + max_update_pull, to);
-      auto future = Write<TContextInputStreamer>(TMaster::FetchUpdatesId, repo_id, cur_from, cur_to);
+      auto future = Write<TContextInputStreamer>(TPrimary::FetchUpdatesId, repo_id, cur_from, cur_to);
       assert(future);
       Util::TContextInputStreamer context = **future;
       Base::TTimer timer;
@@ -997,11 +997,11 @@ void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPt
         /* Split entries by mutator: Assign-tagged go through the TUpdate
            TOpByKey ctor (existing semantics); non-Assign entries go in as
            `more`, each under its own mutator, so the deferred
-           commutative info survives the slave-replay path. Mirrors the
+           commutative info survives the replica-replay path. Mirrors the
            fix in TRepo::GetLowestUpdate (PR #52) for the Tetris peek
-           path. Without this, the slave reconstructs deferred {Add, n}
+           path. Without this, the replica reconstructs deferred {Add, n}
            entries as Assign(n) and silently loses updates on
-           concurrent writes that landed on the master (#54). */
+           concurrent writes that landed on the primary (#54). */
         TUpdate::TOpByKey op_by_key;
         std::vector<TUpdate::TNewEntry> more;
         for (auto entry : iter.EntryVec) {
@@ -1033,9 +1033,9 @@ void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPt
       std::optional<TSequenceNumber> snap_highest;
       TSequenceNumber snap_next_id;
       repo->GetSnapshot(snap_lowest, snap_highest, snap_next_id);
-      //std::cout << "TSlave::Inventory snapshot for (" << repo_id << ")\t[" << snap_lowest << " -> " << snap_highest << "] next=[" << snap_next_id << "]" << std::endl;
+      //std::cout << "TReplica::Inventory snapshot for (" << repo_id << ")\t[" << snap_lowest << " -> " << snap_highest << "] next=[" << snap_next_id << "]" << std::endl;
       syslog(LOG_INFO, "AddImportLayer of size [%ld]", mem_layer->GetSize());
-      /* by the time we fetch the updates, if they were in a fast repo..., they may be gone in the master.
+      /* by the time we fetch the updates, if they were in a fast repo..., they may be gone in the primary.
          That means we'll have caught the push to the parent POV and will be applying that when we replay live transactions. */
       if (mem_layer->GetSize() > 0) {
         Base::TEventSemaphore sem;
@@ -1046,7 +1046,7 @@ void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPt
       /* log scope */ {
         std::ostringstream ss;
         ss << repo_id;
-        syslog(LOG_INFO, "TSlave: received %zu updates from repo %s, commit took [%fs]", context.UpdateVec.size(), ss.str().c_str(), ToSecondsDouble(timer.GetTotal()));
+        syslog(LOG_INFO, "TReplica: received %zu updates from repo %s, commit took [%fs]", context.UpdateVec.size(), ss.str().c_str(), ToSecondsDouble(timer.GetTotal()));
       }
     }
   } catch (...) {
@@ -1059,7 +1059,7 @@ void TManager::TSlave::PullUpdateRange(const Base::TUuid &repo_id, TManager::TPt
   //std::cout << "UseSequenceNumbers[" << ((to - from) + 1) << "]" << std::endl;
 }
 
-void TManager::TSlave::TFlusher::ConsumeOutput(const std::shared_ptr<const Io::TChunk> &chunk) {
+void TManager::TReplica::TFlusher::ConsumeOutput(const std::shared_ptr<const Io::TChunk> &chunk) {
   assert(chunk);
   const size_t num_bytes = chunk->GetSize();
   const char *start, *limit;
@@ -1067,9 +1067,9 @@ void TManager::TSlave::TFlusher::ConsumeOutput(const std::shared_ptr<const Io::T
   OutStream->Write(start, num_bytes);
 }
 
-std::shared_ptr<const Io::TChunk> TManager::TSlave::TFlusher::TryProduceInput() {
+std::shared_ptr<const Io::TChunk> TManager::TReplica::TFlusher::TryProduceInput() {
   if (!InStream) {
-    InStream = std::make_unique<TDataInStream>(HERE, Disk::Source::SlaveSlush, Disk::RealTime, this, Engine->GetPageCache(), 0UL);
+    InStream = std::make_unique<TDataInStream>(HERE, Disk::Source::ReplicaSlush, Disk::RealTime, this, Engine->GetPageCache(), 0UL);
   }
   auto chunk = Pool->AcquireChunk();
   const size_t amt_to_read = chunk->GetRemainingSize();
@@ -1078,17 +1078,17 @@ std::shared_ptr<const Io::TChunk> TManager::TSlave::TFlusher::TryProduceInput() 
   return chunk;
 }
 
-void TManager::TSlave::TFlusher::Flush() {
+void TManager::TReplica::TFlusher::Flush() {
   assert(OutStream);
   OutStream.reset(); /* flush the outbound stream */
   Trigger.Wait(); /* wait for everything to be flushed */
 }
 
-size_t TManager::TSlave::TFlusher::NewBlockCb(Disk::Util::TVolumeManager */*vol_man*/) {
+size_t TManager::TReplica::TFlusher::NewBlockCb(Disk::Util::TVolumeManager */*vol_man*/) {
   return Engine->ReserveBlock(Disk::Util::TVolume::TDesc::TStorageSpeed::Fast);
 }
 
-void TManager::TSlave::Inventory(const TUuid &repo_id,
+void TManager::TReplica::Inventory(const TUuid &repo_id,
                                  size_t ttl,
                                  const std::optional<TUuid> &parent_repo_id,
                                  bool is_safe,
@@ -1098,7 +1098,7 @@ void TManager::TSlave::Inventory(const TUuid &repo_id,
   ToSyncQueue.emplace_back(repo_id, ttl, parent_repo_id, is_safe, lowest, highest, next_id);
 }
 
-void TManager::TSlave::Index(const TIndexMapReplica &index_map_replica) {
+void TManager::TReplica::Index(const TIndexMapReplica &index_map_replica) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   std::vector<TCore>::const_iterator index_iter = index_map_replica.GetCoreVec().GetCores().begin();
   std::vector<TCore>::const_iterator index_end = index_map_replica.GetCoreVec().GetCores().end();
@@ -1119,7 +1119,7 @@ void TManager::TSlave::Index(const TIndexMapReplica &index_map_replica) {
   }
 }
 
-void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication_streamer) {
+void TManager::TReplica::PushNotifications(const TReplicationStreamer &replication_streamer) {
   assert(Indy::Fiber::TRunner::LocalRunner);
   Indy::Fiber::TSwitchToRunner RunnerSwitcher(Manager->BGFastRunner);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -1129,10 +1129,10 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
       case Solo : {
         break;
       }
-      case Master : {
+      case Primary : {
         break;
       }
-      case SyncSlave : {
+      case SyncReplica : {
         try {
           /* Store the repo saves next */ {
             std::vector<TCore>::const_iterator repo_iter = replication_streamer.GetRepoVec().GetCores().begin();
@@ -1161,12 +1161,12 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
                    then found that and kept it, so every pov under the parent read through to
                    nothing after a failover.  Leave the repo for SyncInventory() to build after
                    the inventory instead (#676); once it has, a parent not here has gone, as in
-                   the Slave case below (#671). */
+                   the Replica case below (#671). */
                 opt_parent_repo = Manager->TryGetLiveRepo(*opt_parent_repo_id);
                 if (!*opt_parent_repo) {
                   if (!DeferRepo(TDeferredRepo{ repo_id, repo_ttl, *opt_parent_repo_id, is_safe })) {
                     std::ostringstream strm;
-                    strm << "Slave not creating repo [" << repo_id << "]: its parent [" << *opt_parent_repo_id << "] has gone here (#671)";
+                    strm << "Replica not creating repo [" << repo_id << "]: its parent [" << *opt_parent_repo_id << "] has gone here (#671)";
                     syslog(LOG_INFO, "%s", strm.str().c_str());
                   }
                   continue;
@@ -1192,7 +1192,7 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
               SlushCoreVec->PushState(core.NewState(arena, state_alloc));
             }
             const size_t cur_slush_size_in_bytes = SlushCoreVec->GetCores().size() * sizeof(TCore) + SlushCoreVec->GetNumArenaBytes();
-            if (cur_slush_size_in_bytes > Manager->ReplicationSyncSlaveBufSizeBytes) { /* flush to disk if we're too big */
+            if (cur_slush_size_in_bytes > Manager->ReplicationSyncReplicaBufSizeBytes) { /* flush to disk if we're too big */
               syslog(LOG_INFO, "Flushing slush cores to disk [%ld], MB=[%f]", SlushCoreVec->GetCores().size(), cur_slush_size_in_bytes / (1024.0 * 1024.0));
               TBinaryOutputOnlyStream strm(Flusher);
               Flusher->SetStoredOffset();
@@ -1201,12 +1201,12 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
             }
           }
         } catch (const exception &ex) {
-          syslog(LOG_ERR, "Exception in TManager::TSlave::PushNotifications()::SyncSlave [%s]", ex.what());
+          syslog(LOG_ERR, "Exception in TManager::TReplica::PushNotifications()::SyncReplica [%s]", ex.what());
           throw;
         }
         break;
       }
-      case Slave : {
+      case Replica : {
         try {
           /* Store the index ids next */ {
             std::vector<TCore>::const_iterator index_iter = replication_streamer.GetIndexIdVec().GetCores().begin();
@@ -1249,17 +1249,17 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
                  claim a parent the repo doesn't have (#661). */
               std::optional<L0::TManager::TPtr<L0::TManager::TRepo>> opt_parent_repo;
               if (opt_parent_repo_id) {
-                /* The parent must be live here.  If this slave has discarded its copy (a parent
+                /* The parent must be live here.  If this replica has discarded its copy (a parent
                    with no ttl, or one the cache let go), opening it by force built an empty repo
                    with no parent, and the pov read through that to nothing after a failover.
                    Leave the pov out instead: its mutations are then skipped as for any gone repo,
-                   and after a failover it is refused like any pov the new master lacks (#671).
-                   (While syncing, the SyncSlave case above defers such a repo instead, since its
+                   and after a failover it is refused like any pov the new primary lacks (#671).
+                   (While syncing, the SyncReplica case above defers such a repo instead, since its
                    parent may just not be built yet (#676).) */
                 opt_parent_repo = Manager->TryGetLiveRepo(*opt_parent_repo_id);
                 if (!*opt_parent_repo) {
                   std::ostringstream strm;
-                  strm << "Slave not creating repo [" << repo_id << "]: its parent [" << *opt_parent_repo_id << "] has gone here (#671)";
+                  strm << "Replica not creating repo [" << repo_id << "]: its parent [" << *opt_parent_repo_id << "] has gone here (#671)";
                   syslog(LOG_INFO, "%s", strm.str().c_str());
                   continue;
                 }
@@ -1284,12 +1284,12 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
           timer.Stop();
           if (timer.GetTotal() > 1s) {
             syslog(LOG_INFO,
-                   "Slave PushNotification [%ld] took [%fs]",
+                   "Replica PushNotification [%ld] took [%fs]",
                    num_transactions_applied,
                    ToSecondsDouble(timer.GetTotal()));
           }
         } catch (const exception &ex) {
-          syslog(LOG_ERR, "Exception in TManager::TSlave::PushNotifications()::Slave [%s]", ex.what());
+          syslog(LOG_ERR, "Exception in TManager::TReplica::PushNotifications()::Replica [%s]", ex.what());
           throw;
         }
         break;
@@ -1298,18 +1298,18 @@ void TManager::TSlave::PushNotifications(const TReplicationStreamer &replication
   }
 }
 
-/* One syslog line per replicated mutation the slave skips because its repo has gone here (#671). */
+/* One syslog line per replicated mutation the replica skips because its repo has gone here (#671). */
 static void LogGoneRepo(const char *what, const Base::TUuid &repo_id, TSequenceNumber seq_num) {
   std::ostringstream strm;
   strm << repo_id;
-  syslog(LOG_INFO, "Slave skipping %s of repo [%s] at seq [%ld]: the repo has gone here (#671)", what, strm.str().c_str(), seq_num);
+  syslog(LOG_INFO, "Replica skipping %s of repo [%s] at seq [%ld]: the repo has gone here (#671)", what, strm.str().c_str(), seq_num);
 }
 
-/* One syslog line per replicated status change the slave applies or discards. */
+/* One syslog line per replicated status change the replica applies or discards. */
 static void LogStatusChange(const char *what, const Base::TUuid &repo_id, TSequenceNumber seq_num, bool applied) {
   std::ostringstream strm;
   strm << repo_id;
-  syslog(LOG_INFO, "Slave %s %s of repo [%s] at seq [%ld]", applied ? "applying" : "discarding", what, strm.str().c_str(), seq_num);
+  syslog(LOG_INFO, "Replica %s %s of repo [%s] at seq [%ld]", applied ? "applying" : "discarding", what, strm.str().c_str(), seq_num);
 }
 
 void TManager::SeedNumberingFromReplay(const Base::TUuid &repo_id) {
@@ -1368,8 +1368,8 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
       Sabot::ToNative(*Sabot::State::TAny::TWrapper(iter->NewState(arena, state_alloc)), seq_num);
       /* A repo a later copy rebuilds (#963): read past its mutations, as though it had gone. */
       const bool skipped = skip_repos && skip_repos->count(repo_id);
-      /* Apply only to a live repo.  Nothing on a slave pins its copy of a pov's repo, so the copy
-         can be gone by now: one with no ttl goes as soon as the slave builds it, and the cache can
+      /* Apply only to a live repo.  Nothing on a replica pins its copy of a pov's repo, so the copy
+         can be gone by now: one with no ttl goes as soon as the replica builds it, and the cache can
          let any other go.  Opening it by force built an empty repo whose sequence starts at 1,
          so the next mutation past 1 failed the sequence check below (an assert in debug, "missing
          data" in release), and a pov kept for a failover read through no parent (#671).  A
@@ -1441,7 +1441,7 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
           }
           break;
         }
-        /* For a status change, seq_num is EmptyRepoSequenceNumber when the master's repo had
+        /* For a status change, seq_num is EmptyRepoSequenceNumber when the primary's repo had
            nothing pending (#655); TTransaction checks it against our copy either way.  Status
            changes are rare, so say which ones we apply. */
         case TTransactionAction::Fail : {
@@ -1478,7 +1478,7 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
           break;
         }
         default : {
-          throw std::runtime_error("Invalid replication action in TransitionToSlave");
+          throw std::runtime_error("Invalid replication action in TransitionToReplica");
           break;
         }
       }
@@ -1489,10 +1489,10 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
       apply_transaction->ReportCommitLsn(&lsn);
     }
     /* Reserves the transaction's WAL room before it applies (#891), and before the head hold
-       below, which would keep a checkpoint from making that room.  What a master sent has to be
+       below, which would keep a checkpoint from making that room.  What a primary sent has to be
        applied, and in order: refusing one would leave this batch half-applied and the replica
-       behind the master for good, since the master never sends it again.  So wait for room, on a
-       fiber too (PushNotifications runs on one), however long the checkpoints take; the master
+       behind the primary for good, since the primary never sends it again.  So wait for room, on a
+       fiber too (PushNotifications runs on one), however long the checkpoints take; the primary
        waits for our ack without a timeout, so this is backpressure on it, not a failure.  Only
        stopping replication (or the server) gives up. */
     apply_transaction->WaitForWalRoom([this] {
@@ -1524,54 +1524,54 @@ size_t TManager::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec,
   return num_applied;
 }
 
-size_t TManager::TSlave::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
+size_t TManager::TReplica::ApplyCoreVectorTransactions(const std::vector<TCore> &core_vec, TCore::TArena *arena) {
   return Manager->ApplyCoreVectorTransactions(core_vec, arena, Manager->ReplicatedPushCb,
                                               Manager->ReplicatedHeadHold.Hold ? &Manager->ReplicatedHeadHold : nullptr);
 }
 
-void TManager::TSlave::TransitionToSlave() {
+void TManager::TReplica::TransitionToReplica() {
   try {
-    syslog(LOG_INFO, "TSlave::TransitionToSlave()...");
+    syslog(LOG_INFO, "TReplica::TransitionToReplica()...");
     /* acquire Context lock */ {
       std::lock_guard<std::mutex> lock(Manager->ContextLock);
       switch (Manager->State) {
         case Solo : {
-          throw std::runtime_error("Solo can not transition to Slave.");
+          throw std::runtime_error("Solo can not transition to Replica.");
           break;
         }
-        case Master : {
-          throw std::runtime_error("Master can not transition to Slave.");
+        case Primary : {
+          throw std::runtime_error("Primary can not transition to Replica.");
           break;
         }
-        case SyncSlave : {
-          syslog(LOG_INFO, "TSlave::TransitionToSlave() walking over SlushCoreVec()");
+        case SyncReplica : {
+          syslog(LOG_INFO, "TReplica::TransitionToReplica() walking over SlushCoreVec()");
           Flusher->Flush();
           /* we have to rebuild all the core_vectors which we flushed to disk */ {
             Io::TBinaryInputOnlyStream in_stream(Flusher);
-            //Disk::TStream in_stream(Disk::Source::SlaveSlush, 0UL, Disk::RealTime, Flusher.get(), 0UL);
+            //Disk::TStream in_stream(Disk::Source::ReplicaSlush, 0UL, Disk::RealTime, Flusher.get(), 0UL);
             for (size_t i = 0; i < Flusher->GetOffsetVec().size(); ++i) {
               TCoreVector core_vec(in_stream);
               ApplyCoreVectorTransactions(core_vec.GetCores(), core_vec.GetArena());
             }
-            syslog(LOG_INFO, "TSlave::TransitionToSlave(): core vector mem slush");
+            syslog(LOG_INFO, "TReplica::TransitionToReplica(): core vector mem slush");
             ApplyCoreVectorTransactions(SlushCoreVec->GetCores(), SlushCoreVec->GetArena());
           }
           Flusher.reset();
 
-          syslog(LOG_INFO, "TSlave::TransitionToSlave() changing state");
-          Manager->State = Slave;
+          syslog(LOG_INFO, "TReplica::TransitionToReplica() changing state");
+          Manager->State = Replica;
           Manager->ShipsRetentionFlag = false;
-          Manager->StateChangeCb(Slave);
+          Manager->StateChangeCb(Replica);
           break;
         }
-        case Slave : {
-          throw std::runtime_error("Slave can not transition to Slave; already in that state.");
+        case Replica : {
+          throw std::runtime_error("Replica can not transition to Replica; already in that state.");
           break;
         }
       }
     }  // release Context lock
   } catch (const std::exception &ex) {
-    syslog(LOG_EMERG, "TSlave::TransitionToSlave failed [%s]", ex.what());
+    syslog(LOG_EMERG, "TReplica::TransitionToReplica failed [%s]", ex.what());
     abort();
   }
 }
@@ -1662,7 +1662,7 @@ L0::TManager::TRepo *TManager::ConstructRepo(const TUuid &repo_id,
       /* log scope */ {
         std::ostringstream ss;
         obj_state->Accept(Sabot::TStateDumper(ss));
-        syslog(LOG_INFO, "TSlave: reconstruct from : %s", ss.str().c_str());
+        syslog(LOG_INFO, "TReplica: reconstruct from : %s", ss.str().c_str());
       }
       Sabot::ToNative(*obj_state, saved_repo);
 
@@ -1858,8 +1858,8 @@ void TManager::SaveRepo(TRepo *base_repo) {
     assert(repo);
     /* Perform transaction on System repo to save this repo.  The system
        repo is node-local state rebuilt from replication control items
-       (TRepoReplication) on the slave -- its transactions must stay off the
-       replication stream, where the slave's independently numbered system
+       (TRepoReplication) on the replica -- its transactions must stay off the
+       replication stream, where the replica's independently numbered system
        repo dies applying them (#499). */ {
       TSuprena arena;
       auto transaction = NewTransaction(false);
@@ -1896,12 +1896,12 @@ void TManager::SaveRepo(TRepo *base_repo) {
 }
 
 void TManager::PrepareSystemWrite(L1::TTransaction &transaction) {
-  /* A slave's System repo writes come from what the master replicated (the repos it made, the
+  /* A replica's System repo writes come from what the primary replicated (the repos it made, the
      index ids it registered), so, like the replicated transactions themselves, they must not be
      refused for WAL room (#891): wait for it, unless replication or the server is stopping.  A
-     master's or a solo server's refuse at once, and the refusal reaches the client that asked
+     primary's or a solo server's refuse at once, and the refusal reaches the client that asked
      as insufficient_storage. */
-  if (State == SyncSlave || State == Slave) {
+  if (State == SyncReplica || State == Replica) {
     transaction.WaitForWalRoom([this] {
       return ReplicationServicesStopping.load() || Base::IsShuttingDown();
     });
@@ -1912,7 +1912,7 @@ void TManager::PrepareSystemWrite(L1::TTransaction &transaction) {
 void TManager::SaveIndexNamespaceMapping(const Base::TUuid &index_id, const std::string &namespace_name) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   /* Perform transaction on System repo to save this mapping.  Node-local:
-     the mapping crosses to a slave as a TIndexIdReplication control item
+     the mapping crosses to a replica as a TIndexIdReplication control item
      (or the join-time index-map walk), never as this transaction (#499). */ {
     TSuprena arena;
     auto transaction = NewTransaction(false);
@@ -1929,7 +1929,7 @@ void TManager::SaveInstalledPackage(const std::vector<std::string> &package_name
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   /* Perform transaction on System repo to save this record.  Node-local:
      each server records its own installs; replicating this transaction
-     would collide with the slave's independently numbered system repo
+     would collide with the replica's independently numbered system repo
      (#499). */ {
     TSuprena arena;
     auto transaction = NewTransaction(false);
@@ -1996,7 +1996,7 @@ std::unordered_map<Base::TUuid, std::string> TManager::GetIndexNamespaceMapping(
   return ret;
 }
 
-void TManager::OnSlaveJoin(const Base::TFd &fd) {
+void TManager::OnReplicaJoin(const Base::TFd &fd) {
   assert(Indy::Fiber::TRunner::LocalRunner);
   Indy::Fiber::TRunner *orig_slow_runner = Indy::Fiber::TRunner::LocalRunner;
   Indy::Fiber::TSwitchToRunner RunnerSwitcher(BGFastRunner);
@@ -2004,7 +2004,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
   switch (State) {
     case Solo : {
       try {
-        syslog(LOG_NOTICE, "TMaster: slave joined");
+        syslog(LOG_NOTICE, "TPrimary: replica joined");
         TSuprena arena;
         std::unique_ptr<Indy::TRepo::TView> view;
         std::shared_ptr<TPresentWalker> walker_ptr;
@@ -2012,7 +2012,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           lock_guard<mutex> lock(ContextLock);
           PromoteSolo(fd);
           view = make_unique<Indy::TRepo::TView>(SystemRepo);
-          syslog(LOG_INFO, "TMaster: walking tuple(SavedRepoMagicNumber, free<uuid>)");
+          syslog(LOG_INFO, "TPrimary: walking tuple(SavedRepoMagicNumber, free<uuid>)");
           /* Not skipping tombstones: CollectSavedRepoIds() needs to see a removed entry's removal (#671). */
           walker_ptr = SystemRepo->NewPresentWalker(view, TIndexKey(SystemRepoIndexId, TKey(make_tuple(SavedRepoMagicNumber, Native::TFree<Base::TUuid>()), &arena, state_alloc)), false);
         }  // release Context lock
@@ -2022,12 +2022,12 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
               const Base::TUuid &idx_id, const std::string &pkg_key, const Indy::TKey val) {
             index_map_replica.Push(idx_id, pkg_key, val);
           });
-          std::shared_ptr<Rpc::TFuture<void>> future = Context->Write<void>(TSlave::IndexId, index_map_replica);
+          std::shared_ptr<Rpc::TFuture<void>> future = Context->Write<void>(TReplica::IndexId, index_map_replica);
         }
         assert(walker_ptr);
-        /* The live repos to inventory, each after its parent, so the slave can build a repo
+        /* The live repos to inventory, each after its parent, so the replica can build a repo
            under its parent as it goes (#676).  A parent goes in even without a saved-repo entry
-           of its own (a repo with no ttl gets none): the slave has nothing else to build its
+           of its own (a repo with no ttl gets none): the replica has nothing else to build its
            children under. */
         std::vector<L0::TManager::TPtr<Indy::TRepo>> to_inventory;
         /* inventory order */ {
@@ -2036,17 +2036,17 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
             /* log scope */ {
               std::ostringstream ss;
               ss << repo_id;
-              syslog(LOG_INFO, "TMaster: walking tuple(SavedRepoMagicNumber, free<uuid>) matched repo [%s]", ss.str().c_str());
+              syslog(LOG_INFO, "TPrimary: walking tuple(SavedRepoMagicNumber, free<uuid>) matched repo [%s]", ss.str().c_str());
             }
             /* An entry can outlive its repo: one discarded since the last repo creation, or one
                left from before a restart.  Opening it by force would build an empty repo with no
-               parent and inventory that to the slave as if it were the pov (#671).  Skip it, and
+               parent and inventory that to the replica as if it were the pov (#671).  Skip it, and
                let the next repo creation remove its entry. */
             auto repo = TryGetLiveRepo(repo_id);
             if (!repo) {
               std::ostringstream ss;
               ss << repo_id;
-              syslog(LOG_INFO, "TMaster: saved repo [%s] has gone; not inventorying it (#671)", ss.str().c_str());
+              syslog(LOG_INFO, "TPrimary: saved repo [%s] has gone; not inventorying it (#671)", ss.str().c_str());
               RequeueSavedRepoRemovals({ repo_id });
               continue;
             }
@@ -2066,12 +2066,12 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           /* log scope */ {
             std::ostringstream ss;
             ss << repo_id;
-            syslog(LOG_INFO, "TMaster: got live repo [%s]", ss.str().c_str());
+            syslog(LOG_INFO, "TPrimary: got live repo [%s]", ss.str().c_str());
           }
           bool is_safe = repo->IsSafeRepo();
 
-          assert(SlaveSyncViewMap.find(repo_id) == SlaveSyncViewMap.end());
-          const std::unique_ptr<Indy::TRepo::TView> &sync_view = SlaveSyncViewMap.emplace(repo_id, TSlaveSync{ repo, std::make_unique<Indy::TRepo::TView>(repo) }).first->second.View;
+          assert(ReplicaSyncViewMap.find(repo_id) == ReplicaSyncViewMap.end());
+          const std::unique_ptr<Indy::TRepo::TView> &sync_view = ReplicaSyncViewMap.emplace(repo_id, TReplicaSync{ repo, std::make_unique<Indy::TRepo::TView>(repo) }).first->second.View;
 
           std::optional<Base::TUuid> parent_repo_id;
           if (repo->GetParentRepo() && *repo->GetParentRepo()) {
@@ -2081,14 +2081,14 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           Indy::Fiber::TSwitchToRunner go_slow_for_future(orig_slow_runner);
           /* log scope */ {
             std::ostringstream ss;
-            ss << "Calling Inventory on Slave (" << repo_id << ") [";
+            ss << "Calling Inventory on Replica (" << repo_id << ") [";
             if (sync_view->GetLower()) { ss << *sync_view->GetLower(); }
             ss << " -> ";
             if (sync_view->GetUpper()) { ss << *sync_view->GetUpper(); }
             ss << "]";
-            syslog(LOG_INFO, "TMaster: %s", ss.str().c_str());
+            syslog(LOG_INFO, "TPrimary: %s", ss.str().c_str());
           }
-          std::shared_ptr<Rpc::TFuture<void>> future = Context->Write<void>(TSlave::InventoryId, repo_id, ttl, parent_repo_id, is_safe, sync_view->GetLower(), sync_view->GetUpper(), sync_view->GetNextId());
+          std::shared_ptr<Rpc::TFuture<void>> future = Context->Write<void>(TReplica::InventoryId, repo_id, ttl, parent_repo_id, is_safe, sync_view->GetLower(), sync_view->GetUpper(), sync_view->GetNextId());
 
           assert(future);
           future->Sync();  // wait for the future to complete
@@ -2096,13 +2096,13 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
             throw std::runtime_error("Future did not complete.");
           }
         }
-        /* The saved records of the povs whose repos the slave now has (#680).  A pov's record
-           otherwise reaches a slave only when it is saved while they are paired, so after a
-           failover a pov made before the join was refused on the promoted slave although its
+        /* The saved records of the povs whose repos the replica now has (#680).  A pov's record
+           otherwise reaches a replica only when it is saved while they are paired, so after a
+           failover a pov made before the join was refused on the promoted replica although its
            repo was there.  A pov's durable id is its repo's id.  They go as durable saves on the
-           live stream's own message, which a syncing slave stores (as a slave from before this
+           live stream's own message, which a syncing replica stores (as a replica from before this
            change does too), in batches, read and sent with no lock held; all of them before
-           the slave is told to sync, so it has them before it says it is done.  A record saved
+           the replica is told to sync, so it has them before it says it is done.  A record saved
            again meanwhile goes on the live stream too; a pov's record never changes (its ttl,
            session, audience, policy and parents), so the order the two arrive in doesn't
            matter. */
@@ -2114,7 +2114,7 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           size_t batch_records = 0UL, batch_bytes = 0UL;
           auto send_batch = [&]() {
             Indy::Fiber::TSwitchToRunner go_slow_for_future(orig_slow_runner);
-            auto future = Context->Write<void>(TSlave::PushNotificationsId, *batch);
+            auto future = Context->Write<void>(TReplica::PushNotificationsId, *batch);
             assert(future);
             future->Sync();  // wait for the future to complete
             if (!static_cast<bool>(*future)) {
@@ -2127,9 +2127,9 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
             batch_bytes = 0UL;
           };
           std::string blob;
-          /* With them, the retention record a root repo ships (#745 stage 3), so the slave keeps the history the
-             master's horizon promises from the start. That one does change; if an older copy lands after a newer one
-             from the live stream, the slave only keeps more history until the next one comes. */
+          /* With them, the retention record a root repo ships (#745 stage 3), so the replica keeps the history the
+             primary's horizon promises from the start. That one does change; if an older copy lands after a newer one
+             from the live stream, the replica only keeps more history until the next one comes. */
           for (const auto &repo : to_inventory) {
             const Base::TUuid ids[2] = {repo->GetId(), Indy::TRepo::GetRetentionRecordId(repo->GetId(), true)};
             for (const auto &id : ids) {
@@ -2147,63 +2147,63 @@ void TManager::OnSlaveJoin(const Base::TFd &fd) {
           if (batch_records) {
             send_batch();
           }
-          syslog(LOG_INFO, "TMaster: sent the slave [%ld] saved pov record(s) in [%ld] batch(es) (#680)", num_sent, num_batches);
+          syslog(LOG_INFO, "TPrimary: sent the replica [%ld] saved pov record(s) in [%ld] batch(es) (#680)", num_sent, num_batches);
         }
-        /* trigger the slave to start synchronizing it's inventory */ {
+        /* trigger the replica to start synchronizing it's inventory */ {
           /* set false */ {
-            std::lock_guard<std::mutex> slave_notify_lock(SlaveNotifyLock);
-            SlaveNotifiedFinish = false;
+            std::lock_guard<std::mutex> replica_notify_lock(ReplicaNotifyLock);
+            ReplicaNotifiedFinish = false;
           }
-          syslog(LOG_INFO, "TMaster: calling SyncInventoryId on slave");
+          syslog(LOG_INFO, "TPrimary: calling SyncInventoryId on replica");
           Indy::Fiber::TSwitchToRunner go_slow_for_future(orig_slow_runner);
-          auto sync_future = Context->Write<void>(TSlave::SyncInventoryId);
+          auto sync_future = Context->Write<void>(TReplica::SyncInventoryId);
           assert(sync_future);
           sync_future->Sync();  // wait for the future to complete
           if (!static_cast<bool>(*sync_future)) {
             throw std::runtime_error("Future did not complete.");
           }
-          std::unique_lock<std::mutex> slave_notify_lock(SlaveNotifyLock);
-          syslog(LOG_INFO, "TMaster: waiting for slave to say he's finished");
-          while (!SlaveNotifiedFinish) {
-            /* make sure the slave is still there */ {
-              auto sync_future = Context->Write<void>(TSlave::PingId);
+          std::unique_lock<std::mutex> replica_notify_lock(ReplicaNotifyLock);
+          syslog(LOG_INFO, "TPrimary: waiting for replica to say he's finished");
+          while (!ReplicaNotifiedFinish) {
+            /* make sure the replica is still there */ {
+              auto sync_future = Context->Write<void>(TReplica::PingId);
               assert(sync_future);
               sync_future->Sync();  // wait for the future to complete
               if (!static_cast<bool>(*sync_future)) {
                 throw std::runtime_error("Future did not complete.");
               }
             }
-            SlaveNotifyCond.wait_for(slave_notify_lock, 2000ms);
+            ReplicaNotifyCond.wait_for(replica_notify_lock, 2000ms);
           }
-          syslog(LOG_INFO, "TMaster: slave says he's finished");
+          syslog(LOG_INFO, "TPrimary: replica says he's finished");
         }
 
         Indy::Fiber::TSwitchToRunner go_slow_for_future(orig_slow_runner);
-        auto sync_future = Context->Write<void>(TSlave::TransitionToSlaveId);
+        auto sync_future = Context->Write<void>(TReplica::TransitionToReplicaId);
         assert(sync_future);
         sync_future->Sync();  // wait for the future to complete
         if (!static_cast<bool>(*sync_future)) {
           throw std::runtime_error("Future did not complete.");
         }
-        SlaveSyncViewMap.clear();
-        syslog(LOG_INFO, "TMaster: finished OnSlaveJoin::Sync()");
+        ReplicaSyncViewMap.clear();
+        syslog(LOG_INFO, "TPrimary: finished OnReplicaJoin::Sync()");
         break;
       } catch (const std::exception &ex) {
-        syslog(LOG_ERR, "TManager::OnSlaveJoin caught exception [%s]", ex.what());
-        SlaveSyncViewMap.clear();
+        syslog(LOG_ERR, "TManager::OnReplicaJoin caught exception [%s]", ex.what());
+        ReplicaSyncViewMap.clear();
         throw;
       }
     }
-    case Master : {
-      throw std::runtime_error("A Slave tried to join this Master; Slaves can only join a Solo.");
+    case Primary : {
+      throw std::runtime_error("A Replica tried to join this Primary; Replicas can only join a Solo.");
       break;
     }
-    case SyncSlave : {
-      throw std::runtime_error("A Slave tried to join this SyncSlave; Slaves can only join a Solo.");
+    case SyncReplica : {
+      throw std::runtime_error("A Replica tried to join this SyncReplica; Replicas can only join a Solo.");
       break;
     }
-    case Slave : {
-      throw std::runtime_error("A Slave tried to join this Slave; Slaves can only join a Solo.");
+    case Replica : {
+      throw std::runtime_error("A Replica tried to join this Replica; Replicas can only join a Solo.");
       break;
     }
   }
@@ -2260,37 +2260,37 @@ void TManager::DeleteTransactionReplication(TTransactionReplication *transaction
 }
 
 void TManager::Demote() {
-  assert(State == Master);
+  assert(State == Primary);
   Context.reset();
   State = Solo;
   ShipsRetentionFlag = true;
   StateChangeCb(Solo);
   syslog(LOG_NOTICE, "TManager: demoted back to solo");
-  auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnSlaveJoin, this, placeholders::_1));
-  WaitForSlave(cb);
+  auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnReplicaJoin, this, placeholders::_1));
+  WaitForReplica(cb);
 }
 
 void TManager::PromoteSolo(const Base::TFd &fd) {
   assert(State == Solo);
   Context.reset();
-  Context = make_shared<TMaster>(this, fd);
+  Context = make_shared<TPrimary>(this, fd);
   ReplicationRead = true;
   ReplicationWork = true;
   ReplicationQueueSem.Push();
   ReplicationWorkSem.Push();
-  State = Master;
+  State = Primary;
   ShipsRetentionFlag = true;
-  StateChangeCb(Master);
-  syslog(LOG_NOTICE, "TManager: solo promoted to master");
+  StateChangeCb(Primary);
+  syslog(LOG_NOTICE, "TManager: solo promoted to primary");
 }
 
-void TManager::PromoteSlave() {
-  assert(State == Slave);
+void TManager::PromoteReplica() {
+  assert(State == Replica);
   Context.reset();
   State = Solo;
   ShipsRetentionFlag = true;
   StateChangeCb(Solo);
-  auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnSlaveJoin, this, placeholders::_1));
-  WaitForSlave(cb);
-  syslog(LOG_NOTICE, "TManager: slave promoted to solo");
+  auto cb = make_shared<function<void (const TFd &)>>(std::bind(&TManager::OnReplicaJoin, this, placeholders::_1));
+  WaitForReplica(cb);
+  syslog(LOG_NOTICE, "TManager: replica promoted to solo");
 }

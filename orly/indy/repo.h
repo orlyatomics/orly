@@ -400,7 +400,7 @@ namespace Orly {
       /* Return the unused tail of a bulk reservation: roll the counters back
          so the repo advertises `next_id - 1` as its highest sequence number.
          The bulk importer over-reserves per file and nothing ever
-         materializes the reserved gap, which a joining slave's
+         materializes the reserved gap, which a joining replica's
          SyncInventory rejects (#498). */
       inline void ReleaseUnusedSequenceNumbers(TSequenceNumber next_id);
 
@@ -453,14 +453,14 @@ namespace Orly {
 
       /* #745 stage 3: what a merge passes as its retain-from: GetRetainFrom, held to the horizon this repo's retention
          record has on disk, so that a restart, which trusts the record, never claims a version a merge dropped. Moves
-         the record along (saving it, and shipping it to the slaves from a master), and on a slave holds to the
-         horizon the master ships as well. Without persisted retention (see L0::TManager::SetRetentionPersisted),
+         the record along (saving it, and shipping it to the replicas from a primary), and on a replica holds to the
+         horizon the primary ships as well. Without persisted retention (see L0::TManager::SetRetentionPersisted),
          GetRetainFrom itself. */
       [[nodiscard]] std::optional<TSequenceNumber> GetMergeRetainFrom();
 
-      /* #745 stage 3: a named save point keeps every version from `at` on whole, through restarts and on the slaves,
+      /* #745 stage 3: a named save point keeps every version from `at` on whole, through restarts and on the replicas,
          until it is deleted. Returns once the record holding it is on disk. Throws where there are no records (a
-         repo that isn't a root repo, persisted retention off, no store yet, or a slave), or if `at` is a version a
+         repo that isn't a root repo, persisted retention off, no store yet, or a replica), or if `at` is a version a
          merge may already have dropped. Blocks the calling thread for the disk write of the record. The protocol's
          `save point` statement (#889) goes through this.
 
@@ -506,7 +506,7 @@ namespace Orly {
       [[nodiscard]] std::map<std::string, TSequenceNumber> GetSavePoints();
 
       /* The ids of a repo's retention records in the durable store: the node's own (never replicated), and the one
-         a master ships to its slaves. Derived from the repo id so they never meet a pov's record (its repo id). */
+         a primary ships to its replicas. Derived from the repo id so they never meet a pov's record (its repo id). */
       static Base::TUuid GetRetentionRecordId(const Base::TUuid &repo_id, bool shipped);
 
       /* What a retention record holds. */

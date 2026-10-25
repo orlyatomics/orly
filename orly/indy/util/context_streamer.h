@@ -2,7 +2,7 @@
 
    `TContextOutputStreamer` / `TContextInputStreamer` -- serialise
    a sequence of updates into a binary stream and read them back.
-   Used by master->slave replication: the streamer packs
+   Used by primary->replica replication: the streamer packs
    `TUpdateWalker::TItem`s (with their sabot arena) into a
    transport-friendly form, the reader unpacks them on the receiver.
    The Mutator-carrying wire format that #54 fixed lives here.
@@ -105,9 +105,9 @@ namespace Orly {
 
           /* Per-entry payload on the wire: (IndexKey, Op, Mutator). The
              Mutator field was added in #54 -- before that the wire format
-             dropped it, causing slaves to reconstruct deferred {Add, n}
+             dropped it, causing replicas to reconstruct deferred {Add, n}
              entries as Assign(n) and silently lose updates on concurrent
-             writes that landed on the master. */
+             writes that landed on the primary. */
           struct TEntry {
             TIndexKey IndexKey;
             Atom::TCore Op;

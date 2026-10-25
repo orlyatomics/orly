@@ -356,7 +356,7 @@ namespace Orly {
       void PushRepo(const TRepoReplication &repo_replica);
 
       /* Calls 'cb' with the id, ttl and serialized form of each durable save, in order.  The
-         slave applies durable saves through this, so it decodes exactly what PushDurable()
+         replica applies durable saves through this, so it decodes exactly what PushDurable()
          encoded (#676 follow-up). */
       void ForEachDurable(const std::function<void (const Base::TUuid &, const TTtl &, const std::string &)> &cb) const;
 

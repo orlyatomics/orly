@@ -1,83 +1,83 @@
 /* <orly/server/import_replication.test.cc>
 
-   End-to-end master/slave coverage for the bulk-import + replication fixes:
+   End-to-end primary/replica coverage for the bulk-import + replication fixes:
 
-     #367 — an index id minted by the bulk importer must reach a slave.
+     #367 — an index id minted by the bulk importer must reach a replica.
      #497 — a single-file import must not hand uninitialized sequence
             numbers to AddFileToRepo (it used to crash the server).
-     #498 — imports are a solo-server operation: a master with a live slave
+     #498 — imports are a solo-server operation: a primary with a live replica
             must refuse BeginImport instead of desynchronizing sequence
-            numbers and killing the slave on the next replicated write.
+            numbers and killing the replica on the next replicated write.
      #499 — the system-repo commits an install replicates must not abort
-            the master's replication notification pass (their void metadata
+            the primary's replication notification pass (their void metadata
             used to unwind it, eating the batch's remaining client acks).
-     #500 — a slave disconnect must demote the master back to solo and leave
-            it able to accept a new slave (the demote path used to die
-            re-binding the slave port).
+     #500 — a replica disconnect must demote the primary back to solo and leave
+            it able to accept a new replica (the demote path used to die
+            re-binding the replica port).
 
    The scenario, with forked orlyi processes on --mem_sim:
 
-     1. start a SOLO master; import core-vector files whose types match no
+     1. start a SOLO primary; import core-vector files whose types match no
         installed package — a two-file import (the second file's stream id
         remaps onto the first's) plus a single-file import (#497's no-merge
         path) — minting one fresh index id;
-     2. install the package on the master: it adopts the minted id and all
+     2. install the package on the primary: it adopts the minted id and all
         three imported rows are readable;
-     3. attach slave 1: the join-time sync must deliver the imported files
-        AND the index-id mapping (the slave logs "Replicating index [...]"
+     3. attach replica 1: the join-time sync must deliver the imported files
+        AND the index-id mapping (the replica logs "Replicating index [...]"
         as it applies the mapping — the #367 assertion);
-     4. install a second package on the paired master: its index id must
-        reach the slave on the live replication stream (#367's enqueue), the
-        master's log must stay free of notification-pass errors, and a
+     4. install a second package on the paired primary: its index id must
+        reach the replica on the live replication stream (#367's enqueue), the
+        primary's log must stay free of notification-pass errors, and a
         write's replication ack must still arrive (#499);
-     5. with the slave attached, BeginImport on the master must fail with a
-        clean error, and the master must remain healthy (#498);
-     6. write a row through the package and wait for the slave to
+     5. with the replica attached, BeginImport on the primary must fail with a
+        clean error, and the primary must remain healthy (#498);
+     6. write a row through the package and wait for the replica to
         acknowledge the replication;
-     7. kill slave 1: the master must demote to solo, stay alive, and accept
-        slave 2 (#500), which again receives files and mapping.  Before
-        slave 2 joins, the solo master overwrites the same keys round after
-        round, and the test waits until the master's log shows a disk merge
+     7. kill replica 1: the primary must demote to solo, stay alive, and accept
+        replica 2 (#500), which again receives files and mapping.  Before
+        replica 2 joins, the solo primary overwrites the same keys round after
+        round, and the test waits until the primary's log shows a disk merge
         of the global pov that dropped updates, so the files the join copies
         include pruned ones (#592);
-     8. write another row (live replication to slave 2), then kill the
-        master: slave 2 promotes itself to solo;
-     9. read every row on the promoted slave 2: the imported rows and the
+     8. write another row (live replication to replica 2), then kill the
+        primary: replica 2 promotes itself to solo;
+     9. read every row on the promoted replica 2: the imported rows and the
         pre-join write arrived as synced data files (#501 pinned them
         unreadable), the last write arrived on the live stream, and all of
         them are reachable only because the package bound to the imported
         index id (#367).  Every overwritten key reads its last value
         (#592).
 
-   The kills in this scenario are SIGKILL, deliberately: the slave promotes
+   The kills in this scenario are SIGKILL, deliberately: the replica promotes
    on connection DEATH, and a hard kill is what delivers that
    deterministically.  Graceful shutdown while paired — including with an
    UNRESPONSIVE peer — is pinned separately by the
-   GracefulShutdownUnresponsiveSlave fixture below (#461).
+   GracefulShutdownUnresponsiveReplica fixture below (#461).
 
    The PrunedJoinWithoutFileSync fixture repeats the #592 part of step 7
-   with a slave that runs --allow_file_sync=false. That slave pulls the
+   with a replica that runs --allow_file_sync=false. That replica pulls the
    updates over pruned files instead of copying them.
 
    The PauseEmptyPovReplicates fixture pauses and unpauses an empty pov on a
-   paired master: the status changes must replicate without a sequence
+   paired primary: the status changes must replicate without a sequence
    number to carry (#655).
 
-   The SlaveMutationForDiscardedRepo and SlavePovUnderDiscardedParent
-   fixtures replicate to a slave that has already discarded its copy of a
-   pov's repo, or of the pov's parent's.  The slave must leave the pov alone,
+   The ReplicaMutationForDiscardedRepo and ReplicaPovUnderDiscardedParent
+   fixtures replicate to a replica that has already discarded its copy of a
+   pov's repo, or of the pov's parent's.  The replica must leave the pov alone,
    not build an empty stand-in for the gone repo and apply to that (#671).
 
    The ExpiredPovNotInventoried fixture lets two povs with a ttl expire on a
-   solo master before a slave joins. The join must inventory neither: the
+   solo primary before a replica joins. The join must inventory neither: the
    first one's saved-repo entry must be gone from the system repo by then,
-   and the second one's entry, still there, must not make the master build
+   and the second one's entry, still there, must not make the primary build
    an empty stand-in for it (#671).
 
-   The SlaveInventoryKeepsPovShape fixture joins a slave to a master already
+   The ReplicaInventoryKeepsPovShape fixture joins a replica to a primary already
    holding shared povs: one with a child, a fast one, and a child under a
-   shared pov with no ttl.  The slave must build each inventoried repo with
-   the ttl, safety and parent the master sent, so that after a failover a
+   shared pov with no ttl.  The replica must build each inventoried repo with
+   the ttl, safety and parent the primary sent, so that after a failover a
    read through a pov under them still reaches global (#676).
 
    Copyright 2010-2026 Atomic Kismet Company
@@ -155,7 +155,7 @@ const char *SamplePackage =
     "  x = given::(int);\n"
     "};\n";
 
-/* A second package, installed while the master is paired: its index id is
+/* A second package, installed while the primary is paired: its index id is
    minted at install time and must travel the LIVE replication stream. */
 const char *Sample2Package =
     "package #1;\n"
@@ -170,9 +170,9 @@ const char *Sample2Package =
    tiny and a collision just fails this run's startup wait.
 
    Never hand out the same port twice in this process.  A pair probes the
-   slave's ports before it starts the master, and the kernel can offer a
-   released port again, so the master's websocket or reporting port could be
-   the slave's client port; the slave then failed to start with "Address
+   replica's ports before it starts the primary, and the kernel can offer a
+   released port again, so the primary's websocket or reporting port could be
+   the replica's client port; the replica then failed to start with "Address
    already in use". */
 in_port_t ProbeFreePort() {
   static mutex handed_out_mutex;
@@ -478,7 +478,7 @@ class TChildServer final {
 };  // TChildServer
 
 /* Client that records replication acknowledgements so the test can wait for
-   an update to reach the slave. */
+   an update to reach the replica. */
 class TExerciseClient final
     : public TClient {
   public:
@@ -486,7 +486,7 @@ class TExerciseClient final
   TExerciseClient(const TAddress &addr)
       : TClient(addr, std::nullopt, seconds(600)) {}
 
-  /* True once the slave has acknowledged the update; false on deadline. */
+  /* True once the replica has acknowledged the update; false on deadline. */
   bool WaitForReplication(const Base::TUuid &tracker_id, const Base::TUuid &repo_id, seconds deadline) {
     std::unique_lock<std::mutex> lock(ReplicationMutex);
     auto search_pair = make_pair(tracker_id, repo_id);
@@ -572,9 +572,9 @@ vector<string> MakeServerArgs(const string &orlyi_path,
                               const string &instance_name,
                               const string &pkg_dir,
                               in_port_t port,
-                              in_port_t slave_port,
+                              in_port_t replica_port,
                               const string &starting_state,
-                              in_port_t master_slave_port,
+                              in_port_t primary_replica_port,
                               const vector<string> &extra_args = {}) {
   vector<string> args = {
       orlyi_path,
@@ -585,7 +585,7 @@ vector<string> MakeServerArgs(const string &orlyi_path,
       "--instance_name=" + instance_name,
       "--starting_state=" + starting_state,
       "--port_number=" + to_string(port),
-      "--replica_port_number=" + to_string(slave_port),
+      "--replica_port_number=" + to_string(replica_port),
       "--ws_port_number=" + to_string(ProbeFreePort()),
       "--reporting_port_number=" + to_string(ProbeFreePort()),
       "--connection_backlog=10",
@@ -598,7 +598,7 @@ vector<string> MakeServerArgs(const string &orlyi_path,
       "--log_notice",
       "--log_warning"};
   if (starting_state == "REPLICA") {
-    args.push_back("--address_of_primary=127.0.0.1:" + to_string(master_slave_port));
+    args.push_back("--address_of_primary=127.0.0.1:" + to_string(primary_replica_port));
   }
   args.insert(args.end(), extra_args.begin(), extra_args.end());
   return args;
@@ -615,9 +615,9 @@ Rt::TOpt<int64_t> ReadVal(const shared_ptr<TExerciseClient> &client, const Base:
   return out;
 }
 
-/* write_val(n, x) via the given client and wait for the slave to
+/* write_val(n, x) via the given client and wait for the replica to
    acknowledge the replication to the pov; false on deadline.  With wait_for_global, also wait for the
-   slave to acknowledge the write's promotion to the global pov, for a test that reads the global pov
+   replica to acknowledge the write's promotion to the global pov, for a test that reads the global pov
    afterwards.  Only a write that is promoted gets that acknowledgement. */
 bool WriteValReplicated(const shared_ptr<TExerciseClient> &client,
                         const Base::TUuid &pov_id,
@@ -656,7 +656,7 @@ void WriteVal(const shared_ptr<TExerciseClient> &client, const Base::TUuid &pov_
 }
 
 /* read_val(n) against the given server with retries, for reads against a
-   slave that is still promoting or catching up.  Returns the value once a
+   replica that is still promoting or catching up.  Returns the value once a
    successful RPC yields a known value; unknown only after the deadline. */
 Rt::TOpt<int64_t> ReadWithRetry(const TAddress &addr, int64_t n, seconds deadline) {
   const auto give_up = steady_clock::now() + deadline;
@@ -711,13 +711,13 @@ size_t CountPruningMerges(const string &path) {
   return count;
 }
 
-/* On a solo master, overwrite the same keys round after round. Then wait until two things have
+/* On a solo primary, overwrite the same keys round after round. Then wait until two things have
    happened: the writes have reached the global pov, and a disk merge has dropped superseded
-   versions there since the writes began. A slave that joins after this reads files that merge
+   versions there since the writes began. A replica that joins after this reads files that merge
    has pruned (#592). */
-void OverwriteUntilPruned(const TAddress &master_addr, const string &master_log) {
-  const size_t pruned_before = CountPruningMerges(master_log);
-  auto client = make_shared<TExerciseClient>(master_addr);
+void OverwriteUntilPruned(const TAddress &primary_addr, const string &primary_log) {
+  const size_t pruned_before = CountPruningMerges(primary_log);
+  auto client = make_shared<TExerciseClient>(primary_addr);
   auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
   for (int64_t round = 1L; round <= OverwriteRounds; ++round) {
     for (int64_t key = 0L; key < OverwrittenKeys; ++key) {
@@ -728,20 +728,20 @@ void OverwriteUntilPruned(const TAddress &master_addr, const string &master_log)
   const int64_t last_key = OverwrittenKeys - 1L;
   const auto give_up = steady_clock::now() + seconds(120);
   for (;;) {
-    Rt::TOpt<int64_t> row = ReadWithRetry(master_addr, OverwrittenKeyBase + last_key, seconds(30));
+    Rt::TOpt<int64_t> row = ReadWithRetry(primary_addr, OverwrittenKeyBase + last_key, seconds(30));
     if (row.IsKnown() && row.GetVal() == OverwrittenVal(OverwriteRounds, last_key)) {
       break;
     }
     if (steady_clock::now() >= give_up) {
-      throw runtime_error("the overwrites never reached the global pov; see " + master_log);
+      throw runtime_error("the overwrites never reached the global pov; see " + primary_log);
     }
     this_thread::sleep_for(milliseconds(200));
   }
   /* The memory merge flushes the global pov every 40ms and the disk merge runs every 10ms, so
      the overwrites span many files, and a pruning merge follows them closely. */
-  while (CountPruningMerges(master_log) <= pruned_before) {
+  while (CountPruningMerges(primary_log) <= pruned_before) {
     if (steady_clock::now() >= give_up) {
-      throw runtime_error("no disk merge of the global pov dropped any update; see " + master_log);
+      throw runtime_error("no disk merge of the global pov dropped any update; see " + primary_log);
     }
     this_thread::sleep_for(milliseconds(200));
   }
@@ -842,30 +842,30 @@ FIXTURE(ImportReplication) {
   }
   Compiler::Compile(TPath(scratch + "/sample2.orly"), Jhm::TTree(pkg_dir), {});
 
-  /* The import files whose rows will mint a fresh index id on the master. */
+  /* The import files whose rows will mint a fresh index id on the primary. */
   WriteImportFile(scratch + "/import.0.bin", 42L, 4242L);
   WriteImportFile(scratch + "/import.1.bin", 43L, 4343L);
   const string import_pattern = scratch + "/import.*.bin";
   /* A lone third file, imported by itself: the no-merge path (#497). */
   WriteImportFile(scratch + "/single.bin", 44L, 4444L);
 
-  /* Launch the master (solo) and wait for it to accept connections. */
-  const in_port_t master_port = ProbeFreePort();
-  const in_port_t master_slave_port = ProbeFreePort();
-  const string master_log = scratch + "/master.log";
-  log_dumper.Add(master_log);
-  TChildServer master(
-      MakeServerArgs(orlyi_path, "import_repl_master", pkg_dir, master_port,
-                     master_slave_port, "SOLO", 0),
-      master_log);
-  if (!WaitForPort(master_port, seconds(240))) {
-    throw runtime_error("master never came up; see " + master_log);
+  /* Launch the primary (solo) and wait for it to accept connections. */
+  const in_port_t primary_port = ProbeFreePort();
+  const in_port_t primary_replica_port = ProbeFreePort();
+  const string primary_log = scratch + "/primary.log";
+  log_dumper.Add(primary_log);
+  TChildServer primary(
+      MakeServerArgs(orlyi_path, "import_repl_primary", pkg_dir, primary_port,
+                     primary_replica_port, "SOLO", 0),
+      primary_log);
+  if (!WaitForPort(primary_port, seconds(240))) {
+    throw runtime_error("primary never came up; see " + primary_log);
   }
-  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  const TAddress primary_addr(TAddress::IPv4Loopback, primary_port);
 
   /* Import while solo — the only legal time (#498).  The importer mints the
-     index id itself: this mapping is what must later reach the slaves. */ {
-    auto client = make_shared<TExerciseClient>(master_addr);
+     index id itself: this mapping is what must later reach the replicas. */ {
+    auto client = make_shared<TExerciseClient>(primary_addr);
     Answered(client->BeginImport(), "BeginImport")->Sync();
     /* merge_simultaneous must exceed the file count divided by the merge
        rounds you can afford: a value of 1 merges each file into itself and
@@ -900,34 +900,34 @@ FIXTURE(ImportReplication) {
     }
   }
 
-  /* Attach slave 1.  The join-time sync must deliver the imported data
-     files (inventory sync) and the index-id mapping, which the slave logs
+  /* Attach replica 1.  The join-time sync must deliver the imported data
+     files (inventory sync) and the index-id mapping, which the replica logs
      as it applies it (#367). */
-  const in_port_t slave_1_port = ProbeFreePort();
-  const string slave_1_log = scratch + "/slave_1.log";
-  log_dumper.Add(slave_1_log);
-  TChildServer slave_1(
-      MakeServerArgs(orlyi_path, "import_repl_slave_1", pkg_dir, slave_1_port,
-                     ProbeFreePort(), "REPLICA", master_slave_port),
-      slave_1_log);
-  if (!WaitForPort(slave_1_port, seconds(240))) {
-    throw runtime_error("slave 1 never came up; see " + slave_1_log);
+  const in_port_t replica_1_port = ProbeFreePort();
+  const string replica_1_log = scratch + "/replica_1.log";
+  log_dumper.Add(replica_1_log);
+  TChildServer replica_1(
+      MakeServerArgs(orlyi_path, "import_repl_replica_1", pkg_dir, replica_1_port,
+                     ProbeFreePort(), "REPLICA", primary_replica_port),
+      replica_1_log);
+  if (!WaitForPort(replica_1_port, seconds(240))) {
+    throw runtime_error("replica 1 never came up; see " + replica_1_log);
   }
-  if (!WaitForLog(slave_1_log, "to [Slave]", seconds(120))) {
-    throw runtime_error("slave 1 never reached Slave state; see " + slave_1_log);
+  if (!WaitForLog(replica_1_log, "to [Replica]", seconds(120))) {
+    throw runtime_error("replica 1 never reached Replica state; see " + replica_1_log);
   }
-  EXPECT_TRUE(WaitForLog(slave_1_log, "Replicating index [", seconds(60)));
-  EXPECT_TRUE(LogContains(slave_1_log, "sample tuple(str, int64)"));
+  EXPECT_TRUE(WaitForLog(replica_1_log, "Replicating index [", seconds(60)));
+  EXPECT_TRUE(LogContains(replica_1_log, "sample tuple(str, int64)"));
 
-  /* Install a second package on the PAIRED master: its index id is minted
-     now, so it must reach the slave on the live replication stream (the
+  /* Install a second package on the PAIRED primary: its index id is minted
+     now, so it must reach the replica on the live replication stream (the
      enqueue side of #367 -- the first package's mapping traveled with the
      join instead), and the system-repo commits the install replicates must
      not disrupt the notification pass (#499). */ {
-    auto client = make_shared<TExerciseClient>(master_addr);
+    auto client = make_shared<TExerciseClient>(primary_addr);
     Answered(client->InstallPackage({ "sample2" }, 1), "InstallPackage sample2")->Sync();
-    EXPECT_TRUE(WaitForLog(slave_1_log, "sample2 tuple(str, int64)", seconds(120)));
-    EXPECT_TRUE(!LogContains(master_log, "RunReplicateTransaction error"));
+    EXPECT_TRUE(WaitForLog(replica_1_log, "sample2 tuple(str, int64)", seconds(120)));
+    EXPECT_TRUE(!LogContains(primary_log, "RunReplicateTransaction error"));
     /* A write's replication ack must survive sharing the stream with the
        install's system-repo commits (#499 ate the rest of the batch's
        notifications). */
@@ -935,9 +935,9 @@ FIXTURE(ImportReplication) {
     EXPECT_TRUE(WriteValReplicated(client, **pov_id, 9L, 909L));
   }
 
-  /* With a slave attached, an import must be refused up front (#498), and
-     the refusal must leave the master healthy. */ {
-    auto client = make_shared<TExerciseClient>(master_addr);
+  /* With a replica attached, an import must be refused up front (#498), and
+     the refusal must leave the primary healthy. */ {
+    auto client = make_shared<TExerciseClient>(primary_addr);
     bool import_refused = false;
     try {
       Answered(client->BeginImport(), "BeginImport (paired)")->Sync();
@@ -946,89 +946,89 @@ FIXTURE(ImportReplication) {
     }
     EXPECT_TRUE(import_refused);
 
-    /* Master still healthy: install on the slave, write through the master,
-       and wait for the slave to acknowledge the replication. */
-    auto slave_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, slave_1_port));
-    Answered(slave_client->InstallPackage({ "sample" }, 1), "InstallPackage on slave 1")->Sync();
+    /* Primary still healthy: install on the replica, write through the primary,
+       and wait for the replica to acknowledge the replication. */
+    auto replica_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, replica_1_port));
+    Answered(replica_client->InstallPackage({ "sample" }, 1), "InstallPackage on replica 1")->Sync();
     auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
     EXPECT_TRUE(WriteValReplicated(client, **pov_id, 7L, 707L));
   }
 
-  /* Kill slave 1: the master must demote back to solo, stay alive, and
-     re-arm for a new slave (#500).  The pause first lets the just-destroyed
+  /* Kill replica 1: the primary must demote back to solo, stay alive, and
+     re-arm for a new replica (#500).  The pause first lets the just-destroyed
      clients' dispatch threads wind down before their server goes away. */
   this_thread::sleep_for(seconds(2));
-  cout << "Stopping slave 1" << endl;
-  /* SIGKILL, not SIGINT: what this test needs is the master's reaction to
-     the slave VANISHING, which a hard kill delivers deterministically (a
-     graceful slave stop demotes the master through the same path but on the
-     slave's schedule). */
-  slave_1.Kill();
-  slave_1.Reap(seconds(60));
-  if (!WaitForLog(master_log, "demoted back to solo", seconds(120))) {
-    throw runtime_error("master never demoted after slave 1 died; see " + master_log);
+  cout << "Stopping replica 1" << endl;
+  /* SIGKILL, not SIGINT: what this test needs is the primary's reaction to
+     the replica VANISHING, which a hard kill delivers deterministically (a
+     graceful replica stop demotes the primary through the same path but on the
+     replica's schedule). */
+  replica_1.Kill();
+  replica_1.Reap(seconds(60));
+  if (!WaitForLog(primary_log, "demoted back to solo", seconds(120))) {
+    throw runtime_error("primary never demoted after replica 1 died; see " + primary_log);
   }
-  EXPECT_TRUE(master.IsAlive());
+  EXPECT_TRUE(primary.IsAlive());
 
   /* While solo, overwrite the same keys round after round, until a disk merge has dropped
-     superseded versions (#592). Slave 2's join must still carry every key's latest value in the
+     superseded versions (#592). Replica 2's join must still carry every key's latest value in the
      data files it copies. */
-  OverwriteUntilPruned(master_addr, master_log);
+  OverwriteUntilPruned(primary_addr, primary_log);
 
-  /* Attach slave 2: the re-armed master must accept it (#500), and the
+  /* Attach replica 2: the re-armed primary must accept it (#500), and the
      join must again deliver files and mapping. */
-  const in_port_t slave_2_port = ProbeFreePort();
-  const string slave_2_log = scratch + "/slave_2.log";
-  log_dumper.Add(slave_2_log);
-  TChildServer slave_2(
-      MakeServerArgs(orlyi_path, "import_repl_slave_2", pkg_dir, slave_2_port,
-                     ProbeFreePort(), "REPLICA", master_slave_port),
-      slave_2_log);
-  if (!WaitForPort(slave_2_port, seconds(240))) {
-    throw runtime_error("slave 2 never came up; see " + slave_2_log);
+  const in_port_t replica_2_port = ProbeFreePort();
+  const string replica_2_log = scratch + "/replica_2.log";
+  log_dumper.Add(replica_2_log);
+  TChildServer replica_2(
+      MakeServerArgs(orlyi_path, "import_repl_replica_2", pkg_dir, replica_2_port,
+                     ProbeFreePort(), "REPLICA", primary_replica_port),
+      replica_2_log);
+  if (!WaitForPort(replica_2_port, seconds(240))) {
+    throw runtime_error("replica 2 never came up; see " + replica_2_log);
   }
-  if (!WaitForLog(slave_2_log, "to [Slave]", seconds(120))) {
-    throw runtime_error("slave 2 never reached Slave state; see " + slave_2_log);
+  if (!WaitForLog(replica_2_log, "to [Replica]", seconds(120))) {
+    throw runtime_error("replica 2 never reached Replica state; see " + replica_2_log);
   }
-  EXPECT_TRUE(WaitForLog(slave_2_log, "Replicating index [", seconds(60)));
-  /* the join copied the master's data files, pruned ones included (#592) */
-  EXPECT_TRUE(LogContains(slave_2_log, "sync file ["));
+  EXPECT_TRUE(WaitForLog(replica_2_log, "Replicating index [", seconds(60)));
+  /* the join copied the primary's data files, pruned ones included (#592) */
+  EXPECT_TRUE(LogContains(replica_2_log, "sync file ["));
 
-  /* Install on slave 2, then push one more row through the master so the
-     live stream to slave 2 is exercised too. */ {
-    auto slave_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, slave_2_port));
-    Answered(slave_client->InstallPackage({ "sample" }, 1), "InstallPackage on slave 2")->Sync();
-    auto client = make_shared<TExerciseClient>(master_addr);
+  /* Install on replica 2, then push one more row through the primary so the
+     live stream to replica 2 is exercised too. */ {
+    auto replica_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, replica_2_port));
+    Answered(replica_client->InstallPackage({ "sample" }, 1), "InstallPackage on replica 2")->Sync();
+    auto client = make_shared<TExerciseClient>(primary_addr);
     auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
     EXPECT_TRUE(WriteValReplicated(client, **pov_id, 8L, 808L));
   }
 
   /* Both servers must have survived the whole exercise.  Reading the
-     replicated rows back on a promoted slave 2 is what SHOULD close this
+     replicated rows back on a promoted replica 2 is what SHOULD close this
      out; it waits on #501 (see the header comment). */
-  EXPECT_TRUE(master.IsAlive());
-  EXPECT_TRUE(slave_2.IsAlive());
+  EXPECT_TRUE(primary.IsAlive());
+  EXPECT_TRUE(replica_2.IsAlive());
 
-  /* Fail over: kill the master; slave 2 promotes itself to solo.  SIGKILL,
-     because the slave promotes on connection DEATH; a graceful master
-     shutdown demotes itself first and the slave never takes the promotion
+  /* Fail over: kill the primary; replica 2 promotes itself to solo.  SIGKILL,
+     because the replica promotes on connection DEATH; a graceful primary
+     shutdown demotes itself first and the replica never takes the promotion
      path (graceful paired shutdown is the other fixture's to pin, #461). */
   this_thread::sleep_for(seconds(2));
-  cout << "Stopping the master" << endl;
-  master.Kill();
-  master.Reap(seconds(60));
-  if (!WaitForLog(slave_2_log, "slave promoted to solo", seconds(120))) {
-    throw runtime_error("slave 2 never promoted; see " + slave_2_log);
+  cout << "Stopping the primary" << endl;
+  primary.Kill();
+  primary.Reap(seconds(60));
+  if (!WaitForLog(replica_2_log, "replica promoted to solo", seconds(120))) {
+    throw runtime_error("replica 2 never promoted; see " + replica_2_log);
   }
 
-  /* Every row must be readable on the promoted slave: the imported rows and
+  /* Every row must be readable on the promoted replica: the imported rows and
      the pre-join write prove the synced data files are readable (#501, #367),
-     and the last write proves the live stream to a post-demote slave (#500).
+     and the last write proves the live stream to a post-demote replica (#500).
      The first read absorbs whatever promotion work remains. */
   const int64_t expected_by_key[][2] = {{42L, 4242L}, {43L, 4343L}, {44L, 4444L}, {9L, 909L}, {7L, 707L}, {8L, 808L}};
   seconds deadline = seconds(120);
   for (const auto &pair : expected_by_key) {
-    Rt::TOpt<int64_t> row = ReadWithRetry(TAddress(TAddress::IPv4Loopback, slave_2_port), pair[0], deadline);
+    Rt::TOpt<int64_t> row = ReadWithRetry(TAddress(TAddress::IPv4Loopback, replica_2_port), pair[0], deadline);
     EXPECT_TRUE(row.IsKnown());
     if (row.IsKnown()) {
       EXPECT_EQ(row.GetVal(), pair[1]);
@@ -1036,10 +1036,10 @@ FIXTURE(ImportReplication) {
     deadline = seconds(30);
   }
   /* ...and so must every overwritten key, at its last value (#592). */
-  ExpectOverwrittenKeys(TAddress(TAddress::IPv4Loopback, slave_2_port));
+  ExpectOverwrittenKeys(TAddress(TAddress::IPv4Loopback, replica_2_port));
 }
 
-/* #592: a slave joining with --allow_file_sync=false pulls the master's updates over key ranges
+/* #592: a replica joining with --allow_file_sync=false pulls the primary's updates over key ranges
    (PullUpdateRange), walking files a disk merge has pruned, instead of copying the files. After
    it promotes, every overwritten key must read its last value. */
 FIXTURE(PrunedJoinWithoutFileSync) {
@@ -1059,59 +1059,59 @@ FIXTURE(PrunedJoinWithoutFileSync) {
   }
   Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(pkg_dir), {});
 
-  const in_port_t master_port = ProbeFreePort();
-  const in_port_t master_slave_port = ProbeFreePort();
-  const string master_log = scratch + "/master.log";
-  log_dumper.Add(master_log);
-  TChildServer master(
-      MakeServerArgs(orlyi_path, "pruned_join_master", pkg_dir, master_port,
-                     master_slave_port, "SOLO", 0),
-      master_log);
-  if (!WaitForPort(master_port, seconds(240))) {
-    throw runtime_error("master never came up; see " + master_log);
+  const in_port_t primary_port = ProbeFreePort();
+  const in_port_t primary_replica_port = ProbeFreePort();
+  const string primary_log = scratch + "/primary.log";
+  log_dumper.Add(primary_log);
+  TChildServer primary(
+      MakeServerArgs(orlyi_path, "pruned_join_primary", pkg_dir, primary_port,
+                     primary_replica_port, "SOLO", 0),
+      primary_log);
+  if (!WaitForPort(primary_port, seconds(240))) {
+    throw runtime_error("primary never came up; see " + primary_log);
   }
-  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  const TAddress primary_addr(TAddress::IPv4Loopback, primary_port);
   {
-    auto client = make_shared<TExerciseClient>(master_addr);
+    auto client = make_shared<TExerciseClient>(primary_addr);
     Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage sample")->Sync();
   }
-  OverwriteUntilPruned(master_addr, master_log);
+  OverwriteUntilPruned(primary_addr, primary_log);
 
-  const in_port_t slave_port = ProbeFreePort();
-  const string slave_log = scratch + "/slave.log";
-  log_dumper.Add(slave_log);
-  TChildServer slave(
-      MakeServerArgs(orlyi_path, "pruned_join_slave", pkg_dir, slave_port,
-                     ProbeFreePort(), "REPLICA", master_slave_port, {"--allow_file_sync=false"}),
-      slave_log);
-  if (!WaitForPort(slave_port, seconds(240))) {
-    throw runtime_error("slave never came up; see " + slave_log);
+  const in_port_t replica_port = ProbeFreePort();
+  const string replica_log = scratch + "/replica.log";
+  log_dumper.Add(replica_log);
+  TChildServer replica(
+      MakeServerArgs(orlyi_path, "pruned_join_replica", pkg_dir, replica_port,
+                     ProbeFreePort(), "REPLICA", primary_replica_port, {"--allow_file_sync=false"}),
+      replica_log);
+  if (!WaitForPort(replica_port, seconds(240))) {
+    throw runtime_error("replica never came up; see " + replica_log);
   }
-  if (!WaitForLog(slave_log, "to [Slave]", seconds(120))) {
-    throw runtime_error("slave never reached Slave state; see " + slave_log);
+  if (!WaitForLog(replica_log, "to [Replica]", seconds(120))) {
+    throw runtime_error("replica never reached Replica state; see " + replica_log);
   }
   /* it pulled updates, and copied no file */
-  EXPECT_TRUE(LogContains(slave_log, "TSlave: PullUpdateRange from ["));
-  EXPECT_TRUE(!LogContains(slave_log, "sync file ["));
+  EXPECT_TRUE(LogContains(replica_log, "TReplica: PullUpdateRange from ["));
+  EXPECT_TRUE(!LogContains(replica_log, "sync file ["));
   {
-    auto slave_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, slave_port));
-    Answered(slave_client->InstallPackage({ "sample" }, 1), "InstallPackage on slave")->Sync();
+    auto replica_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, replica_port));
+    Answered(replica_client->InstallPackage({ "sample" }, 1), "InstallPackage on replica")->Sync();
   }
 
-  /* Promote the slave: SIGKILL the master (see the header comment). The pause lets the
+  /* Promote the replica: SIGKILL the primary (see the header comment). The pause lets the
      just-destroyed clients' dispatch threads wind down first. */
   this_thread::sleep_for(seconds(2));
-  master.Kill();
-  master.Reap(seconds(60));
-  if (!WaitForLog(slave_log, "slave promoted to solo", seconds(120))) {
-    throw runtime_error("slave never promoted; see " + slave_log);
+  primary.Kill();
+  primary.Reap(seconds(60));
+  if (!WaitForLog(replica_log, "replica promoted to solo", seconds(120))) {
+    throw runtime_error("replica never promoted; see " + replica_log);
   }
-  ExpectOverwrittenKeys(TAddress(TAddress::IPv4Loopback, slave_port));
+  ExpectOverwrittenKeys(TAddress(TAddress::IPv4Loopback, replica_port));
 }
 
-/* #461: graceful shutdown of a PAIRED master whose slave has gone
-   unresponsive.  SIGSTOP keeps the slave's replication socket open but the
-   process silent: the master's replicate loop writes its PushNotifications
+/* #461: graceful shutdown of a PAIRED primary whose replica has gone
+   unresponsive.  SIGSTOP keeps the replica's replication socket open but the
+   process silent: the primary's replicate loop writes its PushNotifications
    RPC into the socket (the fresh RPC-write log line is the evidence it got
    there) and parks in future->Sync() with no answer ever coming.  A
    graceful SIGINT must still complete: StopReplicationServices() hard-closes
@@ -1123,7 +1123,7 @@ FIXTURE(PrunedJoinWithoutFileSync) {
    then silence) across the shutdown: the drain must hard-close it so its
    TConnection releases the session's durable ptr before Clear() runs,
    instead of Clear() logging-and-leaking the still-ptr'd session (#460). */
-FIXTURE(GracefulShutdownUnresponsiveSlave) {
+FIXTURE(GracefulShutdownUnresponsiveReplica) {
   Orly::Type::TTypeCzar type_czar;
   const string scratch = GetScratchDir();
   const string orlyi_path = GetOrlyiPath();
@@ -1134,7 +1134,7 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
 
   /* One package, installed while solo (like the main fixture); all this
      fixture needs is one write to push through the replication stream once
-     the slave has stopped answering. */
+     the replica has stopped answering. */
   const string pkg_dir = scratch + "/packages";
   Util::IfLt0(mkdir(pkg_dir.c_str(), 0755));
   { ofstream marker(pkg_dir + "/__orly__"); }
@@ -1144,38 +1144,38 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
   }
   Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(pkg_dir), {});
 
-  const in_port_t master_port = ProbeFreePort();
-  const in_port_t master_slave_port = ProbeFreePort();
-  const string master_log = scratch + "/master.log";
-  log_dumper.Add(master_log);
-  TChildServer master(
-      MakeServerArgs(orlyi_path, "graceful_master", pkg_dir, master_port,
-                     master_slave_port, "SOLO", 0),
-      master_log);
-  if (!WaitForPort(master_port, seconds(240))) {
-    throw runtime_error("master never came up; see " + master_log);
+  const in_port_t primary_port = ProbeFreePort();
+  const in_port_t primary_replica_port = ProbeFreePort();
+  const string primary_log = scratch + "/primary.log";
+  log_dumper.Add(primary_log);
+  TChildServer primary(
+      MakeServerArgs(orlyi_path, "graceful_primary", pkg_dir, primary_port,
+                     primary_replica_port, "SOLO", 0),
+      primary_log);
+  if (!WaitForPort(primary_port, seconds(240))) {
+    throw runtime_error("primary never came up; see " + primary_log);
   }
-  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  const TAddress primary_addr(TAddress::IPv4Loopback, primary_port);
   /* install scope */ {
-    auto client = make_shared<TExerciseClient>(master_addr);
+    auto client = make_shared<TExerciseClient>(primary_addr);
     Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage (graceful)")->Sync();
   }
 
-  const in_port_t slave_port = ProbeFreePort();
-  const string slave_log = scratch + "/slave.log";
-  log_dumper.Add(slave_log);
-  TChildServer slave(
-      MakeServerArgs(orlyi_path, "graceful_slave", pkg_dir, slave_port,
-                     ProbeFreePort(), "REPLICA", master_slave_port),
-      slave_log);
-  if (!WaitForLog(slave_log, "to [Slave]", seconds(240))) {
-    throw runtime_error("slave never reached Slave state; see " + slave_log);
+  const in_port_t replica_port = ProbeFreePort();
+  const string replica_log = scratch + "/replica.log";
+  log_dumper.Add(replica_log);
+  TChildServer replica(
+      MakeServerArgs(orlyi_path, "graceful_replica", pkg_dir, replica_port,
+                     ProbeFreePort(), "REPLICA", primary_replica_port),
+      replica_log);
+  if (!WaitForLog(replica_log, "to [Replica]", seconds(240))) {
+    throw runtime_error("replica never reached Replica state; see " + replica_log);
   }
 
   /* A raw, handshaked-then-silent client connection, still ESTABLISHED when
-     the master shuts down: the #460 shape.  (A real TClient would abort()
+     the primary shuts down: the #460 shape.  (A real TClient would abort()
      this test process when the server hard-closes on it, so speak the
-     12-byte handshake by hand and just hold the fd.)  The master's drain
+     12-byte handshake by hand and just hold the fd.)  The primary's drain
      must hard-close it so its TConnection releases the session's durable
      ptr before Clear() runs. */
   TFd silent_client(socket(AF_INET, SOCK_STREAM, 0));
@@ -1183,7 +1183,7 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
     sockaddr_in addr;
     Base::Zero(addr);
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(master_port);
+    addr.sin_port = htons(primary_port);
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     Util::IfLt0(::connect(silent_client, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)));
     Handshake::THandshake<Handshake::TNewSession> handshake((seconds(600)));
@@ -1194,27 +1194,27 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
       ssize_t piece = ::recv(silent_client, reinterpret_cast<char *>(&reply) + got, sizeof(reply) - got, 0);
       Util::IfLt0(piece);
       if (!piece) {
-        throw runtime_error("master closed the silent connection during its handshake; see " + master_log);
+        throw runtime_error("primary closed the silent connection during its handshake; see " + primary_log);
       }
       got += static_cast<size_t>(piece);
     }
   }
 
-  /* Freeze the slave, then push one write through the master so the
+  /* Freeze the replica, then push one write through the primary so the
      replicate loop has something to push against the frozen peer. */
-  const char *push_marker = "Write TSlave::PushNotificationsId took";
-  const char *ack_marker = "Write TSlave::PushNotificationsId acked";
-  cout << "Suspending the slave" << endl;
-  slave.Suspend();
+  const char *push_marker = "Write TReplica::PushNotificationsId took";
+  const char *ack_marker = "Write TReplica::PushNotificationsId acked";
+  cout << "Suspending the replica" << endl;
+  replica.Suspend();
   /* write scope */ {
     void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-    auto client = make_shared<TExerciseClient>(master_addr);
-    /* ttl=0 on purpose: with the slave frozen, the pov's write is parked on
+    auto client = make_shared<TExerciseClient>(primary_addr);
+    /* ttl=0 on purpose: with the replica frozen, the pov's write is parked on
        the replication stream, so the pov's repo dies (client disconnect, then
        shutdown teardown) with that write still in its memory layer.  That
        discard is sanctioned -- expiry of an unsafe pov drops unmerged data by
        contract -- and must not trip the ~TRepo lifecycle assert, which would
-       abort the master mid-shutdown and fail the Reap below (#521). */
+       abort the primary mid-shutdown and fail the Reap below (#521). */
     auto pov_id = Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)),
                            "NewFastPrivatePov (graceful)");
     auto push_result = Answered(client->Try(**pov_id, { "sample" }, TClosure(string("write_val"),
@@ -1233,64 +1233,64 @@ FIXTURE(GracefulShutdownUnresponsiveSlave) {
      pov's write can generate another marker, and a fresh one can never
      come (#520).  This wait terminates either way: the loop is already
      parked (an unacked marker exists), or it is idle and the pov write
-     forces one more push that the frozen slave can never answer. */
+     forces one more push that the frozen replica can never answer. */
   const auto marker_deadline = steady_clock::now() + seconds(60);
-  while (CountInLog(master_log, push_marker) <= CountInLog(master_log, ack_marker)) {
+  while (CountInLog(primary_log, push_marker) <= CountInLog(primary_log, ack_marker)) {
     if (steady_clock::now() >= marker_deadline) {
-      throw runtime_error("master never parked a replication push against the frozen slave"
-                          " (slave: " + slave.Describe() + "); see " + master_log);
+      throw runtime_error("primary never parked a replication push against the frozen replica"
+                          " (replica: " + replica.Describe() + "); see " + primary_log);
     }
     this_thread::sleep_for(milliseconds(250));
   }
 
   /* The point of the fixture: graceful shutdown must complete despite the
-     in-flight replication RPC.  Record the slave's state first: if it was
-     killed rather than frozen (OOM, assert), the master sees a dead peer --
+     in-flight replication RPC.  Record the replica's state first: if it was
+     killed rather than frozen (OOM, assert), the primary sees a dead peer --
      a different scenario than the one this fixture pins, and the one thing
      the CI logs could not tell us in #520. */
-  cout << "Slave state before interrupting the master: " << slave.Describe() << endl;
-  cout << "Interrupting the master" << endl;
-  master.Interrupt();
+  cout << "Replica state before interrupting the primary: " << replica.Describe() << endl;
+  cout << "Interrupting the primary" << endl;
+  primary.Interrupt();
   /* Interrogate BEFORE asserting: a failed Reap is the only moment the wedged
      process still exists, and #564 has so far cost two CI failures that could
      not be diagnosed afterwards from log tails.  Reap() leaves Pid set when it
      times out, so the child is still there to read. */
-  const bool master_reaped = master.Reap(seconds(60));
-  if (!master_reaped) {
-    cout << "master did not exit within 60s of SIGINT -- interrogating before it dies (#564)" << endl;
-    master.DumpWedge(cout);
+  const bool primary_reaped = primary.Reap(seconds(60));
+  if (!primary_reaped) {
+    cout << "primary did not exit within 60s of SIGINT -- interrogating before it dies (#564)" << endl;
+    primary.DumpWedge(cout);
   }
-  EXPECT_TRUE(master_reaped);
-  EXPECT_TRUE(LogContains(master_log, "RunReplicationQueue shutting down (#461)"));
+  EXPECT_TRUE(primary_reaped);
+  EXPECT_TRUE(LogContains(primary_log, "RunReplicationQueue shutting down (#461)"));
   /* The drain must have seen the silent connection (#460)... */
-  EXPECT_TRUE(LogContains(master_log, "draining ["));
+  EXPECT_TRUE(LogContains(primary_log, "draining ["));
   /* ...and Clear() must therefore have found no still-ptr'd durable to
      log-and-leak. */
-  EXPECT_TRUE(!LogContains(master_log, "leaking it"));
+  EXPECT_TRUE(!LogContains(primary_log, "leaking it"));
   /* The whole teardown must have run to its end marker: an abort anywhere
      mid-Shutdown -- e.g. the #521 ~TRepo lifecycle assert tripping on the
      ttl=0 pov's repo, whose parked write it must discard as sanctioned --
      dies before this line (Reap alone cannot see that; it ignores how the
      child exited). */
-  EXPECT_TRUE(LogContains(master_log, "TServer::Shutdown() complete"));
+  EXPECT_TRUE(LogContains(primary_log, "TServer::Shutdown() complete"));
   /* ...and the exit itself must be clean.  The static disk-event pool
      manager used to find leaked per-thread pools in __run_exit_handlers
      and terminate AFTER that marker, turning every graceful shutdown into
      exit 134 (#522). */
-  EXPECT_TRUE(master.ExitedCleanly());
+  EXPECT_TRUE(primary.ExitedCleanly());
 
-  slave.Kill();
-  slave.Reap(seconds(60));
+  replica.Kill();
+  replica.Reap(seconds(60));
 }
 
-/* #655: pausing or unpausing a pov with no unpromoted writes, on a master with a live slave.  The
+/* #655: pausing or unpausing a pov with no unpromoted writes, on a primary with a live replica.  The
    status change's replicated sequence number is the pov's lowest unpromoted one, which an empty pov
-   doesn't have: the master's replication pass dereferenced the empty optional (an assert in debug,
-   garbage on the wire in release), and the slave dereferenced its own copy's empty one again.  The
+   doesn't have: the primary's replication pass dereferenced the empty optional (an assert in debug,
+   garbage on the wire in release), and the replica dereferenced its own copy's empty one again.  The
    common "pause, then write" order does exactly this, because the pov is empty when the pause
-   commits.  Both servers must survive, and the slave must apply both status changes.
+   commits.  Both servers must survive, and the replica must apply both status changes.
 
-   No write follows: on a slave, the first replicated write to a pov created while paired crashes in
+   No write follows: on a replica, the first replicated write to a pov created while paired crashes in
    TRepo::AppendUpdate for a reason of its own (#661). */
 FIXTURE(PauseEmptyPovReplicates) {
   Orly::Type::TTypeCzar type_czar;
@@ -1309,36 +1309,36 @@ FIXTURE(PauseEmptyPovReplicates) {
   }
   Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(pkg_dir), {});
 
-  const in_port_t master_port = ProbeFreePort();
-  const in_port_t master_slave_port = ProbeFreePort();
-  const string master_log = scratch + "/master.log";
-  log_dumper.Add(master_log);
-  TChildServer master(
-      MakeServerArgs(orlyi_path, "pause_empty_master", pkg_dir, master_port,
-                     master_slave_port, "SOLO", 0),
-      master_log);
-  if (!WaitForPort(master_port, seconds(240))) {
-    throw runtime_error("master never came up; see " + master_log);
+  const in_port_t primary_port = ProbeFreePort();
+  const in_port_t primary_replica_port = ProbeFreePort();
+  const string primary_log = scratch + "/primary.log";
+  log_dumper.Add(primary_log);
+  TChildServer primary(
+      MakeServerArgs(orlyi_path, "pause_empty_primary", pkg_dir, primary_port,
+                     primary_replica_port, "SOLO", 0),
+      primary_log);
+  if (!WaitForPort(primary_port, seconds(240))) {
+    throw runtime_error("primary never came up; see " + primary_log);
   }
-  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  const TAddress primary_addr(TAddress::IPv4Loopback, primary_port);
   /* install scope */ {
-    auto client = make_shared<TExerciseClient>(master_addr);
+    auto client = make_shared<TExerciseClient>(primary_addr);
     Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage (pause empty)")->Sync();
   }
 
-  const in_port_t slave_port = ProbeFreePort();
-  const string slave_log = scratch + "/slave.log";
-  log_dumper.Add(slave_log);
-  TChildServer slave(
-      MakeServerArgs(orlyi_path, "pause_empty_slave", pkg_dir, slave_port,
-                     ProbeFreePort(), "REPLICA", master_slave_port),
-      slave_log);
-  if (!WaitForLog(slave_log, "to [Slave]", seconds(240))) {
-    throw runtime_error("slave never reached Slave state; see " + slave_log);
+  const in_port_t replica_port = ProbeFreePort();
+  const string replica_log = scratch + "/replica.log";
+  log_dumper.Add(replica_log);
+  TChildServer replica(
+      MakeServerArgs(orlyi_path, "pause_empty_replica", pkg_dir, replica_port,
+                     ProbeFreePort(), "REPLICA", primary_replica_port),
+      replica_log);
+  if (!WaitForLog(replica_log, "to [Replica]", seconds(240))) {
+    throw runtime_error("replica never reached Replica state; see " + replica_log);
   }
 
   /* client scope */ {
-    auto client = make_shared<TExerciseClient>(master_addr);
+    auto client = make_shared<TExerciseClient>(primary_addr);
     auto pov_id = Answered(client->NewSafeSharedPov(std::nullopt), "NewSafeSharedPov (pause empty)");
     /* Both on the empty pov. */
     Answered(client->PausePov(**pov_id), "PausePov (empty)")->Sync();
@@ -1346,30 +1346,30 @@ FIXTURE(PauseEmptyPovReplicates) {
     ostringstream strm;
     strm << **pov_id;
     const string pov_str = strm.str();
-    EXPECT_TRUE(WaitForLog(slave_log, "Slave applying pause of repo [" + pov_str + "]", seconds(60)));
-    EXPECT_TRUE(WaitForLog(slave_log, "Slave applying unpause of repo [" + pov_str + "]", seconds(60)));
-    /* The master's replication pass is where it used to abort, so give it a moment past the ack. */
+    EXPECT_TRUE(WaitForLog(replica_log, "Replica applying pause of repo [" + pov_str + "]", seconds(60)));
+    EXPECT_TRUE(WaitForLog(replica_log, "Replica applying unpause of repo [" + pov_str + "]", seconds(60)));
+    /* The primary's replication pass is where it used to abort, so give it a moment past the ack. */
     this_thread::sleep_for(seconds(2));
   }
-  const string master_state = master.Describe();
-  const string slave_state = slave.Describe();
-  cout << "master: " << master_state << "; slave: " << slave_state << endl;
-  EXPECT_TRUE(master_state.rfind("alive", 0) == 0);
-  EXPECT_TRUE(slave_state.rfind("alive", 0) == 0);
+  const string primary_state = primary.Describe();
+  const string replica_state = replica.Describe();
+  cout << "primary: " << primary_state << "; replica: " << replica_state << endl;
+  EXPECT_TRUE(primary_state.rfind("alive", 0) == 0);
+  EXPECT_TRUE(replica_state.rfind("alive", 0) == 0);
 
-  master.Kill();
-  master.Reap(seconds(60));
-  slave.Kill();
-  slave.Reap(seconds(60));
+  primary.Kill();
+  primary.Reap(seconds(60));
+  replica.Kill();
+  replica.Reap(seconds(60));
 }
 
-/* #661: a slave must survive writes to a pov that was created while the pair was up, and the
-   writes must replicate. The slave builds its copy of the pov's repo from the replicated repo
+/* #661: a replica must survive writes to a pov that was created while the pair was up, and the
+   writes must replicate. The replica builds its copy of the pov's repo from the replicated repo
    record and drops its pointer straight away, so the repo (ttl > 0) goes into the cache before
    the first push to it arrives. Caching used to force-release the repo's pointer to its parent
-   while still claiming a parent, so the first replicated write segfaulted the slave in
+   while still claiming a parent, so the first replicated write segfaulted the replica in
    TTetrisManager::Join. A safe shared pov, because it has a ttl (the default 600 s) and its
-   writes promote to the global pov, where the promoted slave can read them back. */
+   writes promote to the global pov, where the promoted replica can read them back. */
 FIXTURE(WriteToPovCreatedWhilePaired) {
   Orly::Type::TTypeCzar type_czar;
   const string scratch = GetScratchDir();
@@ -1387,124 +1387,124 @@ FIXTURE(WriteToPovCreatedWhilePaired) {
   }
   Compiler::Compile(TPath(scratch + "/sample.orly"), Jhm::TTree(pkg_dir), {});
 
-  const in_port_t master_port = ProbeFreePort();
-  const in_port_t master_slave_port = ProbeFreePort();
-  const string master_log = scratch + "/master.log";
-  log_dumper.Add(master_log);
-  TChildServer master(
-      MakeServerArgs(orlyi_path, "paired_pov_master", pkg_dir, master_port,
-                     master_slave_port, "SOLO", 0),
-      master_log);
-  if (!WaitForPort(master_port, seconds(240))) {
-    throw runtime_error("master never came up; see " + master_log);
+  const in_port_t primary_port = ProbeFreePort();
+  const in_port_t primary_replica_port = ProbeFreePort();
+  const string primary_log = scratch + "/primary.log";
+  log_dumper.Add(primary_log);
+  TChildServer primary(
+      MakeServerArgs(orlyi_path, "paired_pov_primary", pkg_dir, primary_port,
+                     primary_replica_port, "SOLO", 0),
+      primary_log);
+  if (!WaitForPort(primary_port, seconds(240))) {
+    throw runtime_error("primary never came up; see " + primary_log);
   }
-  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  const TAddress primary_addr(TAddress::IPv4Loopback, primary_port);
   {
-    auto client = make_shared<TExerciseClient>(master_addr);
+    auto client = make_shared<TExerciseClient>(primary_addr);
     Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage sample")->Sync();
   }
 
-  const in_port_t slave_port = ProbeFreePort();
-  const string slave_log = scratch + "/slave.log";
-  log_dumper.Add(slave_log);
-  TChildServer slave(
-      MakeServerArgs(orlyi_path, "paired_pov_slave", pkg_dir, slave_port,
-                     ProbeFreePort(), "REPLICA", master_slave_port),
-      slave_log);
-  if (!WaitForPort(slave_port, seconds(240))) {
-    throw runtime_error("slave never came up; see " + slave_log);
+  const in_port_t replica_port = ProbeFreePort();
+  const string replica_log = scratch + "/replica.log";
+  log_dumper.Add(replica_log);
+  TChildServer replica(
+      MakeServerArgs(orlyi_path, "paired_pov_replica", pkg_dir, replica_port,
+                     ProbeFreePort(), "REPLICA", primary_replica_port),
+      replica_log);
+  if (!WaitForPort(replica_port, seconds(240))) {
+    throw runtime_error("replica never came up; see " + replica_log);
   }
-  if (!WaitForLog(slave_log, "to [Slave]", seconds(120))) {
-    throw runtime_error("slave never reached Slave state; see " + slave_log);
+  if (!WaitForLog(replica_log, "to [Replica]", seconds(120))) {
+    throw runtime_error("replica never reached Replica state; see " + replica_log);
   }
   {
-    auto slave_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, slave_port));
-    Answered(slave_client->InstallPackage({ "sample" }, 1), "InstallPackage on slave")->Sync();
+    auto replica_client = make_shared<TExerciseClient>(TAddress(TAddress::IPv4Loopback, replica_port));
+    Answered(replica_client->InstallPackage({ "sample" }, 1), "InstallPackage on replica")->Sync();
   }
 
-  /* The pov is created on the paired master, so the slave learns of it from the replication
-     stream. Two writes: the first reaches the slave's cached copy, the second its reopened one. */
+  /* The pov is created on the paired primary, so the replica learns of it from the replication
+     stream. Two writes: the first reaches the replica's cached copy, the second its reopened one. */
   {
-    auto client = make_shared<TExerciseClient>(master_addr);
+    auto client = make_shared<TExerciseClient>(primary_addr);
     auto pov_id = Answered(client->NewSafeSharedPov(std::nullopt), "NewSafeSharedPov");
     EXPECT_TRUE(WriteValReplicated(client, **pov_id, 61L, 6161L));
-    cout << "Slave state after the first write: " << slave.Describe() << endl;
+    cout << "Replica state after the first write: " << replica.Describe() << endl;
     EXPECT_TRUE(WriteValReplicated(client, **pov_id, 62L, 6262L));
-    cout << "Slave state after the second write: " << slave.Describe() << endl;
+    cout << "Replica state after the second write: " << replica.Describe() << endl;
   }
-  EXPECT_TRUE(slave.IsAlive());
-  EXPECT_TRUE(master.IsAlive());
+  EXPECT_TRUE(replica.IsAlive());
+  EXPECT_TRUE(primary.IsAlive());
 
-  /* Promote the slave (SIGKILL the master, see the header comment) and read both rows back
+  /* Promote the replica (SIGKILL the primary, see the header comment) and read both rows back
      through the global pov. */
   this_thread::sleep_for(seconds(2));
-  master.Kill();
-  master.Reap(seconds(60));
-  if (!WaitForLog(slave_log, "slave promoted to solo", seconds(120))) {
-    throw runtime_error("slave never promoted (" + slave.Describe() + "); see " + slave_log);
+  primary.Kill();
+  primary.Reap(seconds(60));
+  if (!WaitForLog(replica_log, "replica promoted to solo", seconds(120))) {
+    throw runtime_error("replica never promoted (" + replica.Describe() + "); see " + replica_log);
   }
-  const TAddress slave_addr(TAddress::IPv4Loopback, slave_port);
+  const TAddress replica_addr(TAddress::IPv4Loopback, replica_port);
   const int64_t expected_by_key[][2] = {{61L, 6161L}, {62L, 6262L}};
   for (const auto &pair : expected_by_key) {
-    Rt::TOpt<int64_t> row = ReadWithRetry(slave_addr, pair[0], seconds(60));
+    Rt::TOpt<int64_t> row = ReadWithRetry(replica_addr, pair[0], seconds(60));
     EXPECT_TRUE(row.IsKnown());
     if (row.IsKnown()) {
       EXPECT_EQ(row.GetVal(), pair[1]);
     }
   }
-  slave.Kill();
-  slave.Reap(seconds(60));
+  replica.Kill();
+  replica.Reap(seconds(60));
 }
 
-/* Start a solo master and a slave paired with it, both with the sample package installed; the
-   slave gets slave_args, and before_join runs against the solo master before the slave starts.  For
+/* Start a solo primary and a replica paired with it, both with the sample package installed; the
+   replica gets replica_args, and before_join runs against the solo primary before the replica starts.  For
    the #671 and #676 fixtures. */
 struct TPairedServers {
-  TPairedServers(const string &scratch, const string &name, const vector<string> &slave_args, TLogTailDumper &log_dumper,
+  TPairedServers(const string &scratch, const string &name, const vector<string> &replica_args, TLogTailDumper &log_dumper,
                  const function<void (const TAddress &)> &before_join = {})
-      : PkgDir(scratch + "/packages"), MasterLog(scratch + "/master.log"), SlaveLog(scratch + "/slave.log"),
-        MasterPort(ProbeFreePort()), MasterSlavePort(ProbeFreePort()), SlavePort(ProbeFreePort()),
-        Master(MakeServerArgs(GetOrlyiPath(), name + "_master", PkgDir, MasterPort, MasterSlavePort, "SOLO", 0), MasterLog),
-        Slave(nullptr) {
-    log_dumper.Add(MasterLog);
-    log_dumper.Add(SlaveLog);
-    if (!WaitForPort(MasterPort, seconds(240))) {
-      throw runtime_error("master never came up; see " + MasterLog);
+      : PkgDir(scratch + "/packages"), PrimaryLog(scratch + "/primary.log"), ReplicaLog(scratch + "/replica.log"),
+        PrimaryPort(ProbeFreePort()), PrimaryReplicaPort(ProbeFreePort()), ReplicaPort(ProbeFreePort()),
+        Primary(MakeServerArgs(GetOrlyiPath(), name + "_primary", PkgDir, PrimaryPort, PrimaryReplicaPort, "SOLO", 0), PrimaryLog),
+        Replica(nullptr) {
+    log_dumper.Add(PrimaryLog);
+    log_dumper.Add(ReplicaLog);
+    if (!WaitForPort(PrimaryPort, seconds(240))) {
+      throw runtime_error("primary never came up; see " + PrimaryLog);
     }
-    Answered(make_shared<TExerciseClient>(MasterAddr())->InstallPackage({ "sample" }, 1), "InstallPackage (master)")->Sync();
+    Answered(make_shared<TExerciseClient>(PrimaryAddr())->InstallPackage({ "sample" }, 1), "InstallPackage (primary)")->Sync();
     if (before_join) {
-      before_join(MasterAddr());
+      before_join(PrimaryAddr());
     }
-    Slave = make_unique<TChildServer>(
-        MakeServerArgs(GetOrlyiPath(), name + "_slave", PkgDir, SlavePort, ProbeFreePort(), "REPLICA", MasterSlavePort, slave_args),
-        SlaveLog);
-    if (!WaitForPort(SlavePort, seconds(240)) || !WaitForLog(SlaveLog, "to [Slave]", seconds(120))) {
-      throw runtime_error("slave never reached Slave state; see " + SlaveLog);
+    Replica = make_unique<TChildServer>(
+        MakeServerArgs(GetOrlyiPath(), name + "_replica", PkgDir, ReplicaPort, ProbeFreePort(), "REPLICA", PrimaryReplicaPort, replica_args),
+        ReplicaLog);
+    if (!WaitForPort(ReplicaPort, seconds(240)) || !WaitForLog(ReplicaLog, "to [Replica]", seconds(120))) {
+      throw runtime_error("replica never reached Replica state; see " + ReplicaLog);
     }
-    Answered(make_shared<TExerciseClient>(SlaveAddr())->InstallPackage({ "sample" }, 1), "InstallPackage (slave)")->Sync();
+    Answered(make_shared<TExerciseClient>(ReplicaAddr())->InstallPackage({ "sample" }, 1), "InstallPackage (replica)")->Sync();
   }
 
-  TAddress MasterAddr() const {
-    return TAddress(TAddress::IPv4Loopback, MasterPort);
+  TAddress PrimaryAddr() const {
+    return TAddress(TAddress::IPv4Loopback, PrimaryPort);
   }
 
-  TAddress SlaveAddr() const {
-    return TAddress(TAddress::IPv4Loopback, SlavePort);
+  TAddress ReplicaAddr() const {
+    return TAddress(TAddress::IPv4Loopback, ReplicaPort);
   }
 
-  /* SIGKILL the master, so the slave promotes (see the header comment). */
+  /* SIGKILL the primary, so the replica promotes (see the header comment). */
   void Failover() {
-    Master.Kill();
-    Master.Reap(seconds(60));
-    if (!WaitForLog(SlaveLog, "slave promoted to solo", seconds(120))) {
-      throw runtime_error("slave never promoted (" + Slave->Describe() + "); see " + SlaveLog);
+    Primary.Kill();
+    Primary.Reap(seconds(60));
+    if (!WaitForLog(ReplicaLog, "replica promoted to solo", seconds(120))) {
+      throw runtime_error("replica never promoted (" + Replica->Describe() + "); see " + ReplicaLog);
     }
   }
 
-  const string PkgDir, MasterLog, SlaveLog;
-  const in_port_t MasterPort, MasterSlavePort, SlavePort;
-  TChildServer Master;
-  unique_ptr<TChildServer> Slave;
+  const string PkgDir, PrimaryLog, ReplicaLog;
+  const in_port_t PrimaryPort, PrimaryReplicaPort, ReplicaPort;
+  TChildServer Primary;
+  unique_ptr<TChildServer> Replica;
 };
 
 /* Write the sample package to a fresh scratch dir and compile it there. */
@@ -1520,13 +1520,13 @@ string NewSampleScratch() {
   return scratch;
 }
 
-/* #671, the slave's apply path: a replicated mutation for a repo the slave has discarded.  With
-   no repo cache, the slave discards its copy of a new pov's repo as soon as it has built it, and
-   discards whatever it applied a write to once that write is promoted.  The slave used to open
+/* #671, the replica's apply path: a replicated mutation for a repo the replica has discarded.  With
+   no repo cache, the replica discards its copy of a new pov's repo as soon as it has built it, and
+   discards whatever it applied a write to once that write is promoted.  The replica used to open
    the gone repo by force for each mutation, which builds an empty repo whose sequence starts at
-   1, so the first mutation past sequence 1 failed the slave's sequence check (seen: the assert in
+   1, so the first mutation past sequence 1 failed the replica's sequence check (seen: the assert in
    TTransaction::Pop, in a debug build; "missing data" for a push in release). */
-FIXTURE(SlaveMutationForDiscardedRepo) {
+FIXTURE(ReplicaMutationForDiscardedRepo) {
   Orly::Type::TTypeCzar type_czar;
   if (!ifstream(GetOrlyiPath()).good()) {
     throw runtime_error("orlyi binary not built at [" + GetOrlyiPath() + "]; run `make debug` first");
@@ -1534,39 +1534,39 @@ FIXTURE(SlaveMutationForDiscardedRepo) {
   TLogTailDumper log_dumper;
   TPairedServers pair(NewSampleScratch(), "gone_repo", { "--max_repo_cache_size=0" }, log_dumper);
   /* client scope */ {
-    auto client = make_shared<TExerciseClient>(pair.MasterAddr());
+    auto client = make_shared<TExerciseClient>(pair.PrimaryAddr());
     const Base::TUuid pov_id = **Answered(client->NewSafeSharedPov(std::nullopt), "NewSafeSharedPov");
     EXPECT_TRUE(WriteValReplicated(client, pov_id, 71L, 7171L));
-    /* Let the slave's merge release what it applied the first write to. */
+    /* Let the replica's merge release what it applied the first write to. */
     this_thread::sleep_for(seconds(2));
     EXPECT_TRUE(WriteValReplicated(client, pov_id, 72L, 7272L));
     this_thread::sleep_for(seconds(2));
   }
-  cout << "slave: " << pair.Slave->Describe() << endl;
-  EXPECT_TRUE(pair.Slave->IsAlive());
-  EXPECT_FALSE(LogContains(pair.SlaveLog, "missing data"));
-  /* Both writes reach the slave's global pov all the same. */
+  cout << "replica: " << pair.Replica->Describe() << endl;
+  EXPECT_TRUE(pair.Replica->IsAlive());
+  EXPECT_FALSE(LogContains(pair.ReplicaLog, "missing data"));
+  /* Both writes reach the replica's global pov all the same. */
   pair.Failover();
   const int64_t expected_by_key[][2] = {{71L, 7171L}, {72L, 7272L}};
   for (const auto &row : expected_by_key) {
-    Rt::TOpt<int64_t> val = ReadWithRetry(pair.SlaveAddr(), row[0], seconds(60));
+    Rt::TOpt<int64_t> val = ReadWithRetry(pair.ReplicaAddr(), row[0], seconds(60));
     EXPECT_TRUE(val.IsKnown());
     if (val.IsKnown()) {
       EXPECT_EQ(val.GetVal(), row[1]);
     }
   }
-  pair.Slave->Kill();
-  pair.Slave->Reap(seconds(60));
+  pair.Replica->Kill();
+  pair.Replica->Reap(seconds(60));
 }
 
-/* #671, the slave's repo creation: a pov whose parent the slave has discarded.  The parent is a
-   shared pov with no ttl, so the slave discards its copy of the parent's repo as soon as it has
-   built it; the child has a ttl, so the slave keeps its copy.  The slave used to open the gone
+/* #671, the replica's repo creation: a pov whose parent the replica has discarded.  The parent is a
+   shared pov with no ttl, so the replica discards its copy of the parent's repo as soon as it has
+   built it; the child has a ttl, so the replica keeps its copy.  The replica used to open the gone
    parent by force, which builds an empty repo with no parent, and gave the child that.  After a
    failover the child then read through to nothing: a key the global pov holds read as unknown.
-   Now the slave doesn't build the child, so after a failover it is refused as a pov whose state is
-   gone (#439), like any other pov the new master doesn't have. */
-FIXTURE(SlavePovUnderDiscardedParent) {
+   Now the replica doesn't build the child, so after a failover it is refused as a pov whose state is
+   gone (#439), like any other pov the new primary doesn't have. */
+FIXTURE(ReplicaPovUnderDiscardedParent) {
   Orly::Type::TTypeCzar type_czar;
   if (!ifstream(GetOrlyiPath()).good()) {
     throw runtime_error("orlyi binary not built at [" + GetOrlyiPath() + "]; run `make debug` first");
@@ -1575,36 +1575,36 @@ FIXTURE(SlavePovUnderDiscardedParent) {
   TPairedServers pair(NewSampleScratch(), "gone_parent", {}, log_dumper);
   Base::TUuid child_id;
   /* client scope */ {
-    auto client = make_shared<TExerciseClient>(pair.MasterAddr());
+    auto client = make_shared<TExerciseClient>(pair.PrimaryAddr());
     /* A value in the global pov, for the child to read through its parent. */
     const Base::TUuid writer_id = **Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
     EXPECT_TRUE(WriteValReplicated(client, writer_id, 81L, 8181L));
     const Base::TUuid parent_id = **Answered(client->NewFastSharedPov(std::nullopt, seconds(0)), "NewFastSharedPov (parent)");
     child_id = **Answered(client->NewSafeSharedPov(parent_id), "NewSafeSharedPov (child)");
-    /* On the master the child reads the global value through its parent. */
-    Rt::TOpt<int64_t> on_master = ReadVal(client, child_id, 81L);
-    EXPECT_TRUE(on_master.IsKnown() && on_master.GetVal() == 8181L);
+    /* On the primary the child reads the global value through its parent. */
+    Rt::TOpt<int64_t> on_primary = ReadVal(client, child_id, 81L);
+    EXPECT_TRUE(on_primary.IsKnown() && on_primary.GetVal() == 8181L);
   }
   /* Closing the client closes the child pov, which saves it; the save replicates, so the
-     promoted slave knows the child pov. */
+     promoted replica knows the child pov. */
   this_thread::sleep_for(seconds(3));
   pair.Failover();
   bool refused = false;
   std::optional<Rt::TOpt<int64_t>> read;
   try {
-    auto client = make_shared<TExerciseClient>(pair.SlaveAddr());
+    auto client = make_shared<TExerciseClient>(pair.ReplicaAddr());
     read = ReadVal(client, child_id, 81L);
   } catch (const exception &ex) {
     refused = true;
-    cout << "child read on the promoted slave refused: " << ex.what() << endl;
+    cout << "child read on the promoted replica refused: " << ex.what() << endl;
   }
   if (read) {
-    cout << "child read on the promoted slave: " << (read->IsKnown() ? to_string(read->GetVal()) : string("unknown")) << endl;
+    cout << "child read on the promoted replica: " << (read->IsKnown() ? to_string(read->GetVal()) : string("unknown")) << endl;
   }
   /* Refusing is right; so would be reading the global value.  Reading nothing is not. */
   EXPECT_TRUE(refused || (read->IsKnown() && read->GetVal() == 8181L));
-  pair.Slave->Kill();
-  pair.Slave->Reap(seconds(60));
+  pair.Replica->Kill();
+  pair.Replica->Reap(seconds(60));
 }
 
 FIXTURE(ExpiredPovNotInventoried) {
@@ -1626,21 +1626,21 @@ FIXTURE(ExpiredPovNotInventoried) {
 
   /* With no repo cache, a repo goes as soon as nothing holds it, and a fast housekeeper expires
      a pov with a one-second ttl promptly, so the expired povs' repos are gone before the join. */
-  const in_port_t master_port = ProbeFreePort();
-  const in_port_t master_slave_port = ProbeFreePort();
-  const string master_log = scratch + "/master.log";
-  log_dumper.Add(master_log);
-  TChildServer master(
-      MakeServerArgs(orlyi_path, "expired_pov_master", pkg_dir, master_port,
-                     master_slave_port, "SOLO", 0,
+  const in_port_t primary_port = ProbeFreePort();
+  const in_port_t primary_replica_port = ProbeFreePort();
+  const string primary_log = scratch + "/primary.log";
+  log_dumper.Add(primary_log);
+  TChildServer primary(
+      MakeServerArgs(orlyi_path, "expired_pov_primary", pkg_dir, primary_port,
+                     primary_replica_port, "SOLO", 0,
                      { "--max_repo_cache_size=0", "--housecleaning_interval=200" }),
-      master_log);
-  if (!WaitForPort(master_port, seconds(240))) {
-    throw runtime_error("master never came up; see " + master_log);
+      primary_log);
+  if (!WaitForPort(primary_port, seconds(240))) {
+    throw runtime_error("primary never came up; see " + primary_log);
   }
-  const TAddress master_addr(TAddress::IPv4Loopback, master_port);
+  const TAddress primary_addr(TAddress::IPv4Loopback, primary_port);
   /* install scope */ {
-    auto client = make_shared<TExerciseClient>(master_addr);
+    auto client = make_shared<TExerciseClient>(primary_addr);
     Answered(client->InstallPackage({ "sample" }, 1), "InstallPackage (expired pov)")->Sync();
   }
   auto to_str = [](const Base::TUuid &id) {
@@ -1651,7 +1651,7 @@ FIXTURE(ExpiredPovNotInventoried) {
   /* A pov with a ttl, written through and closed: its session goes with its client, then the
      pov expires, then its repo goes. */
   auto expire_pov = [&](int64_t n) {
-    auto client = make_shared<TExerciseClient>(master_addr);
+    auto client = make_shared<TExerciseClient>(primary_addr);
     const Base::TUuid pov_id = **Answered(client->NewFastSharedPov(std::nullopt, seconds(1)), "NewFastSharedPov (expiring)");
     WriteVal(client, pov_id, n, n * 100L);
     return pov_id;
@@ -1659,57 +1659,57 @@ FIXTURE(ExpiredPovNotInventoried) {
   const string discarded = "TManager: discarded repo [";
 
   /* The control: a live pov, held open by its client until the end, must be inventoried. */
-  auto live_client = make_shared<TExerciseClient>(master_addr);
+  auto live_client = make_shared<TExerciseClient>(primary_addr);
   const Base::TUuid live_pov = **Answered(live_client->NewSafeSharedPov(std::nullopt, seconds(600)), "NewSafeSharedPov (live)");
   WriteVal(live_client, live_pov, 1, 100);
 
   /* The first expired pov's saved entry goes with the next system-repo write, which creating
      another pov with a ttl makes. */
   const Base::TUuid removed_pov = expire_pov(2);
-  EXPECT_TRUE(WaitForLog(master_log, discarded + to_str(removed_pov) + "]", seconds(30)));
+  EXPECT_TRUE(WaitForLog(primary_log, discarded + to_str(removed_pov) + "]", seconds(30)));
   Answered(live_client->NewFastSharedPov(std::nullopt, seconds(600)), "NewFastSharedPov (system-repo write)");
-  EXPECT_TRUE(WaitForLog(master_log, "TManager: removed the saved entry of repo [" + to_str(removed_pov) + "]", seconds(30)));
+  EXPECT_TRUE(WaitForLog(primary_log, "TManager: removed the saved entry of repo [" + to_str(removed_pov) + "]", seconds(30)));
 
   /* The second one expires with nothing written to the system repo after it, so the join still
      finds its saved entry. */
   const Base::TUuid stale_pov = expire_pov(3);
-  EXPECT_TRUE(WaitForLog(master_log, discarded + to_str(stale_pov) + "]", seconds(30)));
+  EXPECT_TRUE(WaitForLog(primary_log, discarded + to_str(stale_pov) + "]", seconds(30)));
 
-  const in_port_t slave_port = ProbeFreePort();
-  const string slave_log = scratch + "/slave.log";
-  log_dumper.Add(slave_log);
-  TChildServer slave(
-      MakeServerArgs(orlyi_path, "expired_pov_slave", pkg_dir, slave_port,
-                     ProbeFreePort(), "REPLICA", master_slave_port),
-      slave_log);
-  if (!WaitForLog(slave_log, "to [Slave]", seconds(240))) {
-    throw runtime_error("slave never reached Slave state; see " + slave_log);
+  const in_port_t replica_port = ProbeFreePort();
+  const string replica_log = scratch + "/replica.log";
+  log_dumper.Add(replica_log);
+  TChildServer replica(
+      MakeServerArgs(orlyi_path, "expired_pov_replica", pkg_dir, replica_port,
+                     ProbeFreePort(), "REPLICA", primary_replica_port),
+      replica_log);
+  if (!WaitForLog(replica_log, "to [Replica]", seconds(240))) {
+    throw runtime_error("replica never reached Replica state; see " + replica_log);
   }
-  EXPECT_TRUE(LogContains(slave_log, "TSlave::Inventory(" + to_str(live_pov) + ")"));
+  EXPECT_TRUE(LogContains(replica_log, "TReplica::Inventory(" + to_str(live_pov) + ")"));
   /* Before #671 the join walked every saved entry ever written and built an empty repo for each
-     pov that had gone, to inventory to the slave.  Here, with no repo cache, that stand-in went as
-     soon as the walk let go of it, under the sync view that still held its layers, and the master
-     aborted (`~TDataLayer(): RefCount == 0`) before the slave ever joined. */
-  EXPECT_FALSE(LogContains(slave_log, "TSlave::Inventory(" + to_str(removed_pov) + ")"));
-  EXPECT_FALSE(LogContains(slave_log, "TSlave::Inventory(" + to_str(stale_pov) + ")"));
-  EXPECT_FALSE(LogContains(master_log, "matched repo [" + to_str(removed_pov) + "]"));
-  EXPECT_TRUE(LogContains(master_log, "TMaster: saved repo [" + to_str(stale_pov) + "] has gone"));
+     pov that had gone, to inventory to the replica.  Here, with no repo cache, that stand-in went as
+     soon as the walk let go of it, under the sync view that still held its layers, and the primary
+     aborted (`~TDataLayer(): RefCount == 0`) before the replica ever joined. */
+  EXPECT_FALSE(LogContains(replica_log, "TReplica::Inventory(" + to_str(removed_pov) + ")"));
+  EXPECT_FALSE(LogContains(replica_log, "TReplica::Inventory(" + to_str(stale_pov) + ")"));
+  EXPECT_FALSE(LogContains(primary_log, "matched repo [" + to_str(removed_pov) + "]"));
+  EXPECT_TRUE(LogContains(primary_log, "TPrimary: saved repo [" + to_str(stale_pov) + "] has gone"));
 
-  const string master_state = master.Describe();
-  const string slave_state = slave.Describe();
-  cout << "master: " << master_state << "; slave: " << slave_state << endl;
-  EXPECT_TRUE(master_state.rfind("alive", 0) == 0);
-  EXPECT_TRUE(slave_state.rfind("alive", 0) == 0);
+  const string primary_state = primary.Describe();
+  const string replica_state = replica.Describe();
+  cout << "primary: " << primary_state << "; replica: " << replica_state << endl;
+  EXPECT_TRUE(primary_state.rfind("alive", 0) == 0);
+  EXPECT_TRUE(replica_state.rfind("alive", 0) == 0);
   live_client.reset();
 
-  master.Kill();
-  master.Reap(seconds(60));
-  slave.Kill();
-  slave.Reap(seconds(60));
+  primary.Kill();
+  primary.Reap(seconds(60));
+  replica.Kill();
+  replica.Reap(seconds(60));
 }
 
 /* read_val(n) through the given pov against the given server, retrying while the server refuses
-   or answers unknown, for reads against a slave that has just promoted.  Unknown only after the
+   or answers unknown, for reads against a replica that has just promoted.  Unknown only after the
    deadline. */
 Rt::TOpt<int64_t> ReadPovWithRetry(const TAddress &addr, const Base::TUuid &pov_id, int64_t n, seconds deadline) {
   const auto give_up = steady_clock::now() + deadline;
@@ -1731,51 +1731,51 @@ Rt::TOpt<int64_t> ReadPovWithRetry(const TAddress &addr, const Base::TUuid &pov_
   }
 }
 
-/* #676: a slave's join builds each repo the master inventories.  It used to open each one with
+/* #676: a replica's join builds each repo the primary inventories.  It used to open each one with
    GetRepo(..., create=false), which ignores the ttl, parent and safety it was sent, so every repo
-   the slave learnt of at the join came out safe, with no parent and a 1000 s ttl.  After a
+   the replica learnt of at the join came out safe, with no parent and a 1000 s ttl.  After a
    failover, a read through a pov under a shared pov then reached neither the parent nor global.
 
-   The master holds, when the slave joins: a shared pov P with a child D, a fast shared pov F, and
+   The primary holds, when the replica joins: a shared pov P with a child D, a fast shared pov F, and
    a shared pov Y under a fast shared pov Z with no ttl.  Z has no saved-repo entry (only a repo
-   with a ttl gets one), so only Y's parent link tells the master about it.
+   with a ttl gets one), so only Y's parent link tells the primary about it.
 
-   The reads go through povs made after the join, under P, D and Y; the slave builds each under its
+   The reads go through povs made after the join, under P, D and Y; the replica builds each under its
    own copy of that parent.  (Reads through povs made before the join are JoinSendsPovRecords'.) */
-FIXTURE(SlaveInventoryKeepsPovShape) {
+FIXTURE(ReplicaInventoryKeepsPovShape) {
   Orly::Type::TTypeCzar type_czar;
   if (!ifstream(GetOrlyiPath()).good()) {
     throw runtime_error("orlyi binary not built at [" + GetOrlyiPath() + "]; run `make debug` first");
   }
   TLogTailDumper log_dumper;
-  /* Open across the join, so the master keeps the povs made before it. */
+  /* Open across the join, so the primary keeps the povs made before it. */
   shared_ptr<TExerciseClient> client;
   Base::TUuid parent_id, child_id, fast_id, no_ttl_parent_id, under_no_ttl_id;
-  TPairedServers pair(NewSampleScratch(), "inventory_shape", {}, log_dumper, [&](const TAddress &master_addr) {
-    client = make_shared<TExerciseClient>(master_addr);
+  TPairedServers pair(NewSampleScratch(), "inventory_shape", {}, log_dumper, [&](const TAddress &primary_addr) {
+    client = make_shared<TExerciseClient>(primary_addr);
     /* A value in the global pov, for the povs to read through their parents. */
     const Base::TUuid writer_id = **Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
     WriteVal(client, writer_id, 91L, 9191L);
-    Rt::TOpt<int64_t> in_global = ReadWithRetry(master_addr, 91L, seconds(60));
+    Rt::TOpt<int64_t> in_global = ReadWithRetry(primary_addr, 91L, seconds(60));
     EXPECT_TRUE(in_global.IsKnown() && in_global.GetVal() == 9191L);
     parent_id = **Answered(client->NewSafeSharedPov(std::nullopt, seconds(700)), "NewSafeSharedPov (P)");
     child_id = **Answered(client->NewSafeSharedPov(parent_id, seconds(800)), "NewSafeSharedPov (D)");
     fast_id = **Answered(client->NewFastSharedPov(std::nullopt, seconds(600)), "NewFastSharedPov (F)");
     no_ttl_parent_id = **Answered(client->NewFastSharedPov(std::nullopt, seconds(0)), "NewFastSharedPov (Z)");
     under_no_ttl_id = **Answered(client->NewSafeSharedPov(no_ttl_parent_id, seconds(900)), "NewSafeSharedPov (Y)");
-    /* Each read also makes the master build the pov's repo. */
+    /* Each read also makes the primary build the pov's repo. */
     for (const Base::TUuid &pov_id : { child_id, fast_id, under_no_ttl_id }) {
-      Rt::TOpt<int64_t> on_master = ReadVal(client, pov_id, 91L);
-      EXPECT_TRUE(on_master.IsKnown() && on_master.GetVal() == 9191L);
+      Rt::TOpt<int64_t> on_primary = ReadVal(client, pov_id, 91L);
+      EXPECT_TRUE(on_primary.IsKnown() && on_primary.GetVal() == 9191L);
     }
   });
-  /* The slave built each inventoried repo with the master's ttl and safety. */
+  /* The replica built each inventoried repo with the primary's ttl and safety. */
   auto built = [&pair](const Base::TUuid &repo_id, long ttl, bool is_safe) {
     ostringstream strm;
     strm << "Create Repo [" << repo_id << "] with ttl=[" << ttl << "], is_safe=[" << (is_safe ? "true" : "false") << "]";
-    const bool found = LogContains(pair.SlaveLog, strm.str());
+    const bool found = LogContains(pair.ReplicaLog, strm.str());
     if (!found) {
-      cout << "slave log lacks: " << strm.str() << endl;
+      cout << "replica log lacks: " << strm.str() << endl;
     }
     return found;
   };
@@ -1788,11 +1788,11 @@ FIXTURE(SlaveInventoryKeepsPovShape) {
   vector<Base::TUuid> late_ids;
   for (const Base::TUuid &parent : { parent_id, child_id, under_no_ttl_id }) {
     late_ids.push_back(**Answered(client->NewSafeSharedPov(parent, seconds(600)), "NewSafeSharedPov (after the join)"));
-    Rt::TOpt<int64_t> on_master = ReadVal(client, late_ids.back(), 91L);
-    EXPECT_TRUE(on_master.IsKnown() && on_master.GetVal() == 9191L);
+    Rt::TOpt<int64_t> on_primary = ReadVal(client, late_ids.back(), 91L);
+    EXPECT_TRUE(on_primary.IsKnown() && on_primary.GetVal() == 9191L);
   }
-  /* Each pov's record reached the slave when it was made: a pov is saved as it is created, and
-     the master streams that save at once (it is acked within milliseconds).  The slave used to
+  /* Each pov's record reached the replica when it was made: a pov is saved as it is created, and
+     the primary streams that save at once (it is acked within milliseconds).  The replica used to
      store such a save with a garbage deadline, so its durable layer could drop the record as
      expired, and a read here failed with "durable object doesn't exist" (#676 follow-up). */
   client.reset();
@@ -1800,55 +1800,55 @@ FIXTURE(SlaveInventoryKeepsPovShape) {
   pair.Failover();
   /* Each reads the global value through its parents. */
   for (const Base::TUuid &pov_id : late_ids) {
-    Rt::TOpt<int64_t> read = ReadPovWithRetry(pair.SlaveAddr(), pov_id, 91L, seconds(30));
-    cout << "read through pov {" << pov_id << "} on the promoted slave: " << (read.IsKnown() ? to_string(read.GetVal()) : string("unknown")) << endl;
+    Rt::TOpt<int64_t> read = ReadPovWithRetry(pair.ReplicaAddr(), pov_id, 91L, seconds(30));
+    cout << "read through pov {" << pov_id << "} on the promoted replica: " << (read.IsKnown() ? to_string(read.GetVal()) : string("unknown")) << endl;
     EXPECT_TRUE(read.IsKnown() && read.GetVal() == 9191L);
   }
-  pair.Slave->Kill();
-  pair.Slave->Reap(seconds(60));
+  pair.Replica->Kill();
+  pair.Replica->Reap(seconds(60));
 }
 
-/* #680: a pov's durable record reached a slave only when the pov was saved while the two were
+/* #680: a pov's durable record reached a replica only when the pov was saved while the two were
    paired; the join sent the repos but not the records.  So after a failover, a pov made before
-   the join was refused on the promoted slave (`durable object doesn't exist`), although the slave
+   the join was refused on the promoted replica (`durable object doesn't exist`), although the replica
    had its repo.  The join now sends the saved records of the povs it inventories.
 
-   Here a client makes a shared pov P and a child D under it before the slave joins, keeps its
+   Here a client makes a shared pov P and a child D under it before the replica joins, keeps its
    connection open across the join, then closes it, which doesn't save them again.  Each must
-   still read the global value on the promoted slave. */
+   still read the global value on the promoted replica. */
 FIXTURE(JoinSendsPovRecords) {
   Orly::Type::TTypeCzar type_czar;
   if (!ifstream(GetOrlyiPath()).good()) {
     throw runtime_error("orlyi binary not built at [" + GetOrlyiPath() + "]; run `make debug` first");
   }
   TLogTailDumper log_dumper;
-  /* Open across the join, so the master keeps the povs made before it. */
+  /* Open across the join, so the primary keeps the povs made before it. */
   shared_ptr<TExerciseClient> client;
   Base::TUuid parent_id, child_id;
-  TPairedServers pair(NewSampleScratch(), "join_records", {}, log_dumper, [&](const TAddress &master_addr) {
-    client = make_shared<TExerciseClient>(master_addr);
+  TPairedServers pair(NewSampleScratch(), "join_records", {}, log_dumper, [&](const TAddress &primary_addr) {
+    client = make_shared<TExerciseClient>(primary_addr);
     const Base::TUuid writer_id = **Answered(client->NewFastPrivatePov(std::nullopt, seconds(0)), "NewFastPrivatePov");
     WriteVal(client, writer_id, 93L, 9393L);
-    Rt::TOpt<int64_t> in_global = ReadWithRetry(master_addr, 93L, seconds(60));
+    Rt::TOpt<int64_t> in_global = ReadWithRetry(primary_addr, 93L, seconds(60));
     EXPECT_TRUE(in_global.IsKnown() && in_global.GetVal() == 9393L);
     parent_id = **Answered(client->NewSafeSharedPov(std::nullopt, seconds(700)), "NewSafeSharedPov (P)");
     child_id = **Answered(client->NewSafeSharedPov(parent_id, seconds(800)), "NewSafeSharedPov (D)");
     for (const Base::TUuid &pov_id : { parent_id, child_id }) {
-      Rt::TOpt<int64_t> on_master = ReadVal(client, pov_id, 93L);
-      EXPECT_TRUE(on_master.IsKnown() && on_master.GetVal() == 9393L);
+      Rt::TOpt<int64_t> on_primary = ReadVal(client, pov_id, 93L);
+      EXPECT_TRUE(on_primary.IsKnown() && on_primary.GetVal() == 9393L);
     }
   });
   client.reset();
   this_thread::sleep_for(seconds(3));
-  EXPECT_TRUE(LogContains(pair.MasterLog, "saved pov record(s)"));
+  EXPECT_TRUE(LogContains(pair.PrimaryLog, "saved pov record(s)"));
   pair.Failover();
   for (const Base::TUuid &pov_id : { parent_id, child_id }) {
-    Rt::TOpt<int64_t> read = ReadPovWithRetry(pair.SlaveAddr(), pov_id, 93L, seconds(30));
-    cout << "read through pov {" << pov_id << "} on the promoted slave: " << (read.IsKnown() ? to_string(read.GetVal()) : string("unknown")) << endl;
+    Rt::TOpt<int64_t> read = ReadPovWithRetry(pair.ReplicaAddr(), pov_id, 93L, seconds(30));
+    cout << "read through pov {" << pov_id << "} on the promoted replica: " << (read.IsKnown() ? to_string(read.GetVal()) : string("unknown")) << endl;
     EXPECT_TRUE(read.IsKnown() && read.GetVal() == 9393L);
   }
-  pair.Slave->Kill();
-  pair.Slave->Reap(seconds(60));
+  pair.Replica->Kill();
+  pair.Replica->Reap(seconds(60));
 }
 
 /* A binary-protocol client that records the Accepted notifications it gets: an update of its
@@ -1911,11 +1911,11 @@ int64_t AsInt(const optional<Var::TVar> &var) {
   return var ? Var::TVar::TDt<int64_t>::As(*var) : -1L;
 }
 
-/* #746: the POV review calls over the binary protocol, on a master with a live slave.  A safe
+/* #746: the POV review calls over the binary protocol, on a primary with a live replica.  A safe
    private pov that reports conflicts is paused and written; DiffPov lists its writes, whole and
    paged; the parent changed one of the keys after the fork, so the promotion reports that
    conflict, and the pov's writes reach the global pov.  A second pov is paused, written and
-   discarded: the slave applies the discard's pops to its paused copy of the pov (PopLowest used
+   discarded: the replica applies the discard's pops to its paused copy of the pov (PopLowest used
    to assert the repo was Normal), and after a failover that copy no longer holds the writes. */
 FIXTURE(PovReviewOverBinaryProtocol) {
   Orly::Type::TTypeCzar type_czar;
@@ -1925,7 +1925,7 @@ FIXTURE(PovReviewOverBinaryProtocol) {
   TLogTailDumper log_dumper;
   const string scratch = NewSampleScratch();
   TPairedServers servers(scratch, "pov_review", {}, log_dumper);
-  auto client = make_shared<TExerciseClient>(servers.MasterAddr());
+  auto client = make_shared<TExerciseClient>(servers.PrimaryAddr());
   auto writer = Answered(client->NewFastPrivatePov(std::nullopt), "NewFastPrivatePov (writer)");
   EXPECT_TRUE(WriteValReplicated(client, **writer, 81L, 1L, /* wait_for_global */ true));
   EXPECT_TRUE(WriteValReplicated(client, **writer, 82L, 2L, /* wait_for_global */ true));
@@ -1987,17 +1987,17 @@ FIXTURE(PovReviewOverBinaryProtocol) {
   EXPECT_EQ((*discard)->Updates, 1UL);
   EXPECT_EQ((*discard)->Entries, 1UL);
   EXPECT_FALSE(ReadVal(client, **discarded_pov, 84L).IsKnown());
-  /* The slave's copy: give the pops time to replicate, then fail over. */
+  /* The replica's copy: give the pops time to replicate, then fail over. */
   this_thread::sleep_for(seconds(2));
-  EXPECT_TRUE(servers.Slave->IsAlive());
-  EXPECT_TRUE(servers.Master.IsAlive());
+  EXPECT_TRUE(servers.Replica->IsAlive());
+  EXPECT_TRUE(servers.Primary.IsAlive());
   servers.Failover();
-  const Rt::TOpt<int64_t> promoted = ReadWithRetry(servers.SlaveAddr(), 81L, seconds(60));
+  const Rt::TOpt<int64_t> promoted = ReadWithRetry(servers.ReplicaAddr(), 81L, seconds(60));
   EXPECT_TRUE(promoted.IsKnown() && promoted.GetVal() == 11L);
-  auto slave_client = make_shared<TExerciseClient>(servers.SlaveAddr());
-  EXPECT_FALSE(ReadVal(slave_client, **discarded_pov, 84L).IsKnown());
-  servers.Slave->Kill();
-  servers.Slave->Reap(seconds(60));
+  auto replica_client = make_shared<TExerciseClient>(servers.ReplicaAddr());
+  EXPECT_FALSE(ReadVal(replica_client, **discarded_pov, 84L).IsKnown());
+  servers.Replica->Kill();
+  servers.Replica->Reap(seconds(60));
 }
 
 /* #801: Tetris tells a session about each of its promoted updates once the promotion has

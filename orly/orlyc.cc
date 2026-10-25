@@ -182,7 +182,7 @@ static constexpr size_t TestServerFiberFrames = 64;
              concurrent lang_test compilers never collide on a port. */
           server_cmd.PortNumber = 0;
           server_cmd.WsPortNumber = 0;
-          server_cmd.SlavePortNumber = 0;
+          server_cmd.ReplicaPortNumber = 0;
           server_cmd.ReportingPortNumber = 0;
           /* Keep this compiler-embedded server tiny and host-RAM-independent:
              every pool below is otherwise scaled up by available memory. */

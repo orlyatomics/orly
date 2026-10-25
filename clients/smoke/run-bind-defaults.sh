@@ -1,7 +1,7 @@
 #!/bin/bash
 # Listener and remote-compile defaults (#705). Orly has no authentication, so
 # on a bare host orlyi binds its client, WebSocket and reporting listeners to
-# 127.0.0.1, keeps the replication listener on every interface (a slave on
+# 127.0.0.1, keeps the replication listener on every interface (a replica on
 # another host must reach it), and refuses the compile statement over
 # WebSocket with "status": "remote_compile_disabled".
 #   1. orlyi with no bind flags: each listener is bound where its default
@@ -19,7 +19,7 @@ REPO_ROOT="$(cd ../.. && pwd)"
 ORLY_OUT="${ORLY_OUT:-$REPO_ROOT/../out_orly/release}"
 ORLYI="$ORLY_OUT/orly/server/orlyi"
 PORT=19790
-SLAVE_PORT=19791
+REPLICA_PORT=19791
 WS_PORT=19792
 REPORTING_PORT=19793
 
@@ -60,18 +60,18 @@ wait_ports_free() {
   local deadline=$((SECONDS + 30))
   while [ $SECONDS -lt $deadline ]; do
     if [ -z "$(bound $PORT)" ] && [ -z "$(bound $WS_PORT)" ] && [ -z "$(bound $REPORTING_PORT)" ] &&
-       [ -z "$(bound $SLAVE_PORT)" ]; then return; fi
+       [ -z "$(bound $REPLICA_PORT)" ]; then return; fi
     sleep 0.1
   done
-  echo "BIND DEFAULTS FAIL: ports $PORT, $SLAVE_PORT, $WS_PORT or $REPORTING_PORT still in use after 30 seconds"
-  ss -Htlnp 2>/dev/null | grep -E ":(${PORT}|${SLAVE_PORT}|${WS_PORT}|${REPORTING_PORT}) " || true
+  echo "BIND DEFAULTS FAIL: ports $PORT, $REPLICA_PORT, $WS_PORT or $REPORTING_PORT still in use after 30 seconds"
+  ss -Htlnp 2>/dev/null | grep -E ":(${PORT}|${REPLICA_PORT}|${WS_PORT}|${REPORTING_PORT}) " || true
   exit 1
 }
 
 start_orlyi() {
   wait_ports_free
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-           --port_number=$PORT --replica_port_number=$SLAVE_PORT \
+           --port_number=$PORT --replica_port_number=$REPLICA_PORT \
            --ws_port_number=$WS_PORT --reporting_port_number=$REPORTING_PORT \
            --connection_backlog=10 \
            --instance_name=orly_bind_defaults_smoke \
@@ -82,7 +82,7 @@ start_orlyi() {
   ORLYI_PID=$!
   for _ in $(seq 1 60); do
     if [ -n "$(bound $PORT)" ] && [ -n "$(bound $WS_PORT)" ] && [ -n "$(bound $REPORTING_PORT)" ] &&
-       [ -n "$(bound $SLAVE_PORT)" ]; then return; fi
+       [ -n "$(bound $REPLICA_PORT)" ]; then return; fi
     sleep 1
   done
   fail "orlyi failed to open its listeners"
@@ -119,7 +119,7 @@ start_orlyi --log_info
 expect_bound $PORT 127.0.0.1 client
 expect_bound $WS_PORT 127.0.0.1 websocket
 expect_bound $REPORTING_PORT 127.0.0.1 reporting
-expect_bound $SLAVE_PORT 0.0.0.0 replication
+expect_bound $REPLICA_PORT 0.0.0.0 replication
 grep -q "remote compile disabled" "$WORK/orlyi.log" || fail "the log does not say remote compile is disabled"
 PYTHONPATH="$REPO_ROOT/clients/python:$PYTHONPATH" python3 - "$WS_PORT" "$OTHER_IP" <<'PY' || fail "the default-run checks failed"
 import socket, sys
@@ -154,7 +154,7 @@ start_orlyi --bind_address=0.0.0.0 --allow_remote_compile
 expect_bound $PORT 0.0.0.0 client
 expect_bound $WS_PORT 0.0.0.0 websocket
 expect_bound $REPORTING_PORT 0.0.0.0 reporting
-expect_bound $SLAVE_PORT 0.0.0.0 replication
+expect_bound $REPLICA_PORT 0.0.0.0 replication
 grep -q "WARNING: websocket listener on 0.0.0.0:$WS_PORT accepts compile from any client" "$WORK/orlyi.log" \
   || fail "no warning at the default log level about remote compile on a public listener"
 PYTHONPATH="$REPO_ROOT/clients/python:$PYTHONPATH" python3 - "$WS_PORT" "$OTHER_IP" <<'PY' || fail "the --bind_address=0.0.0.0 checks failed"

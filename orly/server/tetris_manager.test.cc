@@ -201,8 +201,8 @@ class TTetrisManager final
                  Orly::Indy::Fiber::TRunner::TRunnerCons &runner_cons,
                  Base::TThreadLocalGlobalPoolManager<Orly::Indy::Fiber::TFrame, size_t, Orly::Indy::Fiber::TRunner *> *frame_pool_manager,
                  const std::function<void (TRunner *)> &runner_setup_cb,
-                 bool is_master = true)
-      : Orly::Server::TTetrisManager(scheduler, runner_cons, frame_pool_manager, runner_setup_cb, is_master) {
+                 bool is_primary = true)
+      : Orly::Server::TTetrisManager(scheduler, runner_cons, frame_pool_manager, runner_setup_cb, is_primary) {
     GlobalPov = new TPov(this);
   }
 
@@ -235,10 +235,10 @@ class TTetrisManager final
     public:
 
     /* Caches the pointer to the tetris manager, sets the initial parent and child points of view, and starts playing. */
-    TPlayer(TTetrisManager *tetris_manager, const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_master)
+    TPlayer(TTetrisManager *tetris_manager, const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_primary)
         : Orly::Server::TTetrisManager::TPlayer(tetris_manager), TetrisManager(tetris_manager),
           ParentPov(tetris_manager->GetPov(parent_pov_id)), ChildPovs({ tetris_manager->GetPov(child_pov_id) }) {
-      Start(is_paused, is_master);  // This call is mandatory!
+      Start(is_paused, is_primary);  // This call is mandatory!
     }
 
     private:
@@ -315,8 +315,8 @@ class TTetrisManager final
   };  // TTetrisManager::TPlayer
 
   /* See our base class.  We construct one of our players. */
-  virtual Orly::Server::TTetrisManager::TPlayer *NewPlayer(const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_master) override {
-    return new TPlayer(this, parent_pov_id, child_pov_id, is_paused, is_master);
+  virtual Orly::Server::TTetrisManager::TPlayer *NewPlayer(const TUuid &parent_pov_id, const TUuid &child_pov_id, bool is_paused, bool is_primary) override {
+    return new TPlayer(this, parent_pov_id, child_pov_id, is_paused, is_primary);
   }
 
   /* See accessor. */

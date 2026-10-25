@@ -52,9 +52,9 @@ namespace Orly {
 
       enum TState {
         Solo,
-        Master,
-        SyncSlave,
-        Slave
+        Primary,
+        SyncReplica,
+        Replica
       };
 
       using TIndexCb = std::function<
@@ -62,7 +62,7 @@ namespace Orly {
       using TForEachIndexIdCb = std::function<void(const TIndexCb &)>;
 
       TManager(Disk::Util::TEngine *engine,
-               size_t replication_sync_slave_buf_size_mb,
+               size_t replication_sync_replica_buf_size_mb,
                std::chrono::milliseconds merge_mem_delay,
                std::chrono::milliseconds merge_disk_delay,
                std::chrono::milliseconds layer_cleaning_interval,
@@ -73,7 +73,7 @@ namespace Orly {
                bool allow_file_sync,
                bool no_realtime,
                Base::TFd &&socket,
-               const std::function<void (const std::shared_ptr<std::function<void (const Base::TFd &)>> &)> &wait_for_slave,
+               const std::function<void (const std::shared_ptr<std::function<void (const Base::TFd &)>> &)> &wait_for_replica,
                const std::function<void (TState)> &state_change_cb,
                const std::function<void (const Base::TUuid &, const Base::TUuid &, const Base::TUuid &)> &update_replication_notification_cb,
                const TIndexCb &on_replicate_index_id,
@@ -142,7 +142,7 @@ namespace Orly {
       /* Block until every replication loop that actually started has
          returned: a stop is only a flag plus a wake, and this manager must
          not be destroyed while a loop is still inside its body (#440).
-         NOTE: a master-mode loop wedged in a remote Sync() holds this join
+         NOTE: a primary-mode loop wedged in a remote Sync() holds this join
          until the RPC resolves; interrupting in-flight RPCs is
          TODO(#461). */
       void JoinReplicationServices();
@@ -248,14 +248,14 @@ namespace Orly {
 
       };
 
-      class TMaster
-          : public TMasterContext {
-        NO_COPY(TMaster);
+      class TPrimary
+          : public TPrimaryContext {
+        NO_COPY(TPrimary);
         public:
 
-        TMaster(TManager *manager, const Base::TFd &fd);
+        TPrimary(TManager *manager, const Base::TFd &fd);
 
-        virtual ~TMaster();
+        virtual ~TPrimary();
 
         virtual bool Queue();
 
@@ -275,16 +275,16 @@ namespace Orly {
 
         TManager *Manager;
 
-      };  // TMaster
+      };  // TPrimary
 
-      class TSlave
-          : public TSlaveContext, Indy::Fiber::TRunnable {
-        NO_COPY(TSlave);
+      class TReplica
+          : public TReplicaContext, Indy::Fiber::TRunnable {
+        NO_COPY(TReplica);
         public:
 
-        TSlave(TManager *manager, const Base::TFd &fd);
+        TReplica(TManager *manager, const Base::TFd &fd);
 
-        virtual ~TSlave();
+        virtual ~TReplica();
 
         virtual bool Queue() override;
 
@@ -304,7 +304,7 @@ namespace Orly {
 
         size_t ApplyCoreVectorTransactions(const std::vector<Atom::TCore> &core_vec, Atom::TCore::TArena *arena);
 
-        virtual void TransitionToSlave() override;
+        virtual void TransitionToReplica() override;
 
         virtual void Ping();
 
@@ -329,7 +329,7 @@ namespace Orly {
           TFlusher(Disk::Util::TEngine *engine)
               : Engine(engine),
                 OutStream(new TDataOutStream(HERE,
-                                             Disk::Source::SlaveSlush,
+                                             Disk::Source::ReplicaSlush,
                                              Engine->GetVolMan(),
                                              0UL,
                                              BlockVec,
@@ -436,7 +436,7 @@ namespace Orly {
           std::optional<TSequenceNumber> Highest;
           TSequenceNumber NextId;
 
-          friend class TSlave;
+          friend class TReplica;
 
         };  // TToSync
 
@@ -476,7 +476,7 @@ namespace Orly {
 
         std::shared_ptr<TFlusher> Flusher;
 
-      };  // TSlave
+      };  // TReplica
 
       virtual TRepo *ConstructRepo(const Base::TUuid &repo_id,
                                    const std::optional<TTtl> &ttl,
@@ -489,7 +489,7 @@ namespace Orly {
       /* Note a discarded repo with a ttl above 0.  ConstructRepo() wrote it a saved-repo entry in
          the system repo, and the next system-repo write that creates a repo removes that entry
          (#671).  Without this, nothing ever removed one: the system repo grew by an entry per
-         pov, and a slave's join walked them all. */
+         pov, and a replica's join walked them all. */
       virtual void OnRepoDiscarded(const Base::TUuid &repo_id, const TTtl &ttl) noexcept override;
 
       /* The ids in the saved-repo entries the walker yields, keeping only the newest version of
@@ -545,7 +545,7 @@ namespace Orly {
       /* The (package name, version) pairs currently recorded as installed. */
       std::vector<std::pair<std::vector<std::string>, uint64_t>> GetInstalledPackages();
 
-      /* Replay core vector transactions (used by slave apply and WAL recovery, #755).
+      /* Replay core vector transactions (used by replica apply and WAL recovery, #755).
 
          If 'on_push' is given, it is called with the meta core of each push in a transaction that
          has no pop, and the repo it was pushed to, so recovery can read what the record says
@@ -571,14 +571,14 @@ namespace Orly {
                                          const THeadHold *head_hold = nullptr,
                                          const std::unordered_set<Base::TUuid> *skip_repos = nullptr);
 
-      /* The 'on_push' a slave passes when it applies what the master sends, so a slave keeps the
-         same exactly-once entries as its master and has them when it is promoted (#862). Set it
+      /* The 'on_push' a replica passes when it applies what the primary sends, so a replica keeps the
+         same exactly-once entries as its primary and has them when it is promoted (#862). Set it
          before the replication loops start. */
       void SetReplicatedPushCallback(TPushCallback cb) {
         ReplicatedPushCb = std::move(cb);
       }
 
-      /* The head hold a slave passes with ReplicatedPushCb. Set it with the callback. */
+      /* The head hold a replica passes with ReplicatedPushCb. Set it with the callback. */
       void SetReplicatedHeadHold(THeadHold hold) {
         ReplicatedHeadHold = std::move(hold);
       }
@@ -600,7 +600,7 @@ namespace Orly {
          `next`, as it was when the copy was taken. */
       void AdvanceReplayNumbering(const Base::TUuid &repo_id, TSequenceNumber next);
 
-      void OnSlaveJoin(const Base::TFd &fd);
+      void OnReplicaJoin(const Base::TFd &fd);
 
       /* Before WAL recovery on a reopened store, note the saved-repo entries that came back with
          the system repo so ConstructRepo() skips writing duplicate entries for restored safe povs.
@@ -639,9 +639,9 @@ namespace Orly {
 
       void PromoteSolo(const Base::TFd &fd);
 
-      void PromoteSlave();
+      void PromoteReplica();
 
-      void AugmentViewMapWithDiskLayers(TMaster::TViewDef &view_def, const std::unique_ptr<Indy::TRepo::TView> &view) const;
+      void AugmentViewMapWithDiskLayers(TPrimary::TViewDef &view_def, const std::unique_ptr<Indy::TRepo::TView> &view) const;
 
       virtual void ForEachScheduler(const std::function<bool (Fiber::TRunner *)> &cb) const {
         ForEachSchedulerCb(cb);
@@ -654,11 +654,11 @@ namespace Orly {
       std::shared_ptr<TCommonContext> Context;
       std::mutex ContextLock;
 
-      bool SlaveNotifiedFinish;
-      std::mutex SlaveNotifyLock;
-      std::condition_variable SlaveNotifyCond;
+      bool ReplicaNotifiedFinish;
+      std::mutex ReplicaNotifyLock;
+      std::condition_variable ReplicaNotifyCond;
 
-      std::function<void (const std::shared_ptr<std::function<void (const Base::TFd &)>> &)> WaitForSlave;
+      std::function<void (const std::shared_ptr<std::function<void (const Base::TFd &)>> &)> WaitForReplica;
 
       std::function<void (TState)> StateChangeCb;
 
@@ -728,27 +728,27 @@ namespace Orly {
       std::shared_ptr<Durable::TManager> DurableManager;
 
       /* The durable manager, for the merge fibers that read and save retention records while the server is still
-         setting it (SetDurableManager); and whether State is Solo or Master (see ShipsRetention), likewise. */
+         setting it (SetDurableManager); and whether State is Solo or Primary (see ShipsRetention), likewise. */
       std::atomic<Durable::TManager *> RetentionStore{nullptr};
       std::atomic<bool> ShipsRetentionFlag{true};
 
       Indy::Fiber::TRunner *BGFastRunner;
 
-      size_t ReplicationSyncSlaveBufSizeBytes;
+      size_t ReplicationSyncReplicaBufSizeBytes;
 
       bool AllowFileSync;
 
-      /* A repo being synced to a joining slave, with the view the sync reads.  The view holds the
+      /* A repo being synced to a joining replica, with the view the sync reads.  The view holds the
          repo's layers but not the repo, so the entry pins the repo too: without the pin, a repo
          that went during the sync (expired, or discarded by the cache) took its layers with it
-         under the view, and the slave's fetch then opened an empty stand-in under its id (#671).
+         under the view, and the replica's fetch then opened an empty stand-in under its id (#671).
          Declared in this order so the view goes before the pin. */
-      struct TSlaveSync {
+      struct TReplicaSync {
         L0::TManager::TPtr<Indy::TRepo> Repo;
         std::unique_ptr<Indy::TRepo::TView> View;
       };
 
-      std::unordered_map<Base::TUuid, TSlaveSync> SlaveSyncViewMap;
+      std::unordered_map<Base::TUuid, TReplicaSync> ReplicaSyncViewMap;
 
       /* Covers DiscardedSavedRepos and SavedReposOnOpen. */
       std::mutex DiscardedSavedReposMutex;
@@ -823,9 +823,9 @@ namespace Orly {
       return SystemRepo;
     }
 
-    inline void TManager::TMaster::Ping() {}
+    inline void TManager::TPrimary::Ping() {}
 
-    inline void TManager::TSlave::Ping() {}
+    inline void TManager::TReplica::Ping() {}
 
   }  // Indy
 

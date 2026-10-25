@@ -77,7 +77,7 @@ namespace Orly {
         MergeDataFileUpdateIndex,
         PresentWalk,
         RepoLoader,
-        SlaveSlush,
+        ReplicaSlush,
         System,
         UpdateScoop,
         UpdateWalk,

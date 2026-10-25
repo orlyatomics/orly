@@ -56,7 +56,7 @@ namespace Orly {
       virtual void OnError(const std::exception &ex);
 
       std::unordered_set<Socket::TAddress> HostSet;
-      std::optional<Socket::TAddress> MasterHost;
+      std::optional<Socket::TAddress> PrimaryHost;
       std::mutex HostMutex;
       std::condition_variable HostCond;
 

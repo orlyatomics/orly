@@ -32,7 +32,7 @@ const Indy::L0::TManager::TPtr<Indy::TRepo> &TPov::GetRepo(const TServer *server
     auto repo_manager = server->GetRepoManager();
     if (Reloaded) {
       /* This pov came back from a durable disk layer, so its repo predates
-         this object.  ATTACH if the repo is alive (on a promoted slave,
+         this object.  ATTACH if the repo is alive (on a promoted replica,
          replication built it); NEVER create.  Creating would resurrect the
          pov as an empty shell parented to global, silently swallowing every
          update tetris had not yet promoted at shutdown (#439). */

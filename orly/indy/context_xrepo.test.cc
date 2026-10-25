@@ -76,8 +76,8 @@ namespace Sabot = Orly::Sabot;
 using Orly::TMutator;
 using Orly::TTtl;
 
-const Orly::Indy::TMasterContext::TProtocol Orly::Indy::TMasterContext::TProtocol::Protocol;
-const Orly::Indy::TSlaveContext::TProtocol Orly::Indy::TSlaveContext::TProtocol::Protocol;
+const Orly::Indy::TPrimaryContext::TProtocol Orly::Indy::TPrimaryContext::TProtocol::Protocol;
+const Orly::Indy::TReplicaContext::TProtocol Orly::Indy::TReplicaContext::TProtocol::Protocol;
 
 Orly::Indy::Util::TPool L0::TManager::TRepo::TMapping::Pool(sizeof(TRepo::TMapping), "Repo Mapping", 100UL);
 Orly::Indy::Util::TPool L0::TManager::TRepo::TMapping::TEntry::Pool(sizeof(TRepo::TMapping::TEntry), "Repo Mapping Entry", 100UL);
@@ -341,27 +341,27 @@ FIXTURE(XRepoSnapshot3RepoLeading) {
 }
 
 /* A Tetris manager whose players never play, so a test can write to a child repo (a child's first
-   write joins its parent's player) and promote by hand. It is not the master, so each player
+   write joins its parent's player) and promote by hand. It is not the primary, so each player
    waits for permission to work until its last child parts, and then exits. */
 class TInertTetrisManager final
     : public Orly::Server::TTetrisManager {
   public:
   TInertTetrisManager(TScheduler *scheduler, Fiber::TRunner::TRunnerCons &runner_cons,
                       Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> *frame_pool_manager)
-      : TTetrisManager(scheduler, runner_cons, frame_pool_manager, [](Fiber::TRunner *) {}, /* is_master */ false) {}
+      : TTetrisManager(scheduler, runner_cons, frame_pool_manager, [](Fiber::TRunner *) {}, /* is_primary */ false) {}
   virtual ~TInertTetrisManager() {
     StopAllPlayers();
   }
-  virtual TPlayer *NewPlayer(const TUuid &, const TUuid &, bool is_paused, bool is_master) override {
-    return new TInertPlayer(this, is_paused, is_master);
+  virtual TPlayer *NewPlayer(const TUuid &, const TUuid &, bool is_paused, bool is_primary) override {
+    return new TInertPlayer(this, is_paused, is_primary);
   }
   private:
   class TInertPlayer final
       : public TPlayer {
     public:
-    TInertPlayer(TTetrisManager *tetris_manager, bool is_paused, bool is_master)
+    TInertPlayer(TTetrisManager *tetris_manager, bool is_paused, bool is_primary)
         : TPlayer(tetris_manager) {
-      Start(is_paused, is_master);
+      Start(is_paused, is_primary);
     }
     virtual void OnJoin(const TUuid &) override {}
     virtual void OnPart(const TUuid &) override {}
@@ -504,7 +504,7 @@ FIXTURE(Issue791ChildDeleteMasksAncestor) {
         EXPECT_EQ(read(through, 4, 5), "50");
         EXPECT_EQ(read(through, 4, 50), "absent");
         EXPECT_EQ(keys(through, 4), "[0,1,2,3,5,100]");
-        /* The range starts at a key the pov holds: on a master before #793, a memory layer's
+        /* The range starts at a key the pov holds: on a primary before #793, a memory layer's
            range walk whose first key in range lies past `from` yields nothing at all. */
         EXPECT_EQ(range(through, 4, 3, 5), "[3,5]");
         EXPECT_EQ(range(through, 4, 4, 4), "[]");

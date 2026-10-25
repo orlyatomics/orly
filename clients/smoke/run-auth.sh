@@ -1,8 +1,8 @@
 #!/bin/bash
 # Shared-secret smoke (#710). orlyi takes an optional token (--auth_token_file,
 # ORLY_AUTH_TOKEN_FILE, ORLY_AUTH_TOKEN or --auth_token); with one, every client
-# connection must present it before any statement runs, and a slave must
-# present the replication token (by default the same one) to join a master.
+# connection must present it before any statement runs, and a replica must
+# present the replication token (by default the same one) to join a primary.
 # With none, nothing changes.
 #   0. Build the TS client (clients/ts).
 #   1. No token: WebSocket and binary clients work as before, with or without a
@@ -14,12 +14,12 @@
 #   3. Control: the same refusal checks against an orlyi started WITHOUT the
 #      token must fail, so step 2 can't pass against a server that ignores it.
 #   4. --auth_token=<value>: the value is scrubbed from /proc/<pid>/cmdline.
-#   5. Replication, master started with --auth_token_file (the replication
-#      token defaults to it): a slave with a different token is refused, with a
-#      line in both logs, and exits; a slave with no token is refused; the
-#      master keeps listening, and a slave with the right token joins.
-#   6. Control: a master without a token lets the wrong-token slave join, so the
-#      refusal in step 5 is the master's check.
+#   5. Replication, primary started with --auth_token_file (the replication
+#      token defaults to it): a replica with a different token is refused, with a
+#      line in both logs, and exits; a replica with no token is refused; the
+#      primary keeps listening, and a replica with the right token joins.
+#   6. Control: a primary without a token lets the wrong-token replica join, so the
+#      refusal in step 5 is the primary's check.
 
 set -e
 
@@ -28,9 +28,9 @@ REPO_ROOT="$(cd ../.. && pwd)"
 ORLY_OUT="${ORLY_OUT:-$REPO_ROOT/../out_orly/release}"
 ORLYI="$ORLY_OUT/orly/server/orlyi"
 ORLY_CLIENT="$ORLY_OUT/orly/client/orly_client"
-# Master (or solo) ports, then the slave's.
-PORT=19850 SLAVE_PORT=19851 WS_PORT=19852 REPORTING_PORT=19853
-S_PORT=19860 S_SLAVE_PORT=19861 S_WS_PORT=19862 S_REPORTING_PORT=19863
+# Primary (or solo) ports, then the replica's.
+PORT=19850 REPLICA_PORT=19851 WS_PORT=19852 REPORTING_PORT=19853
+S_PORT=19860 S_REPLICA_PORT=19861 S_WS_PORT=19862 S_REPORTING_PORT=19863
 
 for bin in "$ORLYI" "$ORLY_CLIENT"; do
   if [ ! -x "$bin" ]; then
@@ -47,8 +47,8 @@ echo "[0/6] build clients/ts"
 (cd "$REPO_ROOT/clients/ts" && npm install --silent && npx tsc)
 
 WORK="$(mktemp -d)"
-MASTER_PID= SLAVE_PID=
-trap 'for p in $MASTER_PID $SLAVE_PID; do kill -9 $p 2>/dev/null; done; rm -rf "$WORK"' EXIT
+PRIMARY_PID= REPLICA_PID=
+trap 'for p in $PRIMARY_PID $REPLICA_PID; do kill -9 $p 2>/dev/null; done; rm -rf "$WORK"' EXIT
 mkdir "$WORK/packages"
 touch "$WORK/packages/__orly__"
 
@@ -70,35 +70,35 @@ fail() {
 
 LOG_FLAGS=(--le --log_info --log_notice --log_warning)
 
-# start_master <log name> [orlyi flags...]: a SOLO orlyi on the master ports.
-start_master() {
+# start_primary <log name> [orlyi flags...]: a SOLO orlyi on the primary ports.
+start_primary() {
   local log="$WORK/$1.log"; shift
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-           --port_number=$PORT --replica_port_number=$SLAVE_PORT \
+           --port_number=$PORT --replica_port_number=$REPLICA_PORT \
            --ws_port_number=$WS_PORT --reporting_port_number=$REPORTING_PORT \
            --connection_backlog=10 --instance_name=orly_auth_smoke \
            --starting_state=SOLO --package_dir="$WORK/packages" \
            "${LOG_FLAGS[@]}" "$@" > "$log" 2>&1 &
-  MASTER_PID=$!
+  PRIMARY_PID=$!
   for _ in $(seq 1 60); do
-    if ss -tln 2>/dev/null | grep -q ":$WS_PORT " && ss -tln 2>/dev/null | grep -q ":$SLAVE_PORT "; then return 0; fi
-    kill -0 "$MASTER_PID" 2>/dev/null || fail "orlyi ($log) exited at startup"
+    if ss -tln 2>/dev/null | grep -q ":$WS_PORT " && ss -tln 2>/dev/null | grep -q ":$REPLICA_PORT "; then return 0; fi
+    kill -0 "$PRIMARY_PID" 2>/dev/null || fail "orlyi ($log) exited at startup"
     sleep 1
   done
   fail "orlyi ($log) failed to open its listeners"
 }
 
-# start_slave <log name> [orlyi flags...]: a SLAVE of the master above.
-start_slave() {
+# start_replica <log name> [orlyi flags...]: a REPLICA of the primary above.
+start_replica() {
   local log="$WORK/$1.log"; shift
   "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-           --port_number=$S_PORT --replica_port_number=$S_SLAVE_PORT \
+           --port_number=$S_PORT --replica_port_number=$S_REPLICA_PORT \
            --ws_port_number=$S_WS_PORT --reporting_port_number=$S_REPORTING_PORT \
-           --connection_backlog=10 --instance_name=orly_auth_smoke_slave \
-           --starting_state=REPLICA --address_of_primary=127.0.0.1:$SLAVE_PORT \
+           --connection_backlog=10 --instance_name=orly_auth_smoke_replica \
+           --starting_state=REPLICA --address_of_primary=127.0.0.1:$REPLICA_PORT \
            --package_dir="$WORK/packages" \
            "${LOG_FLAGS[@]}" "$@" > "$log" 2>&1 &
-  SLAVE_PID=$!
+  REPLICA_PID=$!
 }
 
 stop() {  # stop <pid variable name>
@@ -111,10 +111,10 @@ stop() {  # stop <pid variable name>
 }
 
 stop_all() {
-  stop SLAVE_PID
-  stop MASTER_PID
+  stop REPLICA_PID
+  stop PRIMARY_PID
   for _ in $(seq 1 30); do
-    if ! ss -tln 2>/dev/null | grep -qE ":($PORT|$SLAVE_PORT|$WS_PORT|$S_PORT|$S_WS_PORT) "; then return 0; fi
+    if ! ss -tln 2>/dev/null | grep -qE ":($PORT|$REPLICA_PORT|$WS_PORT|$S_PORT|$S_WS_PORT) "; then return 0; fi
     sleep 1
   done
 }
@@ -140,7 +140,7 @@ check_clients() {  # check_clients <required|open>
 }
 
 echo "[1/6] no token: everything as before"
-start_master solo
+start_primary solo
 check_clients open || fail "a client check failed with no token configured"
 # Exercise both sides of the close-vs-token-write race (#775).
 for attempt in $(seq 1 20); do
@@ -152,7 +152,7 @@ grep -qF "token required" "$WORK/solo.log" && fail "the log mentions a token wit
 stop_all
 
 echo "[2/6] --auth_token_file: refused without the token, served with it"
-start_master auth --auth_token_file="$WORK/token"
+start_primary auth --auth_token_file="$WORK/token"
 grep -qF "client listener bound to 127.0.0.1:$PORT; token required" "$WORK/auth.log" \
   || fail "the log does not say the client listener requires a token"
 grep -qF "websocket listener bound to 127.0.0.1:$WS_PORT; remote compile disabled; token required" "$WORK/auth.log" \
@@ -172,12 +172,12 @@ out="$(echo "echo 'binary hello';" | timeout -s KILL 30 "$ORLY_CLIENT" --server_
 echo "$out" | grep -qF "unauthorized" || fail "orly_client with no token: $out"
 echo "  ok   orly_client: no token -> unauthorized"
 grep -qF "refused a client from" "$WORK/auth.log" || fail "the log has no refusal line"
-kill -0 "$MASTER_PID" 2>/dev/null || fail "orlyi died"
+kill -0 "$PRIMARY_PID" 2>/dev/null || fail "orlyi died"
 no_token_in_logs
 stop_all
 
 echo "[3/6] control: the refusal checks must fail against a server that ignores the token"
-start_master control
+start_primary control
 if check_clients required > "$WORK/control.out" 2>&1; then
   cat "$WORK/control.out"
   fail "the refusal checks passed against an orlyi with no token; they prove nothing"
@@ -188,8 +188,8 @@ echo "  ok   the checks fail without a server-side token ($(grep -c FAIL "$WORK/
 stop_all
 
 echo "[4/6] --auth_token=<value> is scrubbed from the process's command line"
-start_master flag --auth_token="$TOKEN"
-tr '\0' ' ' < "/proc/$MASTER_PID/cmdline" | grep -qF "$TOKEN" && fail "the token is still in /proc/<pid>/cmdline"
+start_primary flag --auth_token="$TOKEN"
+tr '\0' ' ' < "/proc/$PRIMARY_PID/cmdline" | grep -qF "$TOKEN" && fail "the token is still in /proc/<pid>/cmdline"
 echo "  ok   /proc/<pid>/cmdline no longer carries the token"
 PYTHONPATH="$REPO_ROOT/clients/python:$PYTHONPATH" ORLY_AUTH_TOKEN="$TOKEN" python3 - $WS_PORT <<'PY' || fail "ORLY_AUTH_TOKEN did not authenticate the Python client"
 import sys, orly
@@ -199,46 +199,46 @@ print("  ok   Python client: token from ORLY_AUTH_TOKEN")
 PY
 stop_all
 
-echo "[5/6] replication: the master refuses a slave without its token"
-start_master master --auth_token_file="$WORK/token"
-grep -qF "replication listener bound to 0.0.0.0:$SLAVE_PORT; token required" "$WORK/master.log" \
+echo "[5/6] replication: the primary refuses a replica without its token"
+start_primary primary --auth_token_file="$WORK/token"
+grep -qF "replication listener bound to 0.0.0.0:$REPLICA_PORT; token required" "$WORK/primary.log" \
   || fail "the replication token did not default to the client token"
-start_slave wrong_slave --replication_token_file="$WORK/other"
-wait_log master "refused a replica from 127.0.0.1" 30 || fail "the master did not refuse the wrong-token slave"
-grep -qF "the replica presented a different replication token" "$WORK/master.log" || fail "the master's refusal doesn't say why"
-wait_log wrong_slave "the primary refused this replica's replication token" 30 || fail "the slave did not log the refusal"
-for _ in $(seq 1 30); do kill -0 "$SLAVE_PID" 2>/dev/null || break; sleep 1; done
-kill -0 "$SLAVE_PID" 2>/dev/null && fail "the refused slave is still running"
-echo "  ok   wrong token: refused, logged on both sides, the slave exited"
-grep -h "replication: " "$WORK/master.log" "$WORK/wrong_slave.log" | sed 's/^/         /'
-stop SLAVE_PID
-start_slave bare_slave
+start_replica wrong_replica --replication_token_file="$WORK/other"
+wait_log primary "refused a replica from 127.0.0.1" 30 || fail "the primary did not refuse the wrong-token replica"
+grep -qF "the replica presented a different replication token" "$WORK/primary.log" || fail "the primary's refusal doesn't say why"
+wait_log wrong_replica "the primary refused this replica's replication token" 30 || fail "the replica did not log the refusal"
+for _ in $(seq 1 30); do kill -0 "$REPLICA_PID" 2>/dev/null || break; sleep 1; done
+kill -0 "$REPLICA_PID" 2>/dev/null && fail "the refused replica is still running"
+echo "  ok   wrong token: refused, logged on both sides, the replica exited"
+grep -h "replication: " "$WORK/primary.log" "$WORK/wrong_replica.log" | sed 's/^/         /'
+stop REPLICA_PID
+start_replica bare_replica
 for _ in $(seq 1 30); do
-  [ "$(grep -c "refused a replica from" "$WORK/master.log")" -ge 2 ] && break
+  [ "$(grep -c "refused a replica from" "$WORK/primary.log")" -ge 2 ] && break
   sleep 1
 done
-[ "$(grep -c "refused a replica from" "$WORK/master.log")" -ge 2 ] || fail "the master did not refuse a slave with no token"
-grep -E "refused a replica from .*(did not answer|hung up)" "$WORK/master.log" > /dev/null \
-  || fail "the master's refusal of a tokenless slave doesn't say it had no token"
-grep -q "to \[Slave\]" "$WORK/bare_slave.log" && fail "a slave with no token joined"
-echo "  ok   no token: refused by the master"
-grep -h "refused a replica from" "$WORK/master.log" | tail -1 | sed 's/^/         /'
-stop SLAVE_PID
-ORLY_REPLICATION_TOKEN="$TOKEN" start_slave right_slave
-wait_log right_slave "to [Slave]" 120 || fail "the slave with the right token did not join"
-grep -qF "accepted this replica's replication token" "$WORK/right_slave.log" || fail "the slave did not log the acceptance"
-grep -qF "presented the replication token" "$WORK/master.log" || fail "the master did not log the acceptance"
-kill -0 "$MASTER_PID" 2>/dev/null || fail "the master died"
-echo "  ok   right token: the slave joined"
+[ "$(grep -c "refused a replica from" "$WORK/primary.log")" -ge 2 ] || fail "the primary did not refuse a replica with no token"
+grep -E "refused a replica from .*(did not answer|hung up)" "$WORK/primary.log" > /dev/null \
+  || fail "the primary's refusal of a tokenless replica doesn't say it had no token"
+grep -q "to \[Replica\]" "$WORK/bare_replica.log" && fail "a replica with no token joined"
+echo "  ok   no token: refused by the primary"
+grep -h "refused a replica from" "$WORK/primary.log" | tail -1 | sed 's/^/         /'
+stop REPLICA_PID
+ORLY_REPLICATION_TOKEN="$TOKEN" start_replica right_replica
+wait_log right_replica "to [Replica]" 120 || fail "the replica with the right token did not join"
+grep -qF "accepted this replica's replication token" "$WORK/right_replica.log" || fail "the replica did not log the acceptance"
+grep -qF "presented the replication token" "$WORK/primary.log" || fail "the primary did not log the acceptance"
+kill -0 "$PRIMARY_PID" 2>/dev/null || fail "the primary died"
+echo "  ok   right token: the replica joined"
 no_token_in_logs
 stop_all
 
-echo "[6/6] control: a master without a token lets the same wrong-token slave join"
-start_master open_master
-start_slave open_slave --replication_token_file="$WORK/other"
-wait_log open_slave "to [Slave]" 120 || fail "the slave did not join a master with no token"
-grep -qF "did not ask for a replication token" "$WORK/open_slave.log" || fail "the slave did not log that the master asked for no token"
-echo "  ok   the wrong-token slave joins a tokenless master, so step 5's refusal is the master's"
+echo "[6/6] control: a primary without a token lets the same wrong-token replica join"
+start_primary open_primary
+start_replica open_replica --replication_token_file="$WORK/other"
+wait_log open_replica "to [Replica]" 120 || fail "the replica did not join a primary with no token"
+grep -qF "did not ask for a replication token" "$WORK/open_replica.log" || fail "the replica did not log that the primary asked for no token"
+echo "  ok   the wrong-token replica joins a tokenless primary, so step 5's refusal is the primary's"
 no_token_in_logs
 stop_all
 

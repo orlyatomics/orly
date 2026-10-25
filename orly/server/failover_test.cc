@@ -1,6 +1,6 @@
 /* <orly/server/failover_test.cc>
 
-   Unit test for Failing over a master Indy server to a slave Indy server.
+   Unit test for Failing over a primary Indy server to a replica Indy server.
 
    Copyright 2010-2026 Atomic Kismet Company
 
@@ -184,9 +184,9 @@ FIXTURE(SmallTypical) {
       throw;
     }
   }
-  /* wait for the master to start up. */
+  /* wait for the primary to start up. */
   sleep(10);
-  /* launch server_2 which will start as slave and connect to server_1 */
+  /* launch server_2 which will start as replica and connect to server_1 */
   auto server_2_pid = fork();
   if (!server_2_pid) {
     string block_device = string("--device_name=") + Server2BlockDevice;
@@ -271,11 +271,11 @@ FIXTURE(SmallTypical) {
     std::cout << "Done Read" << std::endl;
   }
 
-  /* Kill the master */
+  /* Kill the primary */
   std::cout << "Stopping server 1" << std::endl;
   kill(server_1_pid, SIGINT);
 
-  /* connect a client to the balancer and get the key to see if it's there. we're connecting to server 2 in this case and checking to see if the slave also has the key replicated. */ {
+  /* connect a client to the balancer and get the key to see if it's there. we're connecting to server 2 in this case and checking to see if the replica also has the key replicated. */ {
     for (;;) {
       try {
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
@@ -299,7 +299,7 @@ FIXTURE(SmallTypical) {
     std::cout << "Done Read" << std::endl;
   }
 
-  /* Kill the slave */
+  /* Kill the replica */
   std::cout << "Stopping server 2" << std::endl;
   sleep(1);
   kill(server_2_pid, SIGINT);
@@ -369,9 +369,9 @@ FIXTURE(MediumTypical) {
       throw;
     }
   }
-  /* wait for the master to start up. */
+  /* wait for the primary to start up. */
   sleep(10);
-  /* launch server_2 which will start as slave and connect to server_1 */
+  /* launch server_2 which will start as replica and connect to server_1 */
   auto server_2_pid = fork();
   if (!server_2_pid) {
     string block_device = string("--device_name=") + Server2BlockDevice;
@@ -470,11 +470,11 @@ FIXTURE(MediumTypical) {
     std::cout << "Done Read" << std::endl;
   }
 
-  /* Kill the master */
+  /* Kill the primary */
   std::cout << "Stopping server 1" << std::endl;
   kill(server_1_pid, SIGINT);
 
-  /* connect a client to the balancer and get the keys to see if they're there. we're connecting to server 2 in this case and checking to see if the slave also has the keys replicated. */ {
+  /* connect a client to the balancer and get the keys to see if they're there. we're connecting to server 2 in this case and checking to see if the replica also has the keys replicated. */ {
     int64_t i = 0;
     for (;;) {
       try {
@@ -502,7 +502,7 @@ FIXTURE(MediumTypical) {
     EXPECT_EQ(i, num_iter);
   }
 
-  /* Kill the slave */
+  /* Kill the replica */
   std::cout << "Stopping server 2" << std::endl;
   sleep(1);
   kill(server_2_pid, SIGINT);
@@ -579,9 +579,9 @@ FIXTURE(ResyncTypical) {
       throw;
     }
   }
-  /* wait for the master to start up. */
+  /* wait for the primary to start up. */
   sleep(3);
-  /* launch server_2 which will start as slave and connect to server_1 */
+  /* launch server_2 which will start as replica and connect to server_1 */
   auto server_2_pid = fork();
   if (!server_2_pid) {
     string block_device = string("--device_name=") + Server2BlockDevice;
@@ -693,12 +693,12 @@ FIXTURE(ResyncTypical) {
   }
 
   //#if 0
-  /* Kill the master */
+  /* Kill the primary */
   std::cout << "Stopping server 1" << std::endl;
   kill(server_1_pid, SIGINT);
   //#endif
 
-  /* connect a client to the balancer and get the keys to see if they're there. we're connecting to server 2 in this case and checking to see if the slave also has the keys replicated. */ {
+  /* connect a client to the balancer and get the keys to see if they're there. we're connecting to server 2 in this case and checking to see if the replica also has the keys replicated. */ {
     int64_t i = 0;
     for (;;) {
       try {
@@ -759,7 +759,7 @@ FIXTURE(ResyncTypical) {
     std::cout << "Done insert" << std::endl;
   }
 
-  /* connect a client to the balancer and get the keys to see if they're all there. we're connecting to server 2 in this case and checking to see if the slave now has the new updates as well (checking tetris). */ {
+  /* connect a client to the balancer and get the keys to see if they're all there. we're connecting to server 2 in this case and checking to see if the replica now has the new updates as well (checking tetris). */ {
     int64_t i = 0;
     for (;;) {
       try {
@@ -787,10 +787,10 @@ FIXTURE(ResyncTypical) {
     EXPECT_EQ(i, num_iter * 2);
   }
 
-  std::cout << "\n\n\n\n~~~ Starting server 3 (slave to resync with current solo)~~~ \n\n\n\n" << endl;
+  std::cout << "\n\n\n\n~~~ Starting server 3 (replica to resync with current solo)~~~ \n\n\n\n" << endl;
 
   auto server_3_pid = fork();
-  /* now start another slave to resynchronize with the current solo (current solo was previous slave) */ {
+  /* now start another replica to resynchronize with the current solo (current solo was previous replica) */ {
     if (!server_3_pid) {
       string block_device = string("--device_name=") + Server1BlockDevice;
       string block_sys_path = string("--device_sys_path=") + Server1BlockDevice;
@@ -829,13 +829,13 @@ FIXTURE(ResyncTypical) {
   }
 
   //#if 0
-  /* Kill the new master */
+  /* Kill the new primary */
   std::cout << "Stopping server 2" << std::endl;
   sleep(1);
   kill(server_2_pid, SIGINT);
   //#endif
 
-  /* connect a client to the balancer and get the keys to see if they're there. we're connecting to server 3 in this case and checking to see if the new slave also has the keys replicated. */ {
+  /* connect a client to the balancer and get the keys to see if they're there. we're connecting to server 3 in this case and checking to see if the new replica also has the keys replicated. */ {
     int64_t i = 0;
     for (;;) {
       try {
@@ -863,7 +863,7 @@ FIXTURE(ResyncTypical) {
     EXPECT_EQ(i, num_iter);
   }
 
-  /* Kill the new slave */
+  /* Kill the new replica */
   std::cout << "Stopping server 3" << std::endl;
   sleep(1);
   kill(server_3_pid, SIGINT);

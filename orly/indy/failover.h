@@ -113,9 +113,9 @@ namespace Orly {
 
     };  // TCommonContext
 
-    class TMasterContext
+    class TPrimaryContext
         : public TCommonContext {
-      NO_COPY(TMasterContext);
+      NO_COPY(TPrimaryContext);
       public:
 
       static const Rpc::TEntryId FetchUpdatesId = 3500;
@@ -139,17 +139,17 @@ namespace Orly {
         private:
 
         TProtocol() {
-          Register<TMasterContext, Util::TContextInputStreamer, Base::TUuid, TSequenceNumber, TSequenceNumber>(FetchUpdatesId, &TMasterContext::FetchUpdates);
-          Register<TMasterContext, void>(NotifyFinishSyncInventoryId, &TMasterContext::NotifyFinishSyncInventory);
-          Register<TMasterContext, TViewDef, Base::TUuid>(GetViewId, &TMasterContext::GetView);
-          Register<TMasterContext, TFileSync, Base::TUuid, size_t, size_t>(SyncFileId, &TMasterContext::SyncFile);
+          Register<TPrimaryContext, Util::TContextInputStreamer, Base::TUuid, TSequenceNumber, TSequenceNumber>(FetchUpdatesId, &TPrimaryContext::FetchUpdates);
+          Register<TPrimaryContext, void>(NotifyFinishSyncInventoryId, &TPrimaryContext::NotifyFinishSyncInventory);
+          Register<TPrimaryContext, TViewDef, Base::TUuid>(GetViewId, &TPrimaryContext::GetView);
+          Register<TPrimaryContext, TFileSync, Base::TUuid, size_t, size_t>(SyncFileId, &TPrimaryContext::SyncFile);
         }
 
       };  // TProtocol
 
-      TMasterContext(const Base::TFd &fd);
+      TPrimaryContext(const Base::TFd &fd);
 
-      virtual ~TMasterContext();
+      virtual ~TPrimaryContext();
 
       virtual Util::TContextInputStreamer FetchUpdates(const Base::TUuid &repo_id, TSequenceNumber lowest, TSequenceNumber highest) = 0;
 
@@ -159,16 +159,16 @@ namespace Orly {
 
       virtual TFileSync SyncFile(const Base::TUuid &file_id, size_t gen_id, size_t context) = 0;
 
-    };  // TMasterContext
+    };  // TPrimaryContext
 
-    class TSlaveContext
+    class TReplicaContext
         : public TCommonContext {
-      NO_COPY(TSlaveContext);
+      NO_COPY(TReplicaContext);
       public:
 
       static const Rpc::TEntryId InventoryId = 3100;
       static const Rpc::TEntryId PushNotificationsId = 3101;
-      static const Rpc::TEntryId TransitionToSlaveId = 3102;
+      static const Rpc::TEntryId TransitionToReplicaId = 3102;
       static const Rpc::TEntryId SyncInventoryId = 3103;
       static const Rpc::TEntryId IndexId = 3104;
 
@@ -184,25 +184,25 @@ namespace Orly {
         private:
 
         TProtocol() {
-          Register<TSlaveContext, void,
+          Register<TReplicaContext, void,
             Base::TUuid,
             size_t,
             std::optional<Base::TUuid>,
             bool,
             std::optional<TSequenceNumber>,
             std::optional<TSequenceNumber>,
-            TSequenceNumber>(InventoryId, &TSlaveContext::Inventory);
-          Register<TSlaveContext, void, TIndexMapReplica>(IndexId, &TSlaveContext::Index);
-          Register<TSlaveContext, void, TReplicationStreamer>(PushNotificationsId, &TSlaveContext::PushNotifications);
-          Register<TSlaveContext, void>(TransitionToSlaveId, &TSlaveContext::TransitionToSlave);
-          Register<TSlaveContext, void>(SyncInventoryId, &TSlaveContext::ScheduleSyncInventory);
+            TSequenceNumber>(InventoryId, &TReplicaContext::Inventory);
+          Register<TReplicaContext, void, TIndexMapReplica>(IndexId, &TReplicaContext::Index);
+          Register<TReplicaContext, void, TReplicationStreamer>(PushNotificationsId, &TReplicaContext::PushNotifications);
+          Register<TReplicaContext, void>(TransitionToReplicaId, &TReplicaContext::TransitionToReplica);
+          Register<TReplicaContext, void>(SyncInventoryId, &TReplicaContext::ScheduleSyncInventory);
         }
 
       };  // TProtocol
 
-      TSlaveContext(const Base::TFd &fd);
+      TReplicaContext(const Base::TFd &fd);
 
-      virtual ~TSlaveContext();
+      virtual ~TReplicaContext();
 
       virtual void Inventory(const Base::TUuid &repo_id,
                              size_t ttl,
@@ -216,11 +216,11 @@ namespace Orly {
 
       virtual void PushNotifications(const TReplicationStreamer &replication_streamer) = 0;
 
-      virtual void TransitionToSlave() = 0;
+      virtual void TransitionToReplica() = 0;
 
       virtual void ScheduleSyncInventory() = 0;
 
-    };  // TSlaveContext
+    };  // TReplicaContext
 
     /* Binary streamers for Orly::Indy::TUpdateContext */
     inline Io::TBinaryOutputStream &operator<<(Io::TBinaryOutputStream &strm, const TUpdateContext &context) { context.Write(strm); return strm; }

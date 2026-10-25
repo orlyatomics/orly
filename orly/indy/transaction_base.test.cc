@@ -682,11 +682,11 @@ class TPromotingTetrisManager final
     NO_COPY(TPlayer);
     public:
 
-    TPlayer(TPromotingTetrisManager *manager, const TUuid &parent_id, const TUuid &child_id, bool is_paused, bool is_master)
+    TPlayer(TPromotingTetrisManager *manager, const TUuid &parent_id, const TUuid &child_id, bool is_paused, bool is_primary)
         : Orly::Server::TTetrisManager::TPlayer(manager), Manager(manager),
           Parent(manager->RepoManager->GetRepo(parent_id, std::nullopt, std::nullopt, false, false)) {
       OnJoin(child_id);
-      Start(is_paused, is_master);
+      Start(is_paused, is_primary);
     }
 
     private:
@@ -744,8 +744,8 @@ class TPromotingTetrisManager final
 
   };  // TPromotingTetrisManager::TPlayer
 
-  virtual Orly::Server::TTetrisManager::TPlayer *NewPlayer(const TUuid &parent_id, const TUuid &child_id, bool is_paused, bool is_master) override {
-    return new TPlayer(this, parent_id, child_id, is_paused, is_master);
+  virtual Orly::Server::TTetrisManager::TPlayer *NewPlayer(const TUuid &parent_id, const TUuid &child_id, bool is_paused, bool is_primary) override {
+    return new TPlayer(this, parent_id, child_id, is_paused, is_primary);
   }
 
   TMyManager *RepoManager;
@@ -1299,9 +1299,9 @@ class TIdleTetrisManager final
     NO_COPY(TPlayer);
     public:
 
-    TPlayer(TIdleTetrisManager *manager, bool is_paused, bool is_master)
+    TPlayer(TIdleTetrisManager *manager, bool is_paused, bool is_primary)
         : Orly::Server::TTetrisManager::TPlayer(manager) {
-      Start(is_paused, is_master);
+      Start(is_paused, is_primary);
     }
 
     private:
@@ -1320,8 +1320,8 @@ class TIdleTetrisManager final
 
   };  // TIdleTetrisManager::TPlayer
 
-  virtual Orly::Server::TTetrisManager::TPlayer *NewPlayer(const TUuid &, const TUuid &, bool is_paused, bool is_master) override {
-    return new TPlayer(this, is_paused, is_master);
+  virtual Orly::Server::TTetrisManager::TPlayer *NewPlayer(const TUuid &, const TUuid &, bool is_paused, bool is_primary) override {
+    return new TPlayer(this, is_paused, is_primary);
   }
 
 };  // TIdleTetrisManager
@@ -1548,7 +1548,7 @@ FIXTURE(Issue665PopCompletionOnCachedRepo) {
   }, 1UL /* a runner for the Tetris manager */);
 }
 
-/* A transaction a master replicated must not be refused for want of WAL room (#891): the slave
+/* A transaction a primary replicated must not be refused for want of WAL room (#891): the replica
    applies it on a fiber, and a refusal there left the batch half-applied and the replica behind
    for good.  With WaitForWalRoom, Prepare on a fiber waits out a full ring until a checkpoint (on
    another thread, as the server's checkpointer is) makes room, then commits; it refuses only once
