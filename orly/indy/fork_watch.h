@@ -36,8 +36,8 @@
    because the watch can no longer tell.  Conflicts are numbered from 1; the watch keeps the last
    MaxConflicts of them.
 
-   The watch lives only in the master's memory, like the POV's repo (POVs don't survive a restart,
-   #439).  A slave doesn't keep one, so after a failover the POV promotes unwatched.
+   The watch lives only in the primary's memory, like the POV's repo (POVs don't survive a restart,
+   #439).  A replica doesn't keep one, so after a failover the POV promotes unwatched.
 
    Named save points of a POV (#889) are kept by its repo (TRepo::SetSavePoint), not here: a save point is the POV's
    newest own version, and `diff_pov` with `.since` diffs the writes after it, until one of them is promoted.  A

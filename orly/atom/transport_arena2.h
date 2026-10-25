@@ -4,7 +4,7 @@
    based transport: `Read(stream, core)` and `Write(stream, ...)`
    serialise the arena's notes in merge order to / from a
    `TBinaryInput/OutputStream`. Used by the WS protocol and
-   master->slave replication to ship sabot values across process
+   primary->replica replication to ship sabot values across process
    boundaries.
 
    Copyright 2010-2026 Atomic Kismet Company

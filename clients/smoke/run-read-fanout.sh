@@ -18,7 +18,7 @@ ORLY_OUT="${ORLY_OUT:-$REPO_ROOT/../out_orly/release}"
 ORLYI="$ORLY_OUT/orly/server/orlyi"
 ORLYC="$ORLY_OUT/orly/orlyc"
 PORT=${PORT:-19790}
-SLAVE_PORT=${SLAVE_PORT:-19791}
+REPLICA_PORT=${REPLICA_PORT:-19791}
 WS_PORT=${WS_PORT:-19792}
 REPORT_PORT=${REPORT_PORT:-19793}
 FRAMES=${FRAMES:-200}
@@ -56,7 +56,7 @@ touch "$WORK/packages/__orly__"
 cp "$WORK/sample.1.so" "$WORK/packages/"
 
 "$ORLYI" --mem_sim --mem_sim_mb=${MEM_SIM_MB:-512} --mem_sim_slow_mb=64 --create=true \
-         --port_number=$PORT --replica_port_number=$SLAVE_PORT \
+         --port_number=$PORT --replica_port_number=$REPLICA_PORT \
          --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
          --connection_backlog=256 \
          --instance_name=orly_read_fanout \

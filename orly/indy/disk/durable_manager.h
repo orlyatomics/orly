@@ -226,7 +226,7 @@ namespace Orly {
 
         private:
 
-        /* Save() and TrySaveRecord(): add the entry to the current memory layer, and queue it for the slaves if
+        /* Save() and TrySaveRecord(): add the entry to the current memory layer, and queue it for the replicas if
            'replicate'. With 'refuse_once_retired', return false, adding nothing, once the writer has retired. */
         bool AddEntry(const Durable::TId &id, const Durable::TDeadline &deadline, const Durable::TTtl &ttl, const std::string &serialized_form,
                       Durable::TSem *sem, bool replicate, bool refuse_once_retired);

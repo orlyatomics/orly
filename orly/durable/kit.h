@@ -210,7 +210,7 @@ namespace Orly {
       /* Create a new durable with the given id and ttl and return a shared pointer to it.
          If there is already a durable with the given id, throw.
          This function will block until the durable is created.
-         If the durable replicates to the slave, this function will block until replication is confirmed.
+         If the durable replicates to the replica, this function will block until replication is confirmed.
          The durable will initially belong only to the calling thread; however, that thread is free to pass the shared pointer to other threads.
          If multiple threads try to modify the durable, additional synchronization will be required.
          When the last shared pointer is released, the durable will close.
@@ -257,14 +257,14 @@ namespace Orly {
       /* Copy the last saved form of the durable with the given id into 'blob' and return true,
          or return false if none is saved.  Doesn't open the durable or touch its ttl, and doesn't
          take the manager's mutex, so a manager whose storage can't be read without it saves
-         nothing here: the default.  For a joining slave, which needs the saved records of the
+         nothing here: the default.  For a joining replica, which needs the saved records of the
          povs whose repos it gets (#680). */
       virtual bool TryReadSaved(const TId &/*id*/, std::string &/*blob*/) {
         return false;
       }
 
       /* Save 'blob' as the record with the given id, like Save(), for a caller that must know the record has
-         reached the disk before it acts on it (#745 stage 3: a repo's retention record). Replicate it to slaves only
+         reached the disk before it acts on it (#745 stage 3: a repo's retention record). Replicate it to replicas only
          if 'replicate'. Returns false, saving nothing and leaving 'sem' alone, when this manager cannot promise the
          disk: the default, and a manager whose writer has stopped. Otherwise 'sem' is pushed once the record is on
          disk, and only then. */

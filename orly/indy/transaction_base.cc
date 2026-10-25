@@ -93,8 +93,8 @@ std::function<void ()> TTransaction::OnCommitBetweenPushAndPopForTest;
 std::function<void (const Orly::Indy::TReplicationStreamer &, bool)> TTransaction::OnWalRecordForTest;
 
 /* Whether a replicated status change (pause, unpause, fail) lines up with our copy of the repo.
-   follow_or_discard is the master's lowest unpromoted sequence number when the change committed;
-   unset means the change is local and always applies.  EmptyRepoSequenceNumber means the master's
+   follow_or_discard is the primary's lowest unpromoted sequence number when the change committed;
+   unset means the change is local and always applies.  EmptyRepoSequenceNumber means the primary's
    repo had nothing pending, so ours must be empty too (#655): dereferencing our empty lowest
    sequence number, as this used to, is undefined.  A repo whose lowest sequence number differs
    (either side empty, or a different number) is at a different point in the stream: discard. */
@@ -106,7 +106,7 @@ static bool FollowsStatusChange(const Orly::Indy::L0::TManager::TPtr<Orly::Indy:
   if (*follow_or_discard == Orly::Indy::EmptyRepoSequenceNumber) {
     return !start;
   }
-  /* Never behind the master: that would mean we lost updates it had. */
+  /* Never behind the primary: that would mean we lost updates it had. */
   assert(!start || *start >= *follow_or_discard);
   return start && *start == *follow_or_discard;
 }
@@ -276,7 +276,7 @@ bool TTransaction::Pause(const L0::TManager::TPtr<TRepo> &repo, const std::optio
     /* Let any Tetris round that has already peeked this repo finish promoting it before the
        pause can commit, and keep new rounds from peeking it (#636; see TRepo::BeginPause).  We
        wait here, before the commit, because the round's own commit needs the replication queue
-       lock our commit will hold.  A round is short, and on a slave no round runs at all. */
+       lock our commit will hold.  A round is short, and on a replica no round runs at all. */
     repo->BeginPause();
     try {
       while (repo->IsHeldForPromotion()) {
@@ -507,7 +507,7 @@ void TTransaction::Prepare() {
        ahead of them (#959).  A paused repo's updates owe the room for their copy too, and an
        unpause gives it back (#963).  A transaction that would refuse at once if the ring were
        full (a client's) is refused too if it would take the paused repos past their share of the
-       ring; one that waits for room (a slave applying its master's) never is, as the master
+       ring; one that waits for room (a replica applying its primary's) never is, as the primary
        already took it. */
     size_t credit = 0UL;
     std::vector<Disk::TPromotionDebt> owes;

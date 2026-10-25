@@ -51,10 +51,10 @@ TFailoverTestBalancer::~TFailoverTestBalancer() {
 
 const Socket::TAddress &TFailoverTestBalancer::ChooseHost() {
   std::lock_guard<std::mutex> lock(HostMutex);
-  if (!MasterHost) {
-    throw std::runtime_error("No master host available to connect to.");
+  if (!PrimaryHost) {
+    throw std::runtime_error("No primary host available to connect to.");
   }
-  return *MasterHost;
+  return *PrimaryHost;
 }
 
 void TFailoverTestBalancer::RegisterHost(const Socket::TAddress &address) {
@@ -82,17 +82,17 @@ void TFailoverTestBalancer::CheckHosts() {
         break;
       }
       std::lock_guard<std::mutex> lock(HostMutex);
-      MasterHost.reset();
+      PrimaryHost.reset();
       for (const auto &addr : HostSet) {
-        bool is_master = CheckHost(addr);
-        if (MasterHost && is_master) {
-          MasterHost.reset();
-          throw std::runtime_error("There is more than 1 master");
-        } else if (is_master) {
-          MasterHost = addr;
+        bool is_primary = CheckHost(addr);
+        if (PrimaryHost && is_primary) {
+          PrimaryHost.reset();
+          throw std::runtime_error("There is more than 1 primary");
+        } else if (is_primary) {
+          PrimaryHost = addr;
         }
       }
-      if (MasterHost) {
+      if (PrimaryHost) {
         HostCond.notify_all();
       }
     }

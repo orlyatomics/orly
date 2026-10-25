@@ -4,7 +4,7 @@
 
    Off unless a token is configured. With a token, orlyi refuses a client
    connection (WebSocket or binary protocol) that does not present it before
-   any statement runs, and a master refuses a slave that does not present the
+   any statement runs, and a primary refuses a replica that does not present the
    replication token. With no token, nothing here touches the wire.
 
    This is a shared secret, not an identity: every client holding it has the
@@ -79,35 +79,35 @@ namespace Orly {
        ORLY_AUTH_TOKEN, or nullopt. Throws as ResolveToken does. */
     std::optional<std::string> ClientTokenFromEnv();
 
-    /* Replication (#710). A master that requires a token sends ReplicationChallenge to a slave
-       as soon as it connects, before anything else; the slave answers with the same 8 bytes,
-       the token's length as a big-endian uint16, and the token; the master replies one byte,
+    /* Replication (#710). A primary that requires a token sends ReplicationChallenge to a replica
+       as soon as it connects, before anything else; the replica answers with the same 8 bytes,
+       the token's length as a big-endian uint16, and the token; the primary replies one byte,
        ReplicationAccepted or ReplicationRefused, and closes the connection on a refusal. A
-       master without a token sends no challenge, so a tokenless pair's bytes are unchanged. */
+       primary without a token sends no challenge, so a tokenless pair's bytes are unchanged. */
     constexpr char ReplicationChallenge[8] = {'O', 'R', 'L', 'Y', 'A', 'U', 'T', 'H'};
     constexpr char ReplicationAccepted = 'A';
     constexpr char ReplicationRefused = 'R';
 
-    /* How long a master waits for a slave's answer to the challenge. */
+    /* How long a primary waits for a replica's answer to the challenge. */
     constexpr std::chrono::milliseconds ReplicationAnswerTimeout{10000};
 
-    /* The outcome of a master's challenge. */
+    /* The outcome of a primary's challenge. */
     enum class TJoinVerdict {
-      /* The slave presented the token. */
+      /* The replica presented the token. */
       Accepted,
-      /* The slave presented a different token. */
+      /* The replica presented a different token. */
       Refused,
-      /* The slave sent no answer, or not one in this protocol: it has no replication token. */
+      /* The replica sent no answer, or not one in this protocol: it has no replication token. */
       NoAnswer
     };
 
-    /* Master side: challenge the slave on `fd` and check its answer against `token`, waiting at
+    /* Primary side: challenge the replica on `fd` and check its answer against `token`, waiting at
        most `timeout`. Writes the verdict byte for an answer it could read. On anything but
        Accepted, sets `why` to a line for the log (it never contains a token). */
-    TJoinVerdict ChallengeSlave(
+    TJoinVerdict ChallengeReplica(
         int fd, std::string_view token, std::chrono::milliseconds timeout, std::string &why);
 
-    /* Thrown on the slave side when a master refuses its token, or the exchange breaks off. */
+    /* Thrown on the replica side when a primary refuses its token, or the exchange breaks off. */
     class TReplicationRefused
         : public std::runtime_error {
       public:
@@ -116,11 +116,11 @@ namespace Orly {
 
     };  // TReplicationRefused
 
-    /* Slave side: wait for the master's first bytes on `fd`. If they are the challenge, answer
-       with `token` and return true once the master accepts; throw TReplicationRefused if it
-       refuses or hangs up. If they are not (a master with no token, which starts replicating
+    /* Replica side: wait for the primary's first bytes on `fd`. If they are the challenge, answer
+       with `token` and return true once the primary accepts; throw TReplicationRefused if it
+       refuses or hangs up. If they are not (a primary with no token, which starts replicating
        straight away), consume nothing and return false. */
-    bool AnswerMaster(int fd, std::string_view token);
+    bool AnswerPrimary(int fd, std::string_view token);
 
   }  // Auth
 

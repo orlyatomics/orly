@@ -205,8 +205,8 @@ const char *TIndyUtilReporter::GetName(uint8_t source) const {
     case RepoLoader: {
       return "RepoLoader";
     }
-    case SlaveSlush: {
-      return "SlaveSlush";
+    case ReplicaSlush: {
+      return "ReplicaSlush";
     }
     case System: {
       return "System";

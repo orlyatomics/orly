@@ -36,7 +36,7 @@ display_as_of = ((op) when {                /* exhaustive match over the op kind
 }) where { op = resolve_as_of(...); ... };
 ```
 
-`reduce`'s seed is a `Deleted` sentinel, so an empty (or fully-filtered) history resolves to "absent" for free, and `when` is checked for exhaustiveness at compile time. **Compare `demo.py`'s `reconstruct` to [the previous version](https://github.com/orlyatomics/orly/commits/master/examples/grc20-pov/demo.py): the latest-wins loop, the `event_key` tiebreaker, and `format_value` are all gone** — the driver enumerates entities and asks the engine `display_as_of`.
+`reduce`'s seed is a `Deleted` sentinel, so an empty (or fully-filtered) history resolves to "absent" for free, and `when` is checked for exhaustiveness at compile time. **Compare `demo.py`'s `reconstruct` to [the previous version](https://github.com/orlyatomics/orly/commits/primary/examples/grc20-pov/demo.py): the latest-wins loop, the `event_key` tiebreaker, and `format_value` are all gone** — the driver enumerates entities and asks the engine `display_as_of`.
 
 ## Reviewing an edit before it lands
 

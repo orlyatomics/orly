@@ -18,7 +18,7 @@ ORLYI="$ORLY_OUT/orly/server/orlyi"
 ORLYC="$ORLY_OUT/orly/orlyc"
 PORT_BASE="${PORT_BASE:-19740}"
 PORT=$PORT_BASE
-SLAVE_PORT=$((PORT_BASE + 1))
+REPLICA_PORT=$((PORT_BASE + 1))
 WS_PORT=$((PORT_BASE + 2))
 REPORT_PORT=$((PORT_BASE + 3))
 
@@ -49,7 +49,7 @@ cp "$WORK/write_amp.1.so" "$WORK/packages/"
 echo "orlyi flags: ${ORLYI_FLAGS:-(none)}"
 
 "$ORLYI" --mem_sim --mem_sim_mb=${MEM_SIM_MB:-256} --mem_sim_slow_mb=64 --create=true \
-         --port_number=$PORT --replica_port_number=$SLAVE_PORT \
+         --port_number=$PORT --replica_port_number=$REPLICA_PORT \
          --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
          --connection_backlog=32 \
          --instance_name=orly_write_amp_smoke \

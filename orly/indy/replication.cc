@@ -139,7 +139,7 @@ void TReplicationStreamer::PushTransaction(const L1::TTransaction::TReplica &rep
   for (const auto &mutation : replica.GetMutationList()) {
     /* A push or a pop always has a sequence number.  A status change (pause, unpause, fail) carries
        the pov's lowest unpromoted one, which a pov with nothing pending doesn't have (#655): send
-       that as 0, which is never a real sequence number (they start at 1).  The slave reads 0 as
+       that as 0, which is never a real sequence number (they start at 1).  The replica reads 0 as
        "my copy must be empty too" (TTransaction::Pause and friends). */
     const L1::TTransaction::TReplica::TMutation::TKind kind = mutation.GetKind();
     (void)unapplied;
@@ -215,7 +215,7 @@ Sabot::TStdDuration ToWireDuration(const TTtl &ttl) {
 void TReplicationStreamer::PushDurable(const TDurableReplication &durable) {
   DurableBuilder.Push(durable.GetId());
   /* As a Sabot duration, like a repo's ttl.  Pushed as a bare TTtl (seconds), it did not come
-     back as the ttl it was: the slave stored a garbage deadline, and its durable layer then
+     back as the ttl it was: the replica stored a garbage deadline, and its durable layer then
      dropped the record as expired at the next write or merge, whenever that deadline fell below
      now (#676 follow-up). */
   DurableBuilder.Push(ToWireDuration(durable.GetTtl()));

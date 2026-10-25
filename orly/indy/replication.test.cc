@@ -50,9 +50,9 @@ Disk::TBufBlock::TPool Disk::TBufBlock::Pool(Disk::Util::PhysicalBlockSize, 10UL
 Orly::Indy::Util::TPool TUpdate::Pool(sizeof(TUpdate), "Update", 10UL);
 Orly::Indy::Util::TPool TUpdate::TEntry::Pool(sizeof(TUpdate::TEntry), "Entry", 10UL);
 
-/* What a master sends for each durable save -- id, ttl, serialized form -- must be what the slave
+/* What a primary sends for each durable save -- id, ttl, serialized form -- must be what the replica
    reads back.  The ttl was pushed as a bare seconds count and did not come back as the ttl sent,
-   so the slave saved each replicated pov with a garbage deadline, and its durable layer dropped
+   so the replica saved each replicated pov with a garbage deadline, and its durable layer dropped
    the record as expired at the next write or merge whenever that deadline fell below now.  After
    a failover such a pov failed with "durable object doesn't exist". */
 FIXTURE(DurableTtlSurvivesTheStream) {
@@ -69,7 +69,7 @@ FIXTURE(DurableTtlSurvivesTheStream) {
     { Base::TUuid(Base::TUuid::Twister), TTtl::max(), "a forever one" },
   };
   string wire;
-  /* master side */ {
+  /* primary side */ {
     TReplicationStreamer streamer;
     for (const auto &save : sent) {
       TDurableReplication replication(save.Id, save.Ttl, save.Obj);
@@ -83,7 +83,7 @@ FIXTURE(DurableTtlSurvivesTheStream) {
     }
     recorder->CopyOut(wire);
   }
-  /* slave side */
+  /* replica side */
   TReplicationStreamer received;
   Io::TBinaryInputOnlyStream strm(make_shared<Io::TPlayer>(make_shared<Io::TRecorder>(wire)));
   received.Read(strm);

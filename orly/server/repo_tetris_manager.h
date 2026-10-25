@@ -59,7 +59,7 @@ namespace Orly {
           Indy::Fiber::TRunner::TRunnerCons &runner_cons,
           Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *> *frame_pool_manager,
           const std::function<void (Indy::Fiber::TRunner *)> &runner_setup_cb,
-          bool is_master,
+          bool is_primary,
           Indy::TManager *repo_manager,
           Package::TManager *package_manager,
           Durable::TManager *durable_manager,
@@ -94,7 +94,7 @@ namespace Orly {
           : public TTetrisManager::TPlayer {
         public:
 
-        TPlayer(TRepoTetrisManager *repo_tetris_manager, const Base::TUuid &parent_pov_id, const Base::TUuid &child_pov_id, bool is_paused, bool is_master);
+        TPlayer(TRepoTetrisManager *repo_tetris_manager, const Base::TUuid &parent_pov_id, const Base::TUuid &child_pov_id, bool is_paused, bool is_primary);
 
         virtual ~TPlayer();
 
@@ -262,7 +262,7 @@ namespace Orly {
 
       };  // TRepoTetrisManager::TPlayer
 
-      virtual TTetrisManager::TPlayer *NewPlayer(const Base::TUuid &parent_pov_id, const Base::TUuid &child_pov_id, bool is_paused, bool is_master) override;
+      virtual TTetrisManager::TPlayer *NewPlayer(const Base::TUuid &parent_pov_id, const Base::TUuid &child_pov_id, bool is_paused, bool is_primary) override;
 
       private:
 

@@ -242,7 +242,7 @@ void TOperationTable::RefuseUnknownBefore(uint64_t ms) {
    behind its head, the slot not done and not in this snapshot, and no replay to restore it.
    BeginCommit()/HeadFloor() close it: the checkpointer takes its head no higher than HeadFloor()
    (TWalRetention::SetHeadFloor, wired in TServer), so such a record is at or past the head,
-   replayed, and RestoreOperation puts the slot back. A slave has the same window with no slot to
+   replayed, and RestoreOperation puts the slot back. A replica has the same window with no slot to
    mark, from the replicated record's append to RestoreOperation; HoldHead() covers it (#866). */
 string TOperationTable::Snapshot(uint64_t head_lsn, size_t budget) {
   struct TItem {

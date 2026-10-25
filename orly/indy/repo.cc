@@ -437,7 +437,7 @@ void TRepo::PollPendingSaveLocked() {
   PendingSem = nullptr;
   DurableHorizon = max(DurableHorizon, PendingHorizon);
   NotedStuckSave = false;
-  /* On disk here; now the slaves may have it. Fire and forget: a slave only ever holds to less than it. */
+  /* On disk here; now the replicas may have it. Fire and forget: a replica only ever holds to less than it. */
   if (Manager->ShipsRetention()) {
     Manager->TrySaveRetentionRecord(GetRetentionRecordId(GetId(), true), PendingBlob, nullptr, true);
   }
@@ -480,10 +480,10 @@ optional<TSequenceNumber> TRepo::GetMergeRetainFrom() {
     return GetRetainFrom();
   }
   ResolveRecord();
-  /* A slave holds to the horizon its master ships too. Read here, holding no lock. */
+  /* A replica holds to the horizon its primary ships too. Read here, holding no lock. */
   optional<TRetentionRecord> shipped;
-  const bool is_slave = !Manager->ShipsRetention();
-  if (is_slave) {
+  const bool is_replica = !Manager->ShipsRetention();
+  if (is_replica) {
     string blob;
     TRetentionRecord rec;
     if (Manager->TryLoadRetentionRecord(GetRetentionRecordId(GetId(), true), blob) && TRetentionRecord::TryDecode(blob, rec)) {
@@ -513,15 +513,15 @@ optional<TSequenceNumber> TRepo::GetMergeRetainFrom() {
   TSequenceNumber want = desired ? *desired : max(newest, GetHistoryHorizon());
   if (shipped) {
     want = min(want, shipped->Horizon);
-  } else if (is_slave) {
-    /* Nothing from the master yet: it may promise any version this node holds, so keep them all. */
+  } else if (is_replica) {
+    /* Nothing from the primary yet: it may promise any version this node holds, so keep them all. */
     want = 0UL;
     if (!NotedNoShipped) {
       NotedNoShipped = true;
-      Log(LOG_WARNING, "retention", "no retention record from the master yet; this slave keeps all history until one arrives (#745)");
+      Log(LOG_WARNING, "retention", "no retention record from the primary yet; this replica keeps all history until one arrives (#745)");
     }
   }
-  /* What a record claims is kept from must never be below the horizon: on a slave, want can be (the shipped horizon
+  /* What a record claims is kept from must never be below the horizon: on a replica, want can be (the shipped horizon
      is below what a synced file raised it to), and a restart would trust the record over the files. */
   const TSequenceNumber save_horizon = max(want, GetHistoryHorizon());
   if (save_horizon > DurableHorizon) {
@@ -611,7 +611,7 @@ void TRepo::SetSavePoint(const string &name, TSequenceNumber at) {
     throw runtime_error("save points need persisted retention on a root repo (#745)");
   }
   if (!Manager->ShipsRetention()) {
-    throw runtime_error("save points are set on the master (#745)");
+    throw runtime_error("save points are set on the primary (#745)");
   }
   ResolveRecord();
   optional<TSequenceNumber> seq_start, seq_limit;
@@ -624,7 +624,7 @@ void TRepo::SetSavePoint(const string &name, TSequenceNumber at) {
       throw runtime_error("no retention record store yet (#745)");
     }
     /* A merge may already have dropped what is older than what one was handed, or than the horizon. And the
-       record's horizon, saved or being saved, may have gone to the slaves, which may drop what is older than it
+       record's horizon, saved or being saved, may have gone to the replicas, which may drop what is older than it
        before this save point reaches them; at or above it, every node keeps the version. */
     const TSequenceNumber floor = max({MaxRetainFrom, GetHistoryHorizon(), DurableHorizon, PendingSem ? PendingHorizon : 0UL});
     if (at < floor || at > newest) {
@@ -2677,7 +2677,7 @@ void TSafeRepo::StepMergeDisk(size_t block_slots_available) {
                ever made. --prune_merge_history turns this off.
 
                MergeFiles tails only a repo with no parent, whose history no one reads back. A
-               slave join walks a view that pins the files it started from, and live replication
+               replica join walks a view that pins the files it started from, and live replication
                ships transactions, not files. A child's unpromoted updates are what Tetris reads,
                so its merges keep everything.
 

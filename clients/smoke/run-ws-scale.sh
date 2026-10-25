@@ -20,7 +20,7 @@ ORLYC="$ORLY_OUT/orly/orlyc"
 WS_PORT=${WS_PORT:-19772}
 REPORT_PORT=${REPORT_PORT:-19773}
 PORT=${PORT:-19770}
-SLAVE_PORT=${SLAVE_PORT:-19771}
+REPLICA_PORT=${REPLICA_PORT:-19771}
 
 for bin in "$ORLYI" "$ORLYC"; do
   if [ ! -x "$bin" ]; then
@@ -45,7 +45,7 @@ cp "$WORK/ws_scale.1.so" "$WORK/packages/"
 
 # shellcheck disable=SC2086
 "$ORLYI" --mem_sim --mem_sim_mb=256 --mem_sim_slow_mb=64 --create=true \
-         --port_number=$PORT --replica_port_number=$SLAVE_PORT \
+         --port_number=$PORT --replica_port_number=$REPLICA_PORT \
          --ws_port_number=$WS_PORT --reporting_port_number=$REPORT_PORT \
          --connection_backlog=32 \
          --instance_name=orly_ws_scale_smoke_$WS_PORT \

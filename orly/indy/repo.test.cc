@@ -61,8 +61,8 @@ namespace Sabot = Orly::Sabot;
 using Orly::TMutator;
 using Orly::TTtl;
 
-const Orly::Indy::TMasterContext::TProtocol Orly::Indy::TMasterContext::TProtocol::Protocol;
-const Orly::Indy::TSlaveContext::TProtocol Orly::Indy::TSlaveContext::TProtocol::Protocol;
+const Orly::Indy::TPrimaryContext::TProtocol Orly::Indy::TPrimaryContext::TProtocol::Protocol;
+const Orly::Indy::TReplicaContext::TProtocol Orly::Indy::TReplicaContext::TProtocol::Protocol;
 
 Orly::Indy::Util::TPool L0::TManager::TRepo::TMapping::Pool(sizeof(TRepo::TMapping), "Repo Mapping", 100UL);
 Orly::Indy::Util::TPool L0::TManager::TRepo::TMapping::TEntry::Pool(sizeof(TRepo::TMapping::TEntry), "Repo Mapping Entry", 100UL);
@@ -189,7 +189,7 @@ class TLatchedFastRepo final
 /* A minimal L1::TManager that builds stepped safe repos, and latched fast ones. Nothing here runs
    the merge loops, so the tests drive every merge. */
 /* #745 stage 3: a retention record store in memory, standing in for the durable manager. While Hold is set, saves
-   wait in Held, off the disk, until Release. With Ships off, the node is a slave. */
+   wait in Held, off the disk, until Release. With Ships off, the node is a replica. */
 struct TRetentionStoreSim {
   std::mutex Mutex;
   std::map<Base::TUuid, std::string> Records;
@@ -1901,7 +1901,7 @@ FIXTURE(DiskMergeTakesARunOfFiles) {
 
 /* #661: a repo in the cache keeps its parent open.
    (a) A child with a ttl is closed, so it goes into the cache, and is opened again by id, as a
-       slave opens a replicated repo for each batch. It must still reach its parent: a read of a
+       replica opens a replicated repo for each batch. It must still reach its parent: a read of a
        key only the parent has falls through to it (context.cc), and promotion joins the parent's
        Tetris player. Caching used to null the parent pointer and leave the optional engaged, so
        both dereferenced null.
@@ -3481,9 +3481,9 @@ FIXTURE(PersistedRetentionWaitsForTheRecord) {
   });
 }
 
-/* #745 stage 3: a slave never drops a version at or above the horizon its master ships, whatever its own window
-   says, so a failover to it keeps every version the master promised. With none shipped yet, it keeps everything. */
-FIXTURE(PersistedRetentionSlaveHoldsToShippedHorizon) {
+/* #745 stage 3: a replica never drops a version at or above the horizon its primary ships, whatever its own window
+   says, so a failover to it keeps every version the primary promised. With none shipped yet, it keeps everything. */
+FIXTURE(PersistedRetentionReplicaHoldsToShippedHorizon) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     TRunnerFileCaches file_caches;
     {
@@ -3519,7 +3519,7 @@ FIXTURE(PersistedRetentionSlaveHoldsToShippedHorizon) {
       EXPECT_GT(root.GetHistoryHorizon(), first);
       EXPECT_LE(root.GetHistoryHorizon(), shipped);
       EXPECT_TRUE(root.ReadAt(1L, shipped) == root.Int(30L));
-      /* A slave takes its save points from the master, and sets none. */
+      /* A replica takes its save points from the primary, and sets none. */
       bool refused = false;
       try {
         root.GetSafe()->SetSavePoint("sp", shipped);

@@ -53,8 +53,8 @@ void TTetrisManager::Join(const TUuid &parent_pov_id, const TUuid &child_pov_id)
   } else {
     /* The player for this parent pov doesn't exist, so create one, starting with this child. */
     try {
-      lock_guard<mutex> master_lock(MasterMutex);
-      player = NewPlayer(parent_pov_id, child_pov_id, PausedSet.find(parent_pov_id) != PausedSet.end(), IsMaster);
+      lock_guard<mutex> primary_lock(PrimaryMutex);
+      player = NewPlayer(parent_pov_id, child_pov_id, PausedSet.find(parent_pov_id) != PausedSet.end(), IsPrimary);
     } catch (...) {
       PlayerByParentPovId.erase(iter);
       throw;
@@ -220,8 +220,8 @@ TTetrisManager::TPlayer::TPlayer(TTetrisManager *tetris_manager)
   ++(tetris_manager->LivePlayerCount);
 }
 
-void TTetrisManager::TPlayer::Start(bool is_paused, bool is_master) {
-  if (is_master) {
+void TTetrisManager::TPlayer::Start(bool is_paused, bool is_primary) {
+  if (is_primary) {
     CanWork.Push();
   }
   /* Born paused: Main() sees the request before it plays a round.  We used to park here until
@@ -244,7 +244,7 @@ void TTetrisManager::TPlayer::Start(bool is_paused, bool is_master) {
 void TTetrisManager::TPlayer::Main() {
   try {
     //DEBUG_LOG("tetris player %p: entering Main()", this);
-    /* wait to see if we're allowed to play tetris. This will trigger if we're master, if we just became master, or if this player should be destroyed. */
+    /* wait to see if we're allowed to play tetris. This will trigger if we're primary, if we just became primary, or if this player should be destroyed. */
     CanWork.Pop();
     /* How long to sleep after a round the WAL refused (#891), doubling while it keeps refusing;
        zero once a round gets through. */
@@ -352,7 +352,7 @@ void TTetrisManager::TPlayer::Main() {
   }
 }
 
-void TTetrisManager::TPlayer::BecomeMaster() {
+void TTetrisManager::TPlayer::BecomePrimary() {
   CanWork.Push();
 }
 
@@ -360,11 +360,11 @@ TTetrisManager::TTetrisManager(Base::TScheduler *scheduler,
                                Orly::Indy::Fiber::TRunner::TRunnerCons &runner_cons,
                                Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *> *frame_pool_manager,
                                const std::function<void (Indy::Fiber::TRunner *)> &runner_setup_cb,
-                               bool is_master)
+                               bool is_primary)
     : Scheduler(scheduler), FiberScheduler(runner_cons),
       PlayerFramePool(std::make_unique<Base::TThreadLocalGlobalPoolManager<Indy::Fiber::TFrame, size_t, Indy::Fiber::TRunner *>::TThreadLocalPool>(
           Base::AssertTrue(frame_pool_manager))),
-      Stopping(false), LivePlayerCount(0UL), IsMaster(is_master) {
+      Stopping(false), LivePlayerCount(0UL), IsPrimary(is_primary) {
   assert(scheduler);
   Base::TEventSemaphore setup_is_complete;
   auto launch_sched = [this, runner_setup_cb, &setup_is_complete](Fiber::TRunner *runner,
@@ -441,11 +441,11 @@ size_t TTetrisManager::GetUnpausedPlayerCount() const {
   return count;
 }
 
-void TTetrisManager::BecomeMaster() {
+void TTetrisManager::BecomePrimary() {
   lock_guard<mutex> lock(Mutex);
-  lock_guard<mutex> master_lock(MasterMutex);
-  IsMaster = true;
+  lock_guard<mutex> primary_lock(PrimaryMutex);
+  IsPrimary = true;
   for (const auto &item: PlayerByParentPovId) {
-    item.second->BecomeMaster();
+    item.second->BecomePrimary();
   }
 }

@@ -33,8 +33,8 @@ using namespace Orly::Server;
 using namespace Orly::Indy;
 using namespace Orly::Indy::Util;
 
-const Orly::Indy::TMasterContext::TProtocol Orly::Indy::TMasterContext::TProtocol::Protocol;
-const Orly::Indy::TSlaveContext::TProtocol Orly::Indy::TSlaveContext::TProtocol::Protocol;
+const Orly::Indy::TPrimaryContext::TProtocol Orly::Indy::TPrimaryContext::TProtocol::Protocol;
+const Orly::Indy::TReplicaContext::TProtocol Orly::Indy::TReplicaContext::TProtocol::Protocol;
 
 static const size_t BlockSize = 4096UL * 16;
 
@@ -183,9 +183,9 @@ FIXTURE(NewPov) {
 using namespace Orly::Indy;
 using namespace Orly::Indy::Util;
 
-const Orly::Indy::TMasterContext::TProtocol Orly::Indy::TMasterContext::TProtocol::Protocol;
-const Orly::Indy::TSlaveContext::TProtocol Orly::Indy::TSlaveContext::TProtocol::Protocol;
-static const string MasterDeviceName = "sdb";
+const Orly::Indy::TPrimaryContext::TProtocol Orly::Indy::TPrimaryContext::TProtocol::Protocol;
+const Orly::Indy::TReplicaContext::TProtocol Orly::Indy::TReplicaContext::TProtocol::Protocol;
+static const string PrimaryDeviceName = "sdb";
 static const size_t BlockSize = 4096UL * 16;
 static const size_t CacheSize = 10000UL;
 static const size_t QueueDepth = 128UL;
@@ -209,11 +209,11 @@ void ScheduleDiskController(TScheduler *scheduler, Disk::TController *controller
 
 FIXTURE(RepoManager) {
   Base::TFd solo_sock;
-  auto wait_for_slave = [](const std::shared_ptr<std::function<void (const TFd &)>> &) {};
+  auto wait_for_replica = [](const std::shared_ptr<std::function<void (const TFd &)>> &) {};
   const TScheduler::TPolicy scheduler_policy(2, 2, milliseconds(10));
   TScheduler scheduler;
   scheduler.SetPolicy(scheduler_policy);
-  unique_ptr<TManager> repo_manager(new TManager(MasterDeviceName,
+  unique_ptr<TManager> repo_manager(new TManager(PrimaryDeviceName,
                                            BlockSize,
                                            CacheSize,
                                            QueueDepth,
@@ -222,7 +222,7 @@ FIXTURE(RepoManager) {
                                            ReplicationDelay,
                                            TManager::Solo,
                                            solo_sock,
-                                           wait_for_slave,
+                                           wait_for_replica,
                                            [](TManager::TState) {},
                                            std::bind(ScheduleDiskController, &scheduler, std::placeholders::_1),
                                            DefaultRepoCacheSize,

@@ -63,12 +63,12 @@ class TRouter : public TBalancer {
 
   virtual const Socket::TAddress &ChooseHost() {
     std::lock_guard<std::mutex> lock(HostMutex);
-    if (MasterHost) {
+    if (PrimaryHost) {
     } else {
-      std::cerr << "No master host available to connect to." << endl;
-      throw std::runtime_error("No master host available to connect to.");
+      std::cerr << "No primary host available to connect to." << endl;
+      throw std::runtime_error("No primary host available to connect to.");
     }
-    return *MasterHost;
+    return *PrimaryHost;
   }
 
   void AddHost(const Socket::TAddress &address) {
@@ -88,7 +88,7 @@ class TRouter : public TBalancer {
 
   void Wait() {
     std::unique_lock<std::mutex> lock(HostMutex);
-    while (!MasterHost) {
+    while (!PrimaryHost) {
       HostCond.wait(lock);
     }
   }
@@ -132,18 +132,18 @@ class TRouter : public TBalancer {
       for (;Running;) {
         check_hosts.Pop();
         std::lock_guard<std::mutex> lock(HostMutex);
-        MasterHost.reset();
+        PrimaryHost.reset();
         for (const auto &addr : HostSet) {
-          bool is_master = CheckHost(addr);
-          if (MasterHost && is_master) {
-            std::cerr << "There is more than 1 master" << std::endl;
-            MasterHost.reset();
-            throw std::runtime_error("There is more than 1 master");
-          } else if (is_master) {
-            MasterHost = addr;
+          bool is_primary = CheckHost(addr);
+          if (PrimaryHost && is_primary) {
+            std::cerr << "There is more than 1 primary" << std::endl;
+            PrimaryHost.reset();
+            throw std::runtime_error("There is more than 1 primary");
+          } else if (is_primary) {
+            PrimaryHost = addr;
           }
         }
-        if (MasterHost) {
+        if (PrimaryHost) {
           HostCond.notify_all();
         }
       }
@@ -164,7 +164,7 @@ class TRouter : public TBalancer {
 
   std::unordered_set<Socket::TAddress> HostSet;
 
-  std::optional<Socket::TAddress> MasterHost;
+  std::optional<Socket::TAddress> PrimaryHost;
 
   std::atomic<bool> Running;
 
@@ -241,7 +241,7 @@ class TTestServer {
       if (Server->Status == 'M') {
         return Server->PortNum;
       } else {
-        throw std::runtime_error("Slave should not respond");
+        throw std::runtime_error("Replica should not respond");
       }
     }
 
@@ -519,8 +519,8 @@ const TTestClient::TConnection::TProtocol TTestClient::TConnection::TProtocol::P
 
 FIXTURE(Typical) {
   /* Dedicated test ports, deliberately away from DefaultPortNumber (19380) and
-     DefaultSlavePortNumber (19381).  On the default service ports, any stray Orly
-     activity on the machine (an interactive orlyi, a retrying failover slave, a
+     DefaultReplicaPortNumber (19381).  On the default service ports, any stray Orly
+     activity on the machine (an interactive orlyi, a retrying failover replica, a
      client) lands foreign connections on the balancer's listener mid-test.
      tests/restart_test.sh dodges the same trap with its own dedicated range. */
   const in_port_t router_port = 19480, server_1_port = 19481, server_2_port = 19482;
@@ -539,7 +539,7 @@ FIXTURE(Typical) {
   auto test_server_2 = make_unique<TTestServer>(&scheduler, server_2_port, 'S');
   router.AddHost(server_2_address);
   router.Wait();
-  /* set master */ {
+  /* set primary */ {
     std::lock_guard<std::mutex> lock(ExpectedHostLock);
     ExpectedHost = server_1_port;
   }

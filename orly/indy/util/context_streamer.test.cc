@@ -201,7 +201,7 @@ FIXTURE(RPCInputToInput) {
 
 /* Regression test for issue #54: wire format must carry the per-entry
    Mutator field through serialization + deserialization, otherwise
-   deferred {Mutator!=Assign, Op} entries arrive at the slave as
+   deferred {Mutator!=Assign, Op} entries arrive at the replica as
    Assign(Op) and concurrent-write composition silently breaks. */
 FIXTURE(MutatorRoundTrip) {
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());

@@ -138,7 +138,7 @@ FIXTURE(ExpiredByAge) {
   EXPECT_TRUE(table.Reserve(Pov, MakeId(Now - 59'000UL), 1).IsNew);
 }
 
-/* A slave refuses an id from before it joined unless it has the id's entry, in every POV (#862). */
+/* A replica refuses an id from before it joined unless it has the id's entry, in every POV (#862). */
 FIXTURE(UnknownBeforeJoin) {
   Now = 10'000'000UL;
   TOperationTable table(MakeConfig());
@@ -279,7 +279,7 @@ FIXTURE(CheckpointBetweenCommitAndComplete) {
   EXPECT_EQ(table.HeadFloor(), UINT64_MAX);
 }
 
-/* #866: a slave appends a replicated record before Restore() makes its slot, so there is no slot
+/* #866: a replica appends a replicated record before Restore() makes its slot, so there is no slot
    for BeginCommit() to mark. HoldHead() floors the head across that window instead. */
 FIXTURE(CheckpointBetweenReplicatedAppendAndRestore) {
   Now = 10'000'000UL;

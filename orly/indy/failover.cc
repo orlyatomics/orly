@@ -196,12 +196,12 @@ void TCommonContext::Join() {
   DEBUG_LOG("EXIT TCommonContext::Join()");
 }
 
-TMasterContext::TMasterContext(const TFd &fd)
-    : TCommonContext(TMasterContext::TProtocol::Protocol, fd) {}
+TPrimaryContext::TPrimaryContext(const TFd &fd)
+    : TCommonContext(TPrimaryContext::TProtocol::Protocol, fd) {}
 
-TMasterContext::~TMasterContext() {}
+TPrimaryContext::~TPrimaryContext() {}
 
-TSlaveContext::TSlaveContext(const TFd &fd)
-    : TCommonContext(TSlaveContext::TProtocol::Protocol, fd) {}
+TReplicaContext::TReplicaContext(const TFd &fd)
+    : TCommonContext(TReplicaContext::TProtocol::Protocol, fd) {}
 
-TSlaveContext::~TSlaveContext() {}
+TReplicaContext::~TReplicaContext() {}

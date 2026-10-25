@@ -163,7 +163,7 @@ From the issue and its review comments:
 |---|---|
 | A total commit order across repos | the replication queue lock in `~TTransaction` |
 | A record of a transaction's effects, with sequence numbers | `TTransaction::TReplica`, encoded by `TReplicationStreamer` |
-| Idempotent re-application against what's on disk | the replica's `TManager::TSlave::ApplyCoreVectorTransactions` with `ensure_or_discard`; it already skips mutations on repos that aren't live |
+| Idempotent re-application against what's on disk | the replica's `TManager::TReplica::ApplyCoreVectorTransactions` with `ensure_or_discard`; it already skips mutations on repos that aren't live |
 | A POV's identity on disk | `TPov` is a durable object (id, parent, policy, audience, TTL) saved by the durable manager every 40 ms; #439 refuses it after restart |
 | A repo's creation in the stream | `TRepoReplication` (id, safe, TTL, parent) |
 | "This update reached a data file" | `TUpdate::TPersistenceNotification` |
