@@ -158,7 +158,7 @@ TServer::TCmd::TMeta::TMeta(const char *desc)
       "The port on which the server listens for websocket clients."
   );
   Param(
-      &TCmd::SlavePortNumber, "replica_port_number", Optional, "replica_port_number\0slave_port_number\0spn\0rpn\0",
+      &TCmd::SlavePortNumber, "replica_port_number", Optional, "replica_port_number\0slave_port_number\0spn\0",
       "The port on which the server listens for a replica. Deprecated alias: --slave_port_number."
   );
   Param(

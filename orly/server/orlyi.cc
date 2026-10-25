@@ -166,7 +166,7 @@ static void ScrubSecretArgs(std::span<char *> args) {
 static void WarnDeprecatedFlags(int argc, char *argv[]) {
   static const std::pair<const char *, const char *> renamed[] = {
       {"slave_port_number", "replica_port_number"},
-      {"spn", "rpn"},
+      {"spn", "replica_port_number"},
       {"slave_bind_address", "replica_bind_address"},
       {"address_of_master", "address_of_primary"},
   };
