@@ -1058,14 +1058,14 @@ class TMergeDataFileImpl {
   }
 
   /* A shutdown stops the merge here: the caller's inputs are untouched, and the catch in the constructor frees the output. */
-  static void ThrowIfCancelled(const std::atomic<bool> *cancel) {
+  static void ThrowIfCancelled(const std::atomic<bool> *cancel, std::source_location where = std::source_location::current()) {
     if (cancel && cancel->load(std::memory_order_relaxed)) {
-      throw TMergeCancelled();
+      throw TMergeCancelled(where);
     }
   }
 
-  void ThrowIfCancelled() const {
-    ThrowIfCancelled(Cancel);
+  void ThrowIfCancelled(std::source_location where = std::source_location::current()) const {
+    ThrowIfCancelled(Cancel, where);
   }
 
   class TUpdateObj {

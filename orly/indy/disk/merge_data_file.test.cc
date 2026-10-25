@@ -1095,8 +1095,11 @@ FIXTURE(CancelMergeAndFold) {
       bool threw = false;
       try {
         TMergeDataFile merge(mem_engine.GetEngine(), TVolume::TDesc::Fast, file_id, vector<size_t>{1UL, 2UL}, file_id, 3UL, 0U, Low, 16384, 20UL, can_tail, false, std::nullopt, &cancel);
-      } catch (const TMergeCancelled &) {
+      } catch (const TMergeCancelled &ex) {
         threw = true;
+        /* The exception names the check that saw the flag (#1025). */
+        EXPECT_TRUE(ex.Line > 0U);
+        EXPECT_TRUE(string(ex.File).find("data_file.cc") != string::npos);
       }
       EXPECT_TRUE(threw);
       EXPECT_FALSE(has_gen(3UL));

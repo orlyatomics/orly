@@ -868,6 +868,14 @@ void TDataFile::Build(const TEntrySource &source,
       throw TMergeCancelled();
     }
   };
+  /* For the loops over every entry of the output, which run for seconds on a big merge: look at the flag
+     every 1024 entries, not every one (#1025). */
+  size_t polled = 0;
+  const auto poll_cancelled = [&polled, &throw_if_cancelled] {
+    if ((++polled & 1023UL) == 0) {
+      throw_if_cancelled();
+    }
+  };
   try {
     auto main_arena_note_index = make_unique<TIndexFile::TOrderedNoteIndex>(
         HERE, Source::DataFileNoteIndex, TempFileConsolThresh, StorageSpeed, Engine, true);
@@ -883,6 +891,7 @@ void TDataFile::Build(const TEntrySource &source,
       size_t cur_index_bytes = 0UL;
       size_t max_key_count = 0UL;
       source([&](const TEntryView &entry) {
+        poll_cancelled();
         const TEntryView *csr = &entry;
         const Base::TUuid &cur_idx_id = csr->IndexId;
         if (!prev_index_id || cur_idx_id != *prev_index_id) {
@@ -995,6 +1004,7 @@ void TDataFile::Build(const TEntrySource &source,
       std::optional<Base::TUuid> prev_index_id;
       TIndexFile *cur_index_file = nullptr;
       source([&](const TEntryView &entry) {
+        poll_cancelled();
         const TEntryView *csr = &entry;
         const Base::TUuid &cur_idx_id = csr->IndexId;
         if (!prev_index_id || cur_idx_id != *prev_index_id) {
