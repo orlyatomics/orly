@@ -235,9 +235,9 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
     : NumKeys(0UL),
       LowestSeq(0UL),
       HighestSeq(0UL) {
-  const auto throw_if_cancelled = [cancel]() {
+  const auto throw_if_cancelled = [cancel](std::source_location where = std::source_location::current()) {
     if (cancel && cancel->load(std::memory_order_relaxed)) {
-      throw TMergeCancelled();
+      throw TMergeCancelled(where);
     }
   };
   throw_if_cancelled();
