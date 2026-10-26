@@ -2556,10 +2556,24 @@ void TServer::Shutdown() {
      has settled it.  This must precede the stop calls below -- a stopped
      replication loop can no longer drain its queue.  Bounded and
      cadence-derived, not a magic number: three periods of the slowest
-     relevant interval. */
-  std::this_thread::sleep_for(std::chrono::milliseconds(
-      3 * std::max<size_t>({Cmd.ReplicationInterval, Cmd.MergeMemInterval, Cmd.DurableWriteInterval, 100})));
-  log_phase("the settle sleep");
+     relevant interval.
+     The wait is on the condition itself (#1025): every release a promotion
+     owes its repos that was issued before this point has been run, which is
+     what "settled" means.  A fixed sleep paid the whole bound on every stop;
+     this returns as soon as the releases are done, and the bound, the old
+     sleep, is only the worst case. */
+  {
+    const auto settle_bound = std::chrono::milliseconds(
+        3 * std::max<size_t>({Cmd.ReplicationInterval, Cmd.MergeMemInterval, Cmd.DurableWriteInterval, 100}));
+    const auto settle_start = std::chrono::steady_clock::now();
+    const bool settled = RepoManager->WaitForReleases(RepoManager->ReleaseMark(), settle_bound);
+    syslog(settled ? LOG_INFO : LOG_WARNING,
+           "TServer::Shutdown(): releases %s after %ldms (bound %ldms) (#1025)",
+           settled ? "settled" : "did NOT settle",
+           static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - settle_start).count()),
+           static_cast<long>(settle_bound.count()));
+  }
+  log_phase("the settle wait");
   /* Now stop the standalone service loops -- the housekeeper (blocked on
      its timer) and the three replication loops (blocked in epoll_wait) --
      and WAIT for each to actually return:
