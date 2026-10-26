@@ -34,6 +34,7 @@
 #include <chrono>
 #include <functional>
 #include <optional>
+#include <source_location>
 #include <stdexcept>
 #include <utility>
 
@@ -47,7 +48,13 @@ namespace Orly {
          output is freed and the inputs are untouched. */
       class TMergeCancelled : public std::runtime_error {
         public:
-        TMergeCancelled() : std::runtime_error("merge cancelled by shutdown") {}
+        /* `where` is the check that saw the flag; the default is the throw site. */
+        explicit TMergeCancelled(std::source_location where = std::source_location::current())
+            : std::runtime_error("merge cancelled by shutdown"), Line(where.line()), File(where.file_name()) {}
+
+        /* The check that saw the flag (#1025). */
+        const unsigned Line;
+        const char *const File;
 
         /* When the merge saw the flag, so a catcher can tell the wait for a checkpoint from the unwind (#1025). */
         const std::chrono::steady_clock::time_point ThrownAt = std::chrono::steady_clock::now();

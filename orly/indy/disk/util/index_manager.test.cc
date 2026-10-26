@@ -68,6 +68,57 @@ FIXTURE(Typical) {
   });
 }
 
+/* #1025: a sort that is told to poll still sorts (with many duplicates), calls the poll, and a poll that throws
+   abandons it. */
+FIXTURE(PollingSort) {
+  TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
+    const size_t num_iter = 100000UL;
+    TScheduler scheduler(TScheduler::TPolicy(4, 10, milliseconds(10)));
+    Sim::TMemEngine mem_engine(&scheduler, 256, 256, 16384, 1, 1024, 1);
+    typedef TIndexManager<size_t, 200000, 100> TMyManager;
+    const auto fill = [&](TMyManager &manager) {
+      uint64_t x = 88172645463325252ULL;
+      for (size_t i = 0; i < num_iter; ++i) {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        manager.Emplace(x % 5000UL);  // many equal keys
+      }
+    };
+    /* polls, never throws: the order must come out right */ {
+      TMyManager manager(HERE, 0UL, 20UL, TVolume::TDesc::Fast, mem_engine.GetEngine(), true);
+      size_t polls = 0UL;
+      manager.SetCancelPoll([&polls] { ++polls; });
+      fill(manager);
+      size_t found = 0UL;
+      size_t prev = 0UL;
+      bool ordered = true;
+      for (TMyManager::TCursor csr(&manager, 50); csr; ++csr, ++found) {
+        ordered = ordered && *csr >= prev;
+        prev = *csr;
+      }
+      EXPECT_EQ(found, num_iter);
+      EXPECT_TRUE(ordered);
+      EXPECT_TRUE(polls > 0UL);
+    }
+    /* a poll that throws abandons the sort */ {
+      TMyManager manager(HERE, 0UL, 20UL, TVolume::TDesc::Fast, mem_engine.GetEngine(), true);
+      manager.SetCancelPoll([] { throw std::runtime_error("cancelled"); });
+      bool threw = false;
+      try {
+        fill(manager);
+        TMyManager::TCursor csr(&manager, 50);
+      } catch (const std::runtime_error &) {
+        threw = true;
+      }
+      EXPECT_TRUE(threw);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  });
+}
+
 FIXTURE(ManySortFiles) {
   TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &) {
     const size_t consol_thresh = 20UL;

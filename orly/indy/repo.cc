@@ -69,8 +69,8 @@ class TReader
 static void LogMergeCancelled(const char *where, const Disk::TMergeCancelled &ex, const L0::TManager &manager) {
   const long unwind_ms = static_cast<long>(chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - ex.ThrownAt).count());
   const long total_ms = manager.MsSinceShuttingDown();
-  syslog(LOG_INFO, "%s: disk merge cancelled %ldms after the stop flag; the unwind took %ldms of that (#1025)",
-         where, total_ms, unwind_ms);
+  syslog(LOG_INFO, "%s: disk merge cancelled %ldms after the stop flag; the unwind took %ldms of that; the flag was seen at %s:%u (#1025)",
+         where, total_ms, unwind_ms, ex.File, ex.Line);
 }
 
 static void CountCopy(const std::vector<TMemoryLayer *> &layers, TSequenceNumber bound, bool all,

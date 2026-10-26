@@ -23,7 +23,9 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cassert>
+#include <functional>
 
 #include <base/class_traits.h>
 #include <base/inv_con/ordered_list.h>
@@ -152,8 +154,7 @@ namespace Orly {
           template <class... Args>
           void Emplace(Args &&... args) {
             if (MemSorter.IsFull()) {
-              //__gnu_parallel::sort(MemSorter.begin(), MemSorter.end(), Comp);
-              std::sort(MemSorter.begin(), MemSorter.end(), Comp);
+              SortRange();
               new TSortFile(CodeLocation, UtilSrc, StorageSpeed, Engine, VolMan, BlockCache, 0UL, MemSorter, SortFileCollection, CacheInstr);
               MemSorter.Clear();
               /* #321 investigated and declined: this scan is bounded by ConsolidationThreshold
@@ -198,16 +199,61 @@ namespace Orly {
             return Size;
           }
 
+          /* A check the in-memory sorts call while they run, and which may throw to abandon them (#1025). A sort of
+             a full buffer takes seconds; without this a cancelled merge sat through it. Unset, sorting is plain
+             std::sort. */
+          void SetCancelPoll(std::function<void ()> poll) {
+            CancelPoll = std::move(poll);
+          }
+
           private:
+
+          /* std::sort of the in-memory buffer; with a CancelPoll, the same quicksort with the check run on every
+             partition step, so a sort can be abandoned within one pass over its current range. */
+          void SortRange() {
+            if (CancelPoll) {
+              PollingSort(MemSorter.begin(), MemSorter.end(), 2UL * 64UL);
+            } else {
+              std::sort(MemSorter.begin(), MemSorter.end(), Comp);
+            }
+          }
+
+          template <typename TIter>
+          void PollingSort(TIter first, TIter last, size_t depth_budget) {
+            static constexpr size_t SmallRange = 4096UL;
+            while (static_cast<size_t>(last - first) > SmallRange) {
+              CancelPoll();
+              if (depth_budget == 0UL) {
+                break;  // a bad run of pivots: std::sort's own heapsort fallback finishes it
+              }
+              --depth_budget;
+              TIter mid = first + (last - first) / 2;
+              TIter back = last - 1;
+              /* median of three, as a copy: the partitions below move elements around it */
+              const TVal &x = *first;
+              const TVal &y = *mid;
+              const TVal &z = *back;
+              const TVal pivot = Comp(x, y) ? (Comp(y, z) ? y : (Comp(x, z) ? z : x))
+                                            : (Comp(x, z) ? x : (Comp(y, z) ? z : y));
+              /* [first, lo): less than pivot, [lo, hi): equal to it, [hi, last): greater. The equal run is
+                 left out of both recursions, so every pass shrinks the range even on all-equal input. */
+              TIter lo = std::partition(first, last, [&](const TVal &v) { return Comp(v, pivot); });
+              TIter hi = std::partition(lo, last, [&](const TVal &v) { return !Comp(pivot, v); });
+              if (lo - first < last - hi) {
+                PollingSort(first, lo, depth_budget);
+                first = hi;
+              } else {
+                PollingSort(hi, last, depth_budget);
+                last = lo;
+              }
+            }
+            CancelPoll();
+            std::sort(first, last, Comp);
+          }
 
           void SortMem() {
             if (!MemSorted) {
-              if (Size >= MinParallelSortThreshold) {
-                //__gnu_parallel::sort(MemSorter.begin(), MemSorter.end(), Comp);
-                std::sort(MemSorter.begin(), MemSorter.end(), Comp);
-              } else {
-                std::sort(MemSorter.begin(), MemSorter.end(), Comp);
-              }
+              SortRange();
               MemSorted = true;
             }
           }
@@ -235,6 +281,8 @@ namespace Orly {
           bool MemSorted;
 
           TComparator Comp;
+
+          std::function<void ()> CancelPoll;
 
           /* DEBUG */
           const Base::TCodeLocation CodeLocation;
