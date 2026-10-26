@@ -18,6 +18,7 @@
 
 #include <orly/var/jsonify.h>
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <sstream>
@@ -460,4 +461,247 @@ Base::TJson Orly::Var::StateToJson(const Sabot::State::TAny &state) {
   Base::TJson result;
   state.Accept(TStateToJsonVisitor(result));
   return result;
+}
+
+namespace {
+
+  /* See Orly::Var::AppendStateJson.  Each case writes the text TStateToJsonVisitor's tree for the
+     same state would format to, in the same order: TJson objects iterate their keys sorted, so a
+     record's fields (stored in asciibetical order) and a map's keys must come out sorted too. */
+  class TAppendStateJsonVisitor final
+      : public Sabot::TStateVisitor {
+    public:
+
+    TAppendStateJsonVisitor(string &out, bool in_tuple = false)
+        : Out(out), InTuple(in_tuple) {}
+
+    void operator()(const Sabot::State::TFree &state) const override       { Fallback(state); }
+    void operator()(const Sabot::State::TTombstone &state) const override  { Fallback(state); }
+    void operator()(const Sabot::State::TVoid &state) const override       { Fallback(state); }
+    void operator()(const Sabot::State::TInt8 &state) const override       { Fallback(state); }
+    void operator()(const Sabot::State::TInt16 &state) const override      { Fallback(state); }
+    void operator()(const Sabot::State::TInt32 &state) const override      { Fallback(state); }
+    void operator()(const Sabot::State::TInt64 &state) const override {
+      /* A TJson number is a double, so a big int loses the same low bits it did in the tree. */
+      Base::TJson::AppendNumber(Out, static_cast<double>(state.Get()));
+    }
+    void operator()(const Sabot::State::TUInt8 &state) const override      { Fallback(state); }
+    void operator()(const Sabot::State::TUInt16 &state) const override     { Fallback(state); }
+    void operator()(const Sabot::State::TUInt32 &state) const override     { Fallback(state); }
+    void operator()(const Sabot::State::TUInt64 &state) const override     { Fallback(state); }
+    void operator()(const Sabot::State::TBool &state) const override {
+      Out.append(state.Get() ? "true" : "false");
+    }
+    void operator()(const Sabot::State::TChar &state) const override       { Fallback(state); }
+    void operator()(const Sabot::State::TFloat &state) const override      { Fallback(state); }
+    void operator()(const Sabot::State::TDouble &state) const override {
+      /* As ToJson(TReal): JSON has no NaN / Infinity, so those are null (#276). */
+      const double val = state.Get();
+      if (isfinite(val)) {
+        Base::TJson::AppendNumber(Out, val);
+      } else {
+        Out.append("null");
+      }
+    }
+    void operator()(const Sabot::State::TDuration &state) const override {
+      Base::TJson::AppendNumber(Out, static_cast<double>(std::chrono::duration_cast<Base::Chrono::TTimeDiff>(state.Get()).count()));
+    }
+    void operator()(const Sabot::State::TTimePoint &state) const override {
+      Base::TJson::AppendNumber(
+          Out, static_cast<double>(std::chrono::duration_cast<Base::Chrono::TTimeDiff>(state.Get().time_since_epoch()).count()));
+    }
+    void operator()(const Sabot::State::TUuid &state) const override {
+      char buf[Base::TUuid::MinBufSize];
+      Base::TUuid(state.Get().GetRaw()).Format(buf);
+      Base::TJson::AppendString(Out, buf);
+    }
+    void operator()(const Sabot::State::TBlob &state) const override       { Fallback(state); }
+    void operator()(const Sabot::State::TStr &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      Sabot::State::TStr::TPin::TWrapper pin(state.Pin(pin_alloc));
+      Base::TJson::AppendString(Out, string_view(pin->GetStart(), pin->GetSize()));
+    }
+    void operator()(const Sabot::State::TDesc &state) const override {
+      if (!InTuple) {
+        Fallback(state);
+        return;
+      }
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      Sabot::State::TDesc::TPin::TWrapper pin(state.Pin(pin_alloc));
+      Var::AppendStateJson(Out, *Sabot::State::TAny::TWrapper(pin->NewElem(0, state_alloc)));
+    }
+    void operator()(const Sabot::State::TOpt &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      Sabot::State::TOpt::TPin::TWrapper pin(state.Pin(pin_alloc));
+      if (!pin->GetElemCount()) {
+        Out.append("null");
+        return;
+      }
+      Var::AppendStateJson(Out, *Sabot::State::TAny::TWrapper(pin->NewElem(0, state_alloc)));
+    }
+    void operator()(const Sabot::State::TSet &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      Sabot::State::TSet::TPin::TWrapper pin(state.Pin(pin_alloc));
+      AppendArray(*pin.operator->(), false);
+    }
+    void operator()(const Sabot::State::TVector &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      Sabot::State::TVector::TPin::TWrapper pin(state.Pin(pin_alloc));
+      AppendArray(*pin.operator->(), false);
+    }
+    void operator()(const Sabot::State::TMap &state) const override {
+      /* As ToJson(TDict): a string key is used verbatim, any other key as its compact JSON text, and
+         the object's keys come out sorted.  Two keys whose text is the same (reals that differ past
+         the sixth digit) collapse to one in the tree, keeping the one its hash order puts last, so
+         that rare map takes the tree path rather than guess which. */
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      void *lhs_alloc = alloca(Sabot::State::GetMaxStateSize());
+      void *rhs_alloc = alloca(Sabot::State::GetMaxStateSize());
+      void *str_pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      Sabot::State::TMap::TPin::TWrapper pin(state.Pin(pin_alloc));
+      const size_t elem_count = pin->GetElemCount();
+      vector<pair<string, string>> elems(elem_count);
+      for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
+        auto &[key, val] = elems[elem_idx];
+        /* key */ {
+          const Sabot::State::TAny::TWrapper lhs(pin->NewLhs(elem_idx, lhs_alloc));
+          if (const auto *str = dynamic_cast<const Sabot::State::TStr *>(lhs.get())) {
+            Sabot::State::TStr::TPin::TWrapper str_pin(str->Pin(str_pin_alloc));
+            key.assign(str_pin->GetStart(), str_pin->GetSize());
+          } else {
+            ostringstream key_strm;
+            Var::Jsonify(key_strm, Var::ToVar(*lhs));
+            key = key_strm.str();
+          }
+        }
+        Var::AppendStateJson(val, *Sabot::State::TAny::TWrapper(pin->NewRhs(elem_idx, rhs_alloc)));
+      }
+      sort(elems.begin(), elems.end(), [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
+      if (adjacent_find(elems.begin(), elems.end(), [](const auto &lhs, const auto &rhs) { return lhs.first == rhs.first; }) != elems.end()) {
+        Fallback(state);
+        return;
+      }
+      Out.push_back('{');
+      for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
+        if (elem_idx) {
+          Out.push_back(',');
+        }
+        Base::TJson::AppendString(Out, elems[elem_idx].first);
+        Out.push_back(':');
+        Out.append(elems[elem_idx].second);
+      }
+      Out.push_back('}');
+    }
+    void operator()(const Sabot::State::TRecord &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      void *type_pin_alloc = alloca(Sabot::Type::GetMaxTypePinSize());
+      void *type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
+      void *elem_type_alloc = alloca(Sabot::Type::GetMaxTypeSize());
+      Sabot::State::TRecord::TPin::TWrapper pin(state.Pin(pin_alloc));
+      Sabot::Type::TRecord::TWrapper record_type(state.GetRecordType(type_alloc));
+      Sabot::Type::TRecord::TPin::TWrapper type_pin(record_type->Pin(type_pin_alloc));
+      const size_t elem_count = pin->GetElemCount();
+      string field_name;
+      if (elem_count) {
+        Sabot::Type::TAny::TWrapper(type_pin->NewElem(0, field_name, elem_type_alloc));
+        /* A variant value (#96): {"<active_tag>": <payload>} from the active arm, exactly as
+           TStateToJsonVisitor builds it; anything unexpected takes the same fallback it does. */
+        if (field_name == "$which") {
+          std::optional<int64_t> which;
+          {
+            const Sabot::State::TAny::TWrapper which_state(pin->NewElem(0, state_alloc));
+            if (const auto *which_int = dynamic_cast<const Sabot::State::TInt64 *>(which_state.get())) {
+              which = which_int->Get();
+            }
+          }
+          if (!which || *which < 0 || static_cast<size_t>(*which) + 1 >= elem_count) {
+            Fallback(state);
+            return;
+          }
+          const size_t arm_idx = static_cast<size_t>(*which) + 1;
+          Sabot::Type::TAny::TWrapper(type_pin->NewElem(arm_idx, field_name, elem_type_alloc));
+          const Sabot::State::TAny::TWrapper arm_state(pin->NewElem(arm_idx, state_alloc));
+          const auto *arm_opt = dynamic_cast<const Sabot::State::TOpt *>(arm_state.get());
+          if (!arm_opt) {
+            Fallback(state);
+            return;
+          }
+          void *opt_pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+          void *payload_alloc = alloca(Sabot::State::GetMaxStateSize());
+          Sabot::State::TOpt::TPin::TWrapper opt_pin(arm_opt->Pin(opt_pin_alloc));
+          if (opt_pin->GetElemCount() != 1) {
+            Fallback(state);
+            return;
+          }
+          Out.push_back('{');
+          Base::TJson::AppendString(Out, field_name);
+          Out.push_back(':');
+          Var::AppendStateJson(Out, *Sabot::State::TAny::TWrapper(opt_pin->NewElem(0, payload_alloc)));
+          Out.push_back('}');
+          return;
+        }
+      }
+      /* The fields are written as they come.  Should a record ever list them out of order (or twice),
+         what was written is taken back and the tree, which sorts them, writes it instead. */
+      const size_t mark = Out.size();
+      string prev_name;
+      Out.push_back('{');
+      for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
+        if (elem_idx) {
+          prev_name.swap(field_name);
+          Sabot::Type::TAny::TWrapper(type_pin->NewElem(elem_idx, field_name, elem_type_alloc));
+          if (!(prev_name < field_name)) {
+            Out.resize(mark);
+            Fallback(state);
+            return;
+          }
+          Out.push_back(',');
+        }
+        Base::TJson::AppendString(Out, field_name);
+        Out.push_back(':');
+        Var::AppendStateJson(Out, *Sabot::State::TAny::TWrapper(pin->NewElem(elem_idx, state_alloc)));
+      }
+      Out.push_back('}');
+    }
+    void operator()(const Sabot::State::TTuple &state) const override {
+      void *pin_alloc = alloca(Sabot::State::GetMaxStatePinSize());
+      Sabot::State::TTuple::TPin::TWrapper pin(state.Pin(pin_alloc));
+      AppendArray(*pin.operator->(), true);
+    }
+
+    private:
+
+    /* The elements of a list, set or address as a JSON array.  An address's members may be descs. */
+    template <typename TPin>
+    void AppendArray(const TPin &pin, bool in_tuple) const {
+      void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
+      const size_t elem_count = pin.GetElemCount();
+      Out.push_back('[');
+      for (size_t elem_idx = 0; elem_idx < elem_count; ++elem_idx) {
+        if (elem_idx) {
+          Out.push_back(',');
+        }
+        Sabot::State::TAny::TWrapper(pin.NewElem(elem_idx, state_alloc))->Accept(TAppendStateJsonVisitor(Out, in_tuple));
+      }
+      Out.push_back(']');
+    }
+
+    void Fallback(const Sabot::State::TAny &state) const {
+      Var::StateToJson(state).AppendTo(Out);
+    }
+
+    string &Out;
+
+    /* True for a member of an address, where a desc may appear. */
+    const bool InTuple;
+
+  };  // TAppendStateJsonVisitor
+
+}  // namespace
+
+void Orly::Var::AppendStateJson(string &out, const Sabot::State::TAny &state) {
+  state.Accept(TAppendStateJsonVisitor(out));
 }

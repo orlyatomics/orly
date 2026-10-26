@@ -147,7 +147,7 @@ FIXTURE(LoopbackOnlyByDefault) {
 /* Sends the messages in order on one connection, without waiting between them, and returns
    every reply the server sends before it closes the connection or `msgs.size()` replies have
    arrived. `closed` says whether the server closed the connection. */
-static vector<Base::TJson> SendPipelined(in_port_t port, const vector<string> &msgs, bool &closed) {
+static vector<string> SendPipelinedRaw(in_port_t port, const vector<string> &msgs, bool &closed) {
   net::io_context ioc;
   tcp::resolver resolver(ioc);
   websocket::stream<tcp::socket> ws(ioc);
@@ -157,7 +157,7 @@ static vector<Base::TJson> SendPipelined(in_port_t port, const vector<string> &m
   for (const auto &msg: msgs) {
     ws.write(net::buffer(msg));
   }
-  vector<Base::TJson> replies;
+  vector<string> replies;
   closed = false;
   while (replies.size() < msgs.size()) {
     beast::flat_buffer buffer;
@@ -167,11 +167,20 @@ static vector<Base::TJson> SendPipelined(in_port_t port, const vector<string> &m
       closed = true;
       break;
     }
-    replies.push_back(Base::TJson::Parse(beast::buffers_to_string(buffer.data())));
+    replies.push_back(beast::buffers_to_string(buffer.data()));
   }
   if (!closed) {
     beast::error_code ec;
     ws.close(websocket::close_code::going_away, ec);
+  }
+  return replies;
+}
+
+/* As SendPipelinedRaw, with each reply parsed. */
+static vector<Base::TJson> SendPipelined(in_port_t port, const vector<string> &msgs, bool &closed) {
+  vector<Base::TJson> replies;
+  for (const auto &text: SendPipelinedRaw(port, msgs, closed)) {
+    replies.push_back(Base::TJson::Parse(text));
   }
   return replies;
 }
@@ -792,4 +801,35 @@ FIXTURE(PipelineCloseWithStatementsInFlight) {
     ws.next_layer().close();
   }
   EXPECT_EQ(SendOne(ws_test_server.GetPortNumber(), "echo 'still here';")["result"], Base::TJson("still here"));
+}
+
+/* The reply path writes its text without building a reply object (#1053).  Every reply must still be
+   the exact text formatting that object gave: keys sorted (id, receipt, result, status, version),
+   numbers printed as before.  Parsing a reply and formatting it again must give back the same bytes. */
+FIXTURE(ReplyTextIsTheFormattedObject) {
+  Orly::Type::TTypeCzar type_czar;
+  TWsTestServer ws_test_server(8080, 100, string(), 4);
+  bool closed;
+  const auto replies = SendPipelinedRaw(ws_test_server.GetPortNumber(), {
+      "new session;",
+      PipeCall + "<{}>;",
+      Envelope(7, PipeCall + "<{}>;", true),
+      Envelope(Base::TJson("q\"1"), PipeCall + "<{}> <{.receipt: true}>;", false),
+      Envelope(8, PipeCall + "<{}> <{.at: 42}>;", false),
+      Envelope(9, PipeCall + "<{}> <{.at: 42, .receipt: true}>;", false),
+      Envelope(10, PipeCall + "<{}> <{.at: 5000}>;", false),
+      Envelope(11, "echo 7;", false)}, closed);
+  EXPECT_FALSE(closed);
+  if (EXPECT_EQ(replies.size(), 8U)) {
+    for (const auto &text: replies) {
+      string again;
+      Base::TJson::Parse(text).AppendTo(again);
+      EXPECT_EQ(text, again);
+    }
+    EXPECT_EQ(replies[2], string(R"({"id":7.000000,"result":98.600000,"status":"ok"})"));
+    EXPECT_EQ(replies[4], string(R"({"id":8.000000,"result":98.600000,"status":"ok","version":42.000000})"));
+    EXPECT_NE(replies[3].find(R"({"id":"q\"1","receipt":{)"), string::npos);
+    EXPECT_EQ(replies[5], string(R"({"id":9.000000,"result":"try: a read at a past version does not take .op_id, .receipt or .wait_durable_ms","status":"exception"})"));
+    EXPECT_EQ(replies[7], string(R"({"id":11.000000,"result":7.000000,"status":"ok"})"));
+  }
 }

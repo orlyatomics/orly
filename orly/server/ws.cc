@@ -233,9 +233,15 @@ namespace {
     NO_COPY(TStmtQueue);
     public:
 
-    using TFinish = std::function<TJson ()>;
+    /* Appends the statement's result, as JSON text, to the reply being built (#1053). */
+    using TFinish = std::function<void (std::string &)>;
     using TWork = std::function<TFinish ()>;
     using TDone = std::function<void (TFinish &&, std::exception_ptr)>;
+
+    /* A finish for a result built as a TJson; it is formatted into the reply as before. */
+    [[nodiscard]] static TFinish FromJson(std::function<TJson ()> &&make) {
+      return [make = std::move(make)](std::string &out) { make().AppendTo(out); };
+    }
 
     TStmtQueue(TWs::TSessionManager *session_mngr, size_t max_in_flight)
         : SessionManager(session_mngr), MaxInFlight(max_in_flight) {}
@@ -639,7 +645,7 @@ class TWsImpl final
         auto options = std::make_shared<const TPovDiffOptions>(GetDiffOptions(TranslateOptions(stmt->GetOptOptions())));
         Conn->Deferred = [session = GetSharedSession(), pov_id, options] {
           auto result = std::make_shared<const TPovDiff>(session->DiffPov(pov_id, *options));
-          return TStmtQueue::TFinish([result] { return Orly::ToJson(*result); });
+          return TStmtQueue::FromJson([result] { return Orly::ToJson(*result); });
         };
       }
 
@@ -648,7 +654,7 @@ class TWsImpl final
         TUuid pov_id = Translate(stmt->GetIdExpr());
         Conn->Deferred = [session = GetSharedSession(), pov_id] {
           auto result = std::make_shared<const TPovDiscard>(session->DiscardPov(pov_id));
-          return TStmtQueue::TFinish([result] { return Orly::ToJson(*result); });
+          return TStmtQueue::FromJson([result] { return Orly::ToJson(*result); });
         };
       }
 
@@ -658,7 +664,7 @@ class TWsImpl final
         const bool force = GetPromoteOptions(TranslateOptions(stmt->GetOptOptions()));
         Conn->Deferred = [session = GetSharedSession(), pov_id, force] {
           auto result = std::make_shared<const TPovPromote>(session->PromotePov(pov_id, force));
-          return TStmtQueue::TFinish([result] { return Orly::ToJson(*result); });
+          return TStmtQueue::FromJson([result] { return Orly::ToJson(*result); });
         };
       }
 
@@ -669,7 +675,7 @@ class TWsImpl final
         TUuid pov_id = Translate(stmt->GetIdExpr());
         Conn->Deferred = [session = GetSharedSession(), pov_id] {
           auto version = session->GetDurableVersion(pov_id);
-          return TStmtQueue::TFinish([pov_id, version] {
+          return TStmtQueue::FromJson([pov_id, version] {
             TJson result = TJson::Object;
             result["pov"] = AsStr(pov_id);
             result["durable_version"] = version ? TJson(static_cast<uint64_t>(*version)) : TJson();
@@ -685,7 +691,7 @@ class TWsImpl final
         TUuid pov_id = Translate(stmt->GetIdExpr());
         Conn->Deferred = [session = GetSharedSession(), pov_id] {
           const auto version = session->GetVersionOf(pov_id);
-          return TStmtQueue::TFinish([pov_id, version] {
+          return TStmtQueue::FromJson([pov_id, version] {
             TJson result = TJson::Object;
             result["pov"] = AsStr(pov_id);
             result["version"] = version.Number ? TJson(*version.Number) : TJson(version.Vector);
@@ -713,7 +719,7 @@ class TWsImpl final
         }
         Conn->Deferred = [session = GetSharedSession(), pov_id, name, at] {
           session->SetSavePoint(pov_id, name, at);
-          return TStmtQueue::TFinish([pov_id, name] {
+          return TStmtQueue::FromJson([pov_id, name] {
             TJson result = TJson::Object;
             result["pov"] = AsStr(pov_id);
             result["save_point"] = name;
@@ -728,7 +734,7 @@ class TWsImpl final
         string name = Translate(stmt->GetStrExpr());
         Conn->Deferred = [session = GetSharedSession(), pov_id, name] {
           const bool dropped = session->DropSavePoint(pov_id, name);
-          return TStmtQueue::TFinish([pov_id, name, dropped] {
+          return TStmtQueue::FromJson([pov_id, name, dropped] {
             TJson result = TJson::Object;
             result["pov"] = AsStr(pov_id);
             result["save_point"] = name;
@@ -754,7 +760,7 @@ class TWsImpl final
         }
         Conn->Deferred = [session = GetSharedSession(), pov_id, version, seconds_to_hold] {
           const auto lease_id = session->HoldVersion(pov_id, static_cast<uint64_t>(version), std::chrono::seconds(seconds_to_hold));
-          return TStmtQueue::TFinish([pov_id, version, seconds_to_hold, lease_id] {
+          return TStmtQueue::FromJson([pov_id, version, seconds_to_hold, lease_id] {
             TJson result = TJson::Object;
             result["pov"] = AsStr(pov_id);
             result["version"] = static_cast<uint64_t>(version);
@@ -770,7 +776,7 @@ class TWsImpl final
         TUuid lease_id = Translate(stmt->GetIdExpr());
         Conn->Deferred = [session = GetSharedSession(), lease_id] {
           const bool released = session->ReleaseHold(lease_id);
-          return TStmtQueue::TFinish([lease_id, released] {
+          return TStmtQueue::FromJson([lease_id, released] {
             TJson result = TJson::Object;
             result["lease"] = AsStr(lease_id);
             result["released"] = released;
@@ -785,7 +791,7 @@ class TWsImpl final
         const uint64_t after = GetReviewOptions(TranslateOptions(stmt->GetOptOptions()));
         Conn->Deferred = [session = GetSharedSession(), pov_id, after] {
           auto result = std::make_shared<const TPovReview>(session->ReviewPov(pov_id, after));
-          return TStmtQueue::TFinish([result] { return Orly::ToJson(*result); });
+          return TStmtQueue::FromJson([result] { return Orly::ToJson(*result); });
         };
       }
 
@@ -841,7 +847,7 @@ class TWsImpl final
           } else if (options.WaitDurableMs && seq_num) {
             durable = WaitDurable(session_mngr, *session, request->GetPovId(), *seq_num, options.WaitDurableMs);
           }
-          return TStmtQueue::TFinish([conn, options, read_at, durable, request, result] {
+          return TStmtQueue::TFinish([conn, options, read_at, durable, request, result](string &out) {
             if (options.Receipt) {
               conn->Receipt = ToReceipt(request->GetPovId(), *result, durable);
             }
@@ -850,7 +856,7 @@ class TWsImpl final
             if (options.WaitDurableMs && result->GetCommitSequenceNumber() && !durable) {
               throw TDurableTimeout(options.WaitDurableMs);
             }
-            return ToJson(*result);
+            AppendJson(out, *result);
           });
         };
       }
@@ -910,14 +916,14 @@ class TWsImpl final
           } else if (options.WaitDurableMs && seq_num) {
             durable = WaitDurable(session_mngr, *session, pov_id, *seq_num, options.WaitDurableMs);
           }
-          return TStmtQueue::TFinish([conn, options, durable, pov_id, result] {
+          return TStmtQueue::TFinish([conn, options, durable, pov_id, result](string &out) {
             if (options.Receipt) {
               conn->Receipt = ToReceipt(pov_id, *result, durable);
             }
             if (options.WaitDurableMs && result->GetCommitSequenceNumber() && !durable) {
               throw TDurableTimeout(options.WaitDurableMs);
             }
-            return ToJson(*result);
+            AppendJson(out, *result);
           });
         };
       }
@@ -955,7 +961,7 @@ class TWsImpl final
           auto vars = std::make_shared<std::vector<Var::TVar>>(session->TryMulti(pov_id, *calls));
           /* The results may differ in type, so they come back as separate values: one JSON
              array element per call, in order. */
-          return TStmtQueue::TFinish([vars] {
+          return TStmtQueue::FromJson([vars] {
             TJson::TArray results;
             for (const auto &var: *vars) {
               results.push_back(Var::ToJson(var));
@@ -1298,10 +1304,10 @@ class TWsImpl final
         return receipt;
       }
 
-      /* A method result as the reply's JSON. */
-      [[nodiscard]] static TJson ToJson(const TMethodResult &result) {
+      /* A method result as the reply's JSON text, written straight into the reply (#1053). */
+      static void AppendJson(string &out, const TMethodResult &result) {
         void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
-        return Var::StateToJson(*TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc)));
+        Var::AppendStateJson(out, *TWrapper(Indy::TKey(result.GetValue(), result.GetArena().get()).GetState(state_alloc)));
       }
 
       [[nodiscard]] static TUuid Translate(const TIdExpr *id_expr) {
@@ -1537,31 +1543,50 @@ class TWsImpl final
       }
       Receipt = TJson();
       ReadVersion.reset();
-      TJson reply = TJson::Object;
+      /* The reply's text is written as it goes, with no TJson tree for the result (#1053).  The
+         bytes are what formatting the old reply object gave: its keys come out sorted, so the order
+         is id, receipt, result, status, version. */
+      string text;
       try {
         if (error) {
           std::rethrow_exception(error);
         }
-        reply["result"] = finish();
-        reply["status"] = "ok";
+        text.push_back('{');
+        if (id.GetKind() != TJson::Null) {
+          text.append("\"id\":");
+          id.AppendTo(text);
+          text.push_back(',');
+        }
+        const size_t result_at = text.size();
+        text.append("\"result\":");
+        finish(text);
+        text.append(",\"status\":\"ok\"");
         if (Receipt.GetKind() != TJson::Null) {
-          reply["receipt"] = std::move(Receipt);
+          /* Only a `try` that asked for one has a receipt; it goes ahead of the result. */
+          string receipt = "\"receipt\":";
+          Receipt.AppendTo(receipt);
+          receipt.push_back(',');
+          text.insert(result_at, receipt);
           Receipt = TJson();
         }
         if (ReadVersion) {
-          reply["version"] = *ReadVersion;
+          text.append(",\"version\":");
+          TJson(*ReadVersion).AppendTo(text);
           ReadVersion.reset();
         }
+        text.push_back('}');
       } catch (...) {
         ReadVersion.reset();
+        TJson reply = TJson::Object;
         SetErrorReply(reply);
         /* A write that timed out waiting for disk still has a receipt: it was accepted. */
         if (Receipt.GetKind() != TJson::Null) {
           reply["receipt"] = std::move(Receipt);
           Receipt = TJson();
         }
+        text = ReplyText(std::move(reply), id);
       }
-      QueueReply(std::move(reply), id);
+      QueueText(std::move(text));
       /* A barrier may have been waiting for this one, and there may be room to read again. */
       Pump();
       DoRead();
@@ -1575,16 +1600,29 @@ class TWsImpl final
       if (Closed) {
         return;
       }
-      if (id.GetKind() != TJson::Null) {
-        reply["id"] = id;
+      QueueText(ReplyText(std::move(reply), id));
+    }
+
+    /* Queue a reply already formatted as text. */
+    void QueueText(string &&text) {
+      if (Closed) {
+        return;
       }
-      /* Formatted straight into the buffer (no stream): a 1000-row reply is ~180 KB of text. */
-      string text;
-      reply.AppendTo(text);
       WriteQ.push_back(std::move(text));
       if (!Writing) {
         StartWrite();
       }
+    }
+
+    /* A reply object, with its id if it has one, as text.  Formatted straight into the buffer (no
+       stream): a 1000-row reply is ~180 KB of text. */
+    [[nodiscard]] static string ReplyText(TJson &&reply, const TJson &id) {
+      if (id.GetKind() != TJson::Null) {
+        reply["id"] = id;
+      }
+      string text;
+      reply.AppendTo(text);
+      return text;
     }
 
     /* Write the reply at the head of the queue.  When it is out, write the next, or close after an
