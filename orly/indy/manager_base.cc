@@ -61,7 +61,7 @@ constexpr size_t ReleaseChunkBytes = 64UL << 20;
    Settling a freshly ingested store, with no reads at all, the free page heap reached
    4.3 GiB beside 6.0 GiB in use 20 minutes in, and RSS climbed from 4.1 to 10.1 GiB: memory no
    other allocation in the process was asking for, counted against the budget. */
-void ReleaseFreeHeap(const char *after) {
+void ReleaseFreeHeap(const char *after, const std::atomic<bool> *stop = nullptr) {
   if (!MallocExtension_GetNumericProperty || !MallocExtension_ReleaseToSystem) {
     return;
   }
@@ -75,7 +75,8 @@ void ReleaseFreeHeap(const char *after) {
   size_t num_chunks = 0;
   /* Ask for the same total as one call would, piece by piece. Don't stop early when a piece frees nothing: tcmalloc
      releases whole spans, and when one is larger than asked it counts the extra against the next requests. */
-  for (size_t left_to_ask = start_bytes - KeepFreeHeapBytes; left_to_ask; ++num_chunks) {
+  for (size_t left_to_ask = start_bytes - KeepFreeHeapBytes; left_to_ask && !(stop && *stop); ++num_chunks) {
+    /* A stop is no time to hand memory back: the process is about to give all of it up (#1025). */
     const size_t ask = std::min(left_to_ask, ReleaseChunkBytes);
     const auto chunk_start = steady_clock::now();
     MallocExtension_ReleaseToSystem(ask);
@@ -458,7 +459,7 @@ void TManager::TrimWalkerPools() {
     Fiber::SwitchTo(home_runner);
   }
   if (num_freed) {
-    ReleaseFreeHeap("a walker trim");
+    ReleaseFreeHeap("a walker trim", &ShuttingDown);
   }
 }
 
@@ -731,7 +732,7 @@ void TManager::RunMergeDisk() {
     if (ShuttingDown) {
       syslog(LOG_INFO, "TManager::RunMergeDisk: a disk merge step returned %ldms after the stop flag (#1025)", MsSinceShuttingDown());
     }
-    ReleaseFreeHeap("a disk merge");
+    ReleaseFreeHeap("a disk merge", &ShuttingDown);
   }
   /* De-Register ourselves for CPU time collection */ {
     lock_guard<mutex> lock(MergeThreadCPUMutex);
