@@ -1468,6 +1468,46 @@ FIXTURE(Issue665PopCompletionOutlivesMergeRace) {
    ReleaseUpdate in debug, and in release an empty repo resurrected under the expired pov's id.
    The discard here is the manager's sweep of self-pins, a sanctioned discard (#521), taken while
    the pop's completion waits on the root's merge. */
+/* #1025: the stop waits for the releases promotions owe, not for a fixed time.  A promotion's
+   release is outstanding from Prepare until its completion has run, which for a safe parent waits
+   on the parent's next memory merge.  WaitForReleases(mark) must time out while the release is
+   pending, return true at once when nothing issued before the mark is pending, and return true as
+   soon as the merge completes the pop. */
+FIXTURE(Issue1025StopWaitsOnReleases) {
+  Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
+    const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);
+    TScheduler scheduler;
+    scheduler.SetPolicy(scheduler_policy);
+    Orly::Indy::Disk::Sim::TMemEngine mem_engine(&scheduler, 256, 64, 128, 1, 64, 1);
+    auto manager = make_unique<T665Manager>(mem_engine.GetEngine(), &scheduler, MemMergeCoreVec, DiskMergeCoreVec);
+    Base::TThreadLocalGlobalPoolManager<Fiber::TFrame, size_t, Fiber::TRunner *> frame_pool_manager(10UL, 8UL * 1024UL * 1024UL, Fiber::TRunner::LocalRunner.Get());
+    /* extra */ {
+      TIdleTetrisManager tetris(&scheduler, runner_cons, &frame_pool_manager);
+      manager->SetTetrisManager(&tetris);
+      const TUuid idx_id(TUuid::Twister);
+      auto root = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), std::nullopt, true, true);
+      auto child = manager->GetRepo(TUuid(TUuid::Twister), TTtl::max(), root, false, true);
+      /* Nothing issued yet: settled at once. */
+      EXPECT_TRUE(manager->WaitForReleases(manager->ReleaseMark(), 0ms));
+      PushOne(manager.get(), child, idx_id, 1L);
+      PromoteOne(manager.get(), child, root);
+      /* The pop waits on the root's merge, so its release is pending. */
+      const auto mark = manager->ReleaseMark();
+      EXPECT_FALSE(manager->WaitForReleases(mark, 20ms));
+      EXPECT_EQ(child->GetReleasedUpTo(), 0UL);
+      /* A mark taken before the promotion names nothing pending. */
+      EXPECT_TRUE(manager->WaitForReleases(1UL, 0ms));
+      /* The root's merge completes the pop. */
+      StepMergeMem(root);
+      EXPECT_TRUE(manager->WaitForReleases(mark, 0ms));
+      EXPECT_EQ(child->GetReleasedUpTo(), 1UL);
+    }
+    std::lock_guard<std::mutex> lock(mut);
+    fin = true;
+    cond.notify_one();
+  }, 1UL /* a runner for the Tetris manager */);
+}
+
 FIXTURE(Issue665PopCompletionAfterDiscardIsNoOp) {
   Fiber::TFiberTestRunner runner([](std::mutex &mut, std::condition_variable &cond, bool &fin, Fiber::TRunner::TRunnerCons &runner_cons) {
     const TScheduler::TPolicy scheduler_policy(10, 10, 10ms);

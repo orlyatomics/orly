@@ -463,7 +463,16 @@ void TTransaction::Prepare() {
   }
   TManager *my_manager = Manager;
   bool ensure_or_discard = EnsureOrDiscard;
-  std::shared_ptr<std::function<void (TTransactionCompletion::TTransactionResult)>> func = make_shared<std::function<void (TTransactionCompletion::TTransactionResult)>>([release_set, my_manager, ensure_or_discard](TTransactionCompletion::TTransactionResult result) {
+  /* A promotion's release is outstanding until its completion has run, or is dropped without
+     running; the stop waits on that instead of sleeping (#1025). */
+  const uint64_t release_ticket = release_set.empty() ? 0 : my_manager->BeginRelease();
+  std::shared_ptr<void> release_guard;
+  if (release_ticket) {
+    release_guard.reset(static_cast<void *>(my_manager), [release_ticket](void *manager) {
+      static_cast<TManager *>(manager)->EndRelease(release_ticket);
+    });
+  }
+  std::shared_ptr<std::function<void (TTransactionCompletion::TTransactionResult)>> func = make_shared<std::function<void (TTransactionCompletion::TTransactionResult)>>([release_set, my_manager, ensure_or_discard, release_ticket, release_guard](TTransactionCompletion::TTransactionResult result) {
     switch (result) {
       case TTransactionCompletion::Completed: {
         for (const auto &entry : release_set) {
@@ -489,6 +498,9 @@ void TTransaction::Prepare() {
         syslog(LOG_ERR, "Transaction failed");
         break;
       }
+    }
+    if (release_ticket) {
+      my_manager->EndRelease(release_ticket);
     }
   });
   /* Reserve the room for this transaction's WAL record before anything is applied (#891): a
@@ -554,6 +566,33 @@ void TTransaction::Prepare() {
   TransactionCompletion->SetCb(func);
   TransactionCompletion->SetWaitFor(num_push);
   Prepared = true;
+}
+
+uint64_t TManager::BeginRelease() {
+  std::lock_guard<std::mutex> lock(ReleaseLock);
+  const uint64_t ticket = NextReleaseTicket++;
+  OutstandingReleases.insert(ticket);
+  return ticket;
+}
+
+void TManager::EndRelease(uint64_t ticket) NO_THROW {
+  /* acquire ReleaseLock */ {
+    std::lock_guard<std::mutex> lock(ReleaseLock);
+    OutstandingReleases.erase(ticket);
+  }  // release ReleaseLock
+  ReleaseDone.notify_all();
+}
+
+uint64_t TManager::ReleaseMark() const NO_THROW {
+  std::lock_guard<std::mutex> lock(ReleaseLock);
+  return NextReleaseTicket;
+}
+
+bool TManager::WaitForReleases(uint64_t mark, std::chrono::milliseconds bound) {
+  std::unique_lock<std::mutex> lock(ReleaseLock);
+  return ReleaseDone.wait_for(lock, bound, [this, mark] {
+    return OutstandingReleases.empty() || *OutstandingReleases.begin() >= mark;
+  });
 }
 
 TTransaction::TTransactionCompletion::TTransactionCompletion(TManager *manager)

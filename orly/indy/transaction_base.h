@@ -19,7 +19,11 @@
 #include <memory>
 #include <optional>
 #include <chrono>
+#include <condition_variable>
+#include <cstdint>
 #include <functional>
+#include <mutex>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -575,6 +579,14 @@ namespace Orly {
         /* Decides how far the WAL's head may advance (#755). */
         virtual TWalRetention *GetWalRetention() const NO_THROW override { return WalRetention.get(); }
 
+        /* The releases a promotion owes its repos once its parent's update is on disk (#1025).  A
+           release is outstanding from the moment its transaction is prepared until its completion
+           has run (or the completion is dropped).  The stop waits on these instead of sleeping:
+           ReleaseMark() names everything issued so far, and WaitForReleases(mark, bound) returns
+           true once every release issued before that mark is done, or false after `bound`. */
+        uint64_t ReleaseMark() const NO_THROW;
+        bool WaitForReleases(uint64_t mark, std::chrono::milliseconds bound);
+
         protected:
 
         TManager(Disk::Util::TEngine *engine,
@@ -616,6 +628,14 @@ namespace Orly {
 
         mutable TTransactionCompletionCollection::TImpl TransactionCompletionCollection;
         std::mutex TransactionCompletionLock;
+
+        /* Outstanding releases, by ticket (#1025).  Ending one is idempotent. */
+        uint64_t BeginRelease();
+        void EndRelease(uint64_t ticket) NO_THROW;
+        mutable std::mutex ReleaseLock;
+        std::condition_variable ReleaseDone;
+        std::set<uint64_t> OutstandingReleases;
+        uint64_t NextReleaseTicket = 1;
 
         std::function<void (TTransaction *)> OnCloseTransactionCb;
 
