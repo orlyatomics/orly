@@ -47,9 +47,9 @@ p99 of about 1.6 ms, no write wait over 1 s, and no refusals. Those runs used a 
 scorecard-shaped workload on a real volume. Whether ingest stays healthy with these settings depends on that
 profile: a plain release build, or a `make release-pgo` build whose profile came from the in-memory smokes alone,
 got the same read numbers but failed the ingest limits on every paired run, with the longest write wait at 6 to
-12 s (limit 1 s) and 26 to 41 writes refused. `make release-pgo` now also trains on a real volume, and that build
-met the ingest limits on every arm ([pgo.md](pgo.md) has the table). Build with it, or check ingest on your own
-build, before adopting the settings.
+12 s (limit 1 s) and 26 to 41 writes refused. `make release-pgo` now also trains on a real volume. That build met the
+ingest limits on three arms of four, with the read p99s at their limits ([pgo.md](pgo.md) has the table). Build
+with it, and check ingest on your own build, before adopting the settings.
 
 What each part does:
 

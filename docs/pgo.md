@@ -42,14 +42,15 @@ volume, because the simulator stands in for all of it.
 
 Then `tools/pgo/train_disk.sh` runs the same instrumented `orlyi` on a real volume: a sparse 16 GiB file attached
 as a loop device, with an orly volume created on it by `orly_dm`. It runs `layer_count.mjs` (16 writers committing
-32-key transactions, plus a reader) for 150 s, then `pool_pressure.mjs`, stops the server with SIGTERM, reopens the
+32-key transactions, plus a reader) for 150 s, then `pool_pressure.mjs`, then
+`ws_scale.mjs` and `read_fanout.mjs` so the reads that go to the volume are trained too, stops the server with SIGTERM, reopens the
 volume, writes for another 20 s and stops it again. That trains ingest to disk, the disk merges, the WAL and its
-retention, the reopen path and a clean stop. The data is the sample package's synthetic integer keys and values.
+retention, the reopen path and a clean stop. The data is the sample and `ws_scale` packages' synthetic keys and values.
 
 The disk part is not optional in effect. Without it the merge path is compiled as code that never runs, and under a
 heavy write load the merges then fall behind ingest: on the scorecard in [tuning.md](tuning.md) a smoke-only profile
-let write waits reach 5 to 12 s, where the same source with a profile that included disk ingest kept every write
-under 1 s (see Result below). `--no-disk-train` exists for environments that cannot attach a loop device, such as a
+let write waits reach 4 to 12 s, where unchanged source with a profile that included disk ingest kept every
+write under 1 s (see Result below). `--no-disk-train` exists for environments that cannot attach a loop device, such as a
 `docker build`, which uses it.
 
 ## Regenerating the profile
@@ -85,27 +86,34 @@ unless `--no-disk-train` is given.
 ## Result
 
 Measured on the 28-core, 56-thread machine in [tuning.md](tuning.md), with the tuned flag set from that page on
-both arms, each run an ABBA pair (two arms of each build, interleaved). The reference arm is a `make release-pgo`
-build whose profile came from the smokes alone, which is what this script made before the disk training was added.
+both arms. Each run is an ABBA pair (two arms of each build, interleaved), and each build below was run twice, so
+four arms each. The reference is a `make release-pgo` build whose profile came from the smokes alone, which is what
+this script made before the disk training was added; it is the A side of every run.
 
-| build under test | runs | longest write wait | writes over 1 s | refused | paged-read p99 | point-read p99 |
+| build | longest write wait | writes over 1 s | refused | paged-read p99 | range-read p99 | point-read p99 |
 | --- | --- | --- | --- | --- | --- | --- |
-| smoke-trained profile (reference) | 4 arms | 5.9 to 11.5 s | 4 to 9 | 26 to 41 | 8.5 to 9.4 ms | 1.3 to 2.0 ms |
-| disk-trained profile, this script | 4 arms | 0.67 to 0.83 s | 0 | 0 | 10.1 to 10.7 ms | 1.9 to 2.6 ms |
-| an earlier main, unchanged, with a profile from one scorecard-shaped run on a real volume | 2 arms | 0.79, 0.88 s | 0 | 0 | 9.0, 9.4 ms | 1.9, 2.1 ms |
+| smoke-trained profile (reference, 8 arms) | 3.7 to 11.5 s | 4 to 9 | 26 to 41 | 8.5 to 9.4 ms | 8.1 to 8.7 ms | 1.3 to 2.0 ms |
+| this script | 0.77 to 0.85 s on 3 arms, 5.1 s on 1 | 0 on 3 arms, 3 on 1 | 0 on 3 arms, 12 on 1 | 9.4 to 9.6 ms | 9.4 to 10.1 ms | 1.7 to 2.0 ms |
+| this script without the disk read runs | 0.67 to 0.83 s | 0 | 0 | 10.1 to 10.7 ms | not recorded | 1.9 to 2.6 ms |
+| an earlier main, unchanged, profile from one scorecard-shaped run on a real volume (2 arms) | 0.79, 0.88 s | 0 | 0 | 9.0, 9.4 ms | not recorded | 1.9, 2.1 ms |
+
+The scorecard limits are 1 s for a write, no refusals, 10 ms p99 for paged and range reads and 2 ms p99 for point
+reads, all with the ingest running.
 
 What this shows:
 
-- **The training workload decides whether ingest keeps up.** The last row is unchanged source code with a different
-  profile, and it meets the ingest limits where the
-  reference misses them by a factor of five to ten. With a smoke-only profile the real-disk merge, fold, WAL and file-service code is barely run during
-  training (a handful of counted calls against several hundred), so the compiler lays it out as cold code, and
-  under a write-heavy load the disk merges fall behind the flushes. The disk training brings those counts close to
-  the scorecard-shaped profile's.
-- The disk-trained build does a little more work per run than the reference (about 370 writes per arm against
-  about 300, because none stall), so the reads it serves at the same time share the machine with more merging.
-  Its paged-read and point-read p99 under ingest were slightly above the 10 ms and 2 ms limits in these runs;
-  with no ingest running its point-read p99 was about 0.3 ms.
+- **The training workload decides whether ingest keeps up.** The last row is unchanged source code with a
+  different profile, and it meets the ingest limits where the reference misses them by a factor of five to ten.
+  With a smoke-only profile the real-disk merge, fold, WAL and file-service code is barely run during training (a
+  handful of counted calls against several hundred), so the compiler lays it out as cold code, and under a
+  write-heavy load the disk merges fall behind the flushes. The disk training brings those counts close to the
+  scorecard-shaped profile's.
+- The disk-trained builds do more work per run than the reference (about 365 writes per arm against about 300,
+  because writes do not stall), so the reads served at the same time share the machine with more merging. Without
+  the disk read runs, paged-read p99 under ingest was above 10 ms on every arm. With them it is back under, and
+  range-read and point-read p99 sit at their limits (one arm 0.07 ms over for range reads, one 0.02 ms over for
+  point reads). One arm of the four still had a write stall of 5.1 s, so this profile is not yet as dependable for
+  ingest as the scorecard-shaped one.
 
 So build with the disk training whenever the server will take a sustained write load. `--no-disk-train` gives a
 profile that is fine for read-mostly use and for the smokes, but not for ingest. To train on your own workload,
