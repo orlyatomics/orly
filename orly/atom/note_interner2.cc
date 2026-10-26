@@ -18,6 +18,9 @@
 
 #include <orly/atom/note_interner2.h>
 
+#include <mutex>
+#include <vector>
+
 using namespace std;
 using namespace Orly::Atom;
 
@@ -25,6 +28,17 @@ TNoteInterner::~TNoteInterner() {
   for (auto note: Notes) {
     delete const_cast<TCore::TNote *>(note);
   }
+}
+
+void TNoteInterner::Abandon() {
+  /* Allocated once and never destroyed, so the notes in it stay reachable for a leak checker and nothing
+     frees them at exit. */
+  static std::mutex *const lock = new std::mutex;
+  static std::vector<TNotes> *const abandoned = new std::vector<TNotes>;
+  std::lock_guard<std::mutex> guard(*lock);
+  abandoned->push_back(std::move(Notes));
+  Notes.clear();
+  ByteSize = 0UL;
 }
 
 bool TNoteInterner::IsKnown(const TCore::TNote *note) const {

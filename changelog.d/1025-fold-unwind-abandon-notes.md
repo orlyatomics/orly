@@ -1,0 +1,1 @@
+- **Fixed**: A disk fold cancelled by a stop no longer frees its in-memory notes one at a time on the way out. With millions of notes that took up to a second after the cancel was seen, and the server waited for it before exiting; the notes are now handed to a store that lives until the process ends ([#1025](https://github.com/orlyatomics/orly/issues/1025)).

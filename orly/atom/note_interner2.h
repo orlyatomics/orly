@@ -54,6 +54,12 @@ namespace Orly {
       /* The bytes the interned notes hold, headers included (#694). */
       inline size_t GetByteSize() const;
 
+      /* Give up our notes without deleting them one at a time: they move to a store that lives as long as the
+         process and are never freed. Deleting millions of small notes one by one took up to a second, and
+         a server being stopped holds up its exit for it (#1025); the one caller is a cancelled merge, whose
+         process is going away. The interner is empty afterwards. */
+      void Abandon();
+
       /* True iff. the given note is semantically equivalent to one of our internees. */
       bool IsKnown(const TCore::TNote *note) const;
 

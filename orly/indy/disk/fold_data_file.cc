@@ -260,6 +260,20 @@ TFoldDataFile::TFoldDataFile(Indy::Disk::Util::TEngine *engine,
         the source key by key, holding only one key's versions at a time, and hands TDataFile its
         output directly; nothing comes from the update pools. */
   TSuprena out_arena;
+  /* A fold cancelled by a stop need not free its notes one at a time, which took up to a second with
+     millions of them while the server waited to exit. Declared after the arena, so it runs first (#1025). */
+  struct TAbandonOnStop {
+    TAbandonOnStop(TSuprena &arena, const std::atomic<bool> *cancel)
+        : Arena(arena), Cancel(cancel), NumUncaught(std::uncaught_exceptions()) {}
+    ~TAbandonOnStop() {
+      if (std::uncaught_exceptions() > NumUncaught && Cancel && Cancel->load(std::memory_order_relaxed)) {
+        Arena.Abandon();
+      }
+    }
+    TSuprena &Arena;
+    const std::atomic<bool> *Cancel;
+    int NumUncaught;
+  } abandon_on_stop(out_arena, cancel);
   void *state_alloc = alloca(Sabot::State::GetMaxStateSize());
   /* A deque, not a vector: no doubling slack and no copy of the whole list as it grows (#988). */
   std::deque<TDataFile::TEntryView> out_entries;
