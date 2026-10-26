@@ -97,3 +97,22 @@ FIXTURE(ManyNotes) {
   EXPECT_EQ(interner.GetSize(), 5000U);
   EXPECT_EQ(interner.GetByteSize(), bytes);
 }
+
+/* Abandon hands the notes over without deleting them and leaves the interner empty and usable (#1025). */
+FIXTURE(AbandonLeavesNotesAlive) {
+  const TCore::TNote *kept;
+  {
+    TNoteInterner interner;
+    kept = Propose(interner, "hello");
+    Propose(interner, "doctor");
+    EXPECT_EQ(interner.GetSize(), 2U);
+    interner.Abandon();
+    EXPECT_EQ(interner.GetSize(), 0U);
+    EXPECT_EQ(interner.GetByteSize(), 0U);
+    EXPECT_FALSE(interner.IsKnown(kept));
+    EXPECT_TRUE(Propose(interner, "hello") != kept);
+    EXPECT_EQ(interner.GetSize(), 1U);
+  }
+  /* Still readable after the interner is gone; a sanitizer would flag a use after free here. */
+  EXPECT_TRUE(kept->GetRawSize() >= strlen("hello"));
+}

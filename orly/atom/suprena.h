@@ -41,6 +41,11 @@ namespace Orly {
       /* Destroys all notes when it goes. */
       inline ~TSuprena();
 
+      /* Give up our notes without freeing them; see TNoteInterner::Abandon (#1025). */
+      inline void Abandon() {
+        NoteInterner.Abandon();
+      }
+
       /* The number of notes we contain. */
       inline size_t GetSize() const;
 
