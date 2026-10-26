@@ -37,7 +37,9 @@ COPY . .
 ARG JHM_WORKER_COUNT=4
 ARG ORLY_VERSION=
 # PGO=1 builds profile-guided (tools/pgo/pgo_build.sh): the build then also runs the smokes' training workload,
-# which takes several times as long. PGO_MARCH=x86-64-v3 additionally targets Haswell and later CPUs.
+# which takes several times as long. PGO_MARCH=x86-64-v3 additionally targets Haswell and later CPUs. A docker build
+# cannot attach a loop device, so it leaves out the disk training (--no-disk-train) and its profile does not cover the
+# disk merge path; docs/pgo.md says what that costs.
 ARG PGO=0
 ARG PGO_MARCH=
 RUN if [ -n "$ORLY_VERSION" ]; then \
@@ -48,7 +50,7 @@ RUN if [ -n "$ORLY_VERSION" ]; then \
       make bootstrap version; \
     fi \
     && if [ "$PGO" = 1 ]; then \
-         PATH="/src/orly/tools:$PATH" tools/pgo/pgo_build.sh ${PGO_MARCH:+--march=$PGO_MARCH} --jobs "$JHM_WORKER_COUNT"; \
+         PATH="/src/orly/tools:$PATH" tools/pgo/pgo_build.sh --no-disk-train ${PGO_MARCH:+--march=$PGO_MARCH} --jobs "$JHM_WORKER_COUNT"; \
        else \
          PATH="/src/orly/tools:$PATH" \
          jhm -c release --worker-count "$JHM_WORKER_COUNT" \
