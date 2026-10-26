@@ -1,7 +1,7 @@
 #!/bin/bash
 # Profile-guided release build of orlyi and orlyc.
 #
-#   tools/pgo/pgo_build.sh [--march=x86-64-v3] [--profile-dir DIR] [--jobs N] [--skip-train]
+#   tools/pgo/pgo_build.sh [--march=x86-64-v3] [--profile-dir DIR] [--jobs N] [--skip-train] [--no-disk-train]
 #
 # A release build, then the same build again guided by a profile of the server doing real work:
 #   1. build orlyi and orlyc release with -fprofile-generate (counters in every function);
@@ -10,14 +10,17 @@
 #
 # The training workload is the repository's own smokes (clients/smoke), so anyone can regenerate the profile
 # from a checkout: reads at many disk layers under ingest, paged reads, point and prefix reads at 1 to 16
-# sessions, and write-pool pressure. It runs against the mem-sim orlyi each smoke starts. See
-# docs/pgo.md for what to change when the workload or the code moves.
+# sessions, and write-pool pressure, each against the mem-sim orlyi the smoke starts. Then
+# tools/pgo/train_disk.sh runs a write-heavy load against an orlyi on a real (loop-device) volume, which is
+# what trains the disk merges, the WAL and the disk controller; it needs passwordless sudo for losetup.
+# --no-disk-train leaves it out (the merge path then gets almost no profile). See docs/pgo.md for what to
+# change when the workload or the code moves.
 #
 # --march=CPU compiles for that CPU (-march=CPU) as well. x86-64-v3 is Haswell and later (AVX2, BMI2); the
 # binaries fault on older CPUs, so it is off unless asked for. --profile-dir keeps the profile (default
 # ../out_orly/pgo-profile), and --skip-train reuses the one already there. The profile is keyed by the
 # object files' paths, so it matches only a rebuild in this same checkout. Needs what `make release` needs,
-# plus node and npm (the smokes' client). Takes a few times as long as a plain release build. It does not
+# plus node and npm (the smokes' client), and sudo for the disk training. Takes a few times as long as a plain release build. It does not
 # run `make version`; run that first for a stamped build, as `make release-pgo` does.
 #
 # Only release.jhm is touched while it runs, and it is put back on exit.
@@ -30,12 +33,14 @@ PROFILE="$OUT/pgo-profile"
 MARCH=""
 JOBS="$(nproc)"
 TRAIN=1
+DISK_TRAIN=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --march=*) MARCH="${1#*=}" ;;
     --profile-dir) PROFILE="$2"; shift ;;
     --jobs) JOBS="$2"; shift ;;
     --skip-train) TRAIN=0 ;;
+    --no-disk-train) DISK_TRAIN=0 ;;
     -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -45,6 +50,10 @@ if [ "$TRAIN" = 1 ]; then
   for tool in node npm; do
     command -v "$tool" >/dev/null || { echo "$tool is needed to run the training smokes (their client is TypeScript)" >&2; exit 1; }
   done
+  if [ "$DISK_TRAIN" = 1 ] && ! sudo -n true 2>/dev/null; then
+    echo "the disk training needs passwordless sudo (losetup, setcap); run with sudo available, or pass --no-disk-train" >&2
+    exit 1
+  fi
 fi
 mkdir -p "$PROFILE"
 PROFILE="$(cd "$PROFILE" && pwd)"
@@ -74,7 +83,7 @@ build() {
   rm -rf "$OUT/release"
   # ccache would hand back objects built without (or with another) profile.
   (cd "$ROOT" && CCACHE_DISABLE=1 PATH="$ROOT/tools:$PATH" tools/jhm -c release --worker-count "$JOBS" \
-     orly/server/orlyi orly/orlyc)
+     orly/server/orlyi orly/orlyc orly/indy/disk/util/orly_dm)
 }
 
 MARCH_FLAG=()
@@ -104,6 +113,11 @@ if [ "$TRAIN" = 1 ]; then
   smoke read-fanout R=4
   smoke keyset-paging
   smoke pool-pressure K=8 SECS=30 MAX_WRITES=60000
+  if [ "$DISK_TRAIN" = 1 ]; then
+    echo "-- disk"
+    bash "$ROOT/tools/pgo/train_disk.sh" "$OUT/release" \
+      || { echo "the disk training failed (see above); fix it, or pass --no-disk-train to build without it" >&2; exit 1; }
+  fi
   [ "$(find "$PROFILE" -name '*.gcda' | wc -l)" -gt 50 ] || { echo "too few profile files in $PROFILE" >&2; exit 1; }
 fi
 
